@@ -7,6 +7,8 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { UnauthorizedPage } from '@/pages/UnauthorizedPage'
 import { AdminLoginPage } from '@/pages/admin/AdminLoginPage'
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
+import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
+import { AdminEditUserPage } from '@/pages/admin/AdminEditUserPage'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminRoute } from '@/components/AdminRoute'
 
@@ -59,7 +61,11 @@ export const router = createBrowserRouter([
       },
       {
         path: 'users',
-        element: <div>Admin Users Page (TODO)</div>
+        element: <AdminUsersPage />
+      },
+      {
+        path: 'users/:id/edit',
+        element: <AdminEditUserPage />
       },
       {
         path: 'settings',

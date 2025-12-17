@@ -22,20 +22,25 @@ export function AdminLoginPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<AdminLoginFormData>()
 
   const onSubmit = async (data: AdminLoginFormData) => {
+    console.log('Admin login form submitted:', data)
     setIsLoading(true)
     
     // Mock admin login - replace with actual API call
     const mockAdminLogin = () => new Promise((resolve, reject) => {
       setTimeout(() => {
+        console.log('Mock admin login processing...')
         // Mock validation - check if it's an admin email
         if (data.email.includes('admin') && data.password.length >= 6) {
-          resolve({
+          const userData = {
             id: '1',
             email: data.email,
             name: 'Admin User',
             role: 'admin' as const
-          })
+          }
+          console.log('Admin login success:', userData)
+          resolve(userData)
         } else {
+          console.log('Admin login failed: Invalid credentials')
           reject(new Error('Invalid admin credentials'))
         }
       }, 2000) // 2 second delay
@@ -43,10 +48,13 @@ export function AdminLoginPage() {
 
     try {
       const userData: any = await mockAdminLogin()
-      toast.success('Admin login successful!')
+      console.log('Dispatching loginSuccess:', userData)
       dispatch(loginSuccess(userData))
+      toast.success('Admin login successful!')
+      console.log('Navigating to /admin/dashboard')
       navigate('/admin/dashboard')
     } catch (error: any) {
+      console.error('Admin login error:', error)
       toast.error('Invalid admin credentials. Admin emails must contain "admin".')
     } finally {
       setIsLoading(false)

@@ -9,7 +9,7 @@ export function AdminRoute({ children }: AdminRouteProps) {
   const { isAuthenticated, user } = useAppSelector(state => state.auth)
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/admin/login" replace />
   }
 
   if (user?.role !== 'admin') {
