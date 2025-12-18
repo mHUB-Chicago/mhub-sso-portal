@@ -1,8 +1,10 @@
 #!/bin/bash
-databaseName="axs-qa-tool-dev"
+databaseName="mhub-sso-portal"
 npx wrangler d1 migrations apply $databaseName --local
 outputFile=$(mktemp)
-npx prisma migrate diff --from-local-d1 --to-schema-datamodel ./src/database/schema.prisma --script --output "$outputFile"
+D1_SQLITE=$(ls .wrangler/state/v3/d1/**/*.sqlite | head -n 1)
+export DATABASE_URL="file:$D1_SQLITE"
+npx prisma migrate diff --from-config-datasource --to-schema ./src/database/schema.prisma --script --output "$outputFile"
 checkString=$(cat "$outputFile" | head -n 1)
 if [ "$checkString" == "-- This is an empty migration." ]; then
   rm "$outputFile"
