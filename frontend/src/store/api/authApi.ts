@@ -1,6 +1,6 @@
 import { createApi } from '@reduxjs/toolkit/query/react'
-import { apiFetch } from '@/lib/api'
-import { z } from 'zod'
+// import { apiFetch } from '@/lib/api'
+// import { z } from 'zod'
 
 interface LoginRequest {
   email: string
@@ -19,6 +19,7 @@ interface LoginResponse {
 
 // Custom base query using your apiFetch function (for when you have real backend)
 const customBaseQuery = async (args: any) => {
+  console.log('customBaseQuery called with args:', args);
   try {
     // Real API implementation - uncomment when backend is ready
     /*

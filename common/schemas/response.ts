@@ -1,6 +1,6 @@
-import { z, ZodTypeAny } from "zod";
+import { z, ZodAny } from "zod";
 
-export const SuccessResponseSchema = <T extends ZodTypeAny>(dataSchema?: T) =>
+export const SuccessResponseSchema = <T extends ZodAny>(dataSchema?: T) =>
   z.object({
     success: z.boolean(),
     message: z.string().optional(),

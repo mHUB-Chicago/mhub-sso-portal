@@ -1,14 +1,7 @@
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { DataTable } from "@/components/data-table/data-table"
 import { userColumns, type User } from "@/components/data-table/columns"
-import { Plus, Download, Settings, UserPlus } from "lucide-react"
+import { Download, Settings, UserPlus } from "lucide-react"
 import { Link } from "react-router-dom"
 
 // Mock data
