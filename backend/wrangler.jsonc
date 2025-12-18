@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "axs-qa-tool",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mhub-sso-portal",
+      "database_id": "45184088-9093-4aa3-b142-0590acad4c9a"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "QUEUE",
+        "queue": "mhub-sso-portal"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "mhub-sso-portal"
+      }
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+}

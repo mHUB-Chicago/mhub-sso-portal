@@ -1,0 +1,25 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "scripts": {
+    "prebuild": "prisma generate --no-hints",
+    "dev": "wrangler dev",
+    "build": "wrangler build"
+  },
+  "dependencies": {
+    "@hono/standard-validator": "^0.2.1",
+    "@hono/swagger-ui": "^0.5.2",
+    "@hono/zod-validator": "^0.7.5",
+    "@prisma/adapter-d1": "^7.2.0",
+    "@prisma/client": "^7.2.0",
+    "hono-openapi": "^1.1.2",
+    "luxon": "^3.7.2",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251217.0",
+    "@types/node": "^25.0.3",
+    "prisma": "^7.2.0",
+    "wrangler": "^4.55.0"
+  }
+}
