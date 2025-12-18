@@ -12,19 +12,6 @@
       "database_id": "45184088-9093-4aa3-b142-0590acad4c9a"
     }
   ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "QUEUE",
-        "queue": "mhub-sso-portal"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "mhub-sso-portal"
-      }
-    ]
-  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
