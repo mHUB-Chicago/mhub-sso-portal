@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table/data-table"
 import { userColumns, type User } from "@/components/data-table/columns"
 import { Download, Settings, UserPlus } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 
 // Mock data
 const mockUsers: User[] = [
@@ -63,6 +63,7 @@ const mockUsers: User[] = [
 ]
 
 export function AdminUsersPage() {
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -75,7 +76,10 @@ export function AdminUsersPage() {
       
       {/* Action Bar */}
       <div className="flex items-center justify-between">
-        <Button className="bg-[#D30046] hover:bg-[#B8003C] px-4 py-2 h-10">
+        <Button 
+          className="bg-[#D30046] hover:bg-[#B8003C] px-4 py-2 h-10"
+          onClick={() => navigate('/admin/users/new')}
+        >
           <UserPlus className="h-4 w-4 mr-2" />
           Add New User
         </Button>

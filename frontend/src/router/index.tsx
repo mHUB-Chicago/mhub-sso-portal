@@ -1,14 +1,15 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { RootLayout } from '@/layouts/RootLayout'
 import { AdminLayout } from '@/layouts/AdminLayout'
-import { HomePage } from '@/pages/HomePage'
-import { LoginPage } from '@/pages/LoginPage'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { UnauthorizedPage } from '@/pages/UnauthorizedPage'
-import { AdminLoginPage } from '@/pages/admin/AdminLoginPage'
-import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
-import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
-import { AdminEditUserPage } from '@/pages/admin/AdminEditUserPage'
+import { HomePage } from '@/pages/home'
+import { LoginPage } from '@/pages/login'
+import { DashboardPage } from '@/pages/dashboard'
+import { UnauthorizedPage } from '@/pages/unauthorized'
+import { AdminLoginPage } from '@/pages/admin/login'
+import { AdminDashboardPage } from '@/pages/admin/dashboard'
+import { AdminUsersPage } from '@/pages/admin/users'
+import { AdminEditUserPage } from '@/pages/admin/users/edit'
+import AdminAddUserPage from '@/pages/admin/users/add'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminRoute } from '@/components/AdminRoute'
 
@@ -66,6 +67,10 @@ export const router = createBrowserRouter([
       {
         path: 'users/:id/edit',
         element: <AdminEditUserPage />
+      },
+      {
+        path: 'users/new',
+        element: <AdminAddUserPage />
       },
       {
         path: 'settings',

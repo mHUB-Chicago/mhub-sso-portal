@@ -11,8 +11,8 @@ export function AdminSidebar() {
   const location = useLocation()
 
   return (
-    <aside className="w-64 min-h-screen bg-gray-50 border-r">
-      <div className="p-6">
+    <aside className="w-64 h-screen bg-gray-50 border-r flex flex-col">
+      <div className="p-6 flex-1">
         <div className="mb-12">
           <img src="/logo.png" alt="MHUB Logo" className="h-8 mx-auto" />
         </div>
@@ -35,13 +35,13 @@ export function AdminSidebar() {
           <Link 
             to="/admin/users" 
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
-              location.pathname === '/admin/users'
+              location.pathname.startsWith('/admin/users')
                 ? 'bg-[#D30046] text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
             <Users className={`h-5 w-5 ${
-              location.pathname === '/admin/users'
+              location.pathname.startsWith('/admin/users')
                 ? 'text-white'
                 : 'text-gray-500'
             }`} />
@@ -50,7 +50,7 @@ export function AdminSidebar() {
         </nav>
       </div>
       
-      <div className="absolute bottom-0 w-64 p-6 border-t border-r bg-gray-50">
+      <div className="p-6 border-t bg-gray-50">
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
             <AvatarFallback className="text-xs bg-gray-200">
