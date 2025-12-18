@@ -43,7 +43,7 @@ const AdminAddUserPage = () => {
 
   const totalSteps = 4;
 
-  const handleInputChange = (field: keyof FormData, value: any) => {
+  const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -157,7 +157,7 @@ const AdminAddUserPage = () => {
       </div>
 
       <div className="mt-12">
-        <StepIndicator currentStep={currentStep} totalSteps={totalSteps} />
+        <StepIndicator currentStep={currentStep} />
       </div>
 
       <div className="mt-16">

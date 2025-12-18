@@ -3,10 +3,9 @@ import { cn } from "@/lib/utils";
 
 interface StepIndicatorProps {
   currentStep: number;
-  totalSteps: number;
 }
 
-export const StepIndicator = ({ currentStep, totalSteps }: StepIndicatorProps) => {
+export const StepIndicator = ({ currentStep }: StepIndicatorProps) => {
   const steps = [
     { number: 1, label: "Personal Information" },
     { number: 2, label: "Access Level" },
