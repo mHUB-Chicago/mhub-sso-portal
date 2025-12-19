@@ -29,11 +29,11 @@ export const runSeed = async (c: Context) => {
   const prisma: PrismaClient = c.get("db");
 
   // Clear existing data
-  await prisma.company.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.serviceProvider.deleteMany();
-  await prisma.userServiceProvider.deleteMany();
   await prisma.samlAuthRequest.deleteMany();
+  await prisma.userServiceProvider.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.company.deleteMany();
+  await prisma.serviceProvider.deleteMany();
 
   // Create service providers
   const peopleVineServiceProvider = await createServiceProvider(c, {
@@ -61,7 +61,8 @@ export const runSeed = async (c: Context) => {
 
   const regularUser = await createUser(c, {
     name: "Test User",
-    email: "mike@breezydev.com",
+    email: "axsmodern@gmail.com",
+    password: "Example123!",
     role: Role.USER,
     companyId: company.id,
     peopleVineId: "test-user-pvid",

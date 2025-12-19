@@ -19,7 +19,7 @@ export const createServiceProvider = (c: Context, input: CreateServiceProviderIn
       acsUrl: input.acsUrl,
       nameIdFormat: input.nameIdFormat,
       nameIdSource: input.nameIdSource,
-      signTarget: input.signTarget,
+      signTarget: input.signTarget, 
     },
   });
 }
@@ -28,6 +28,13 @@ export const getServiceProviderById = (c: Context, id: string): Promise<ServiceP
   const prisma: PrismaClient = c.get("db");
   return prisma.serviceProvider.findUnique({
     where: { id },
+  });
+}
+
+export const getServiceProviderByEntityId = (c: Context, entityId: string): Promise<ServiceProvider | null> => {
+  const prisma: PrismaClient = c.get("db");
+  return prisma.serviceProvider.findUnique({
+    where: { entityId },
   });
 }
 

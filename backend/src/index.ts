@@ -7,6 +7,7 @@ import { corsMiddleware } from "@/middleware/cors";
 import { databaseMiddleware } from "@/middleware/database";
 import { handleError } from "@/utils/handleError";
 import userRoutes from "@/routes/user";
+import samlRoutes from "@/routes/saml";
 import seedRoute from "@/database/seed";
 import { swaggerUI } from "@hono/swagger-ui";
 import queueConsumer from "./controllers/queueConsumer";
@@ -53,6 +54,9 @@ app.get("/openapi", swaggerUI({ url: "/openapi.json" }));
 
 app.use("/api/*", corsMiddleware, databaseMiddleware, authMiddleware);
 app.route("/api/user", userRoutes);
+
+app.use("/saml/*", corsMiddleware, databaseMiddleware);
+app.route("/saml", samlRoutes);
 
 app.route("/__internal/seed", seedRoute);
 app.onError(handleError);

@@ -16,6 +16,7 @@ interface LoginFormData {
 }
 
 export function LoginPage() {
+  const txQueryParam = new URLSearchParams(window.location.search).get('tx')
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
@@ -24,10 +25,18 @@ export function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     try {
-      const result = await login(data).unwrap()
-      toast.success('Login successful!')
-      dispatch(loginSuccess(result.user))
-      navigate('/dashboard')
+      const loginResult = await fetch(`${import.meta.env.VITE_API_URL}/api/user/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }).then(res => res.json());
+      if (txQueryParam) {
+        window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`);
+      } else {
+        navigate('/dashboard')
+      }
     } catch (error: any) {
       toast.error(error.data?.message || 'Invalid email or password')
     }

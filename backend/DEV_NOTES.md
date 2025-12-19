@@ -1,4 +1,4 @@
-1. Get SAMLRequest query param: https://member.mhubchicago.com/login/sso/start?route=https://example.com
+1. Get SAMLRequest query param: https://member.mhubchicago.com/login/sso/start?route=https://large-sunfish-guided.ngrok-free.app/saml
 2. URL decode: https://www.urldecoder.org/
 3. B64 decode + Deflate: https://www.samltool.com/decode.php
 

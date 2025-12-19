@@ -1,0 +1,47 @@
+import { PrismaClient, Session, User } from "@/database/models";
+import { Context } from "hono";
+
+// TODO: make this longer, just short for testing naturally expired sessions
+const SESSION_EXPIRE_TIME_MS = 10 * 60 * 1000; // 10 minutes
+
+const generateSessionId = (): string => {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export const getActiveSessionById = async (c: Context, sessionId: string): Promise<User | null> => {
+  const prisma: PrismaClient = c.get("db");
+  const session = await prisma.session.findUnique({
+    where: { sessionId },
+    include: { user: true },
+  });
+
+  if (!session || session.revokedAt || session.expiresAt < new Date()) {
+    return null;
+  }
+  return session.user;
+}
+
+export const createSession = async (c: Context, userId: string): Promise<string> => {
+  const prisma: PrismaClient = c.get("db");
+  const sessionId = generateSessionId();
+  const expiresAt = new Date(Date.now() + SESSION_EXPIRE_TIME_MS);
+
+  const createdSession: Session = await prisma.session.create({
+    data: {
+      sessionId,
+      userId,
+      expiresAt,
+    },
+  });
+  return createdSession.sessionId;
+}
+
+export const revokeSession = async (c: Context, sessionId: string): Promise<void> => {
+  const prisma: PrismaClient = c.get("db");
+  await prisma.session.update({
+    where: { sessionId },
+    data: { revokedAt: new Date() },
+  });
+}

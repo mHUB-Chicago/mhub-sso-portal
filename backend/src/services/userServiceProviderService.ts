@@ -1,4 +1,4 @@
-import { PrismaClient } from "@/database/models";
+import { PrismaClient, UserServiceProvider } from "@/database/models";
 import { Context } from "hono";
 
 export interface CreateUserServiceProviderInput {
@@ -10,6 +10,17 @@ export interface CreateUserServiceProviderInput {
 export interface RevokeUserServiceProviderInput {
   userId: string;
   serviceProviderId: string;
+}
+
+export const getUserServiceProvider = (c: Context, userId: string, serviceProviderId: string): Promise<UserServiceProvider | null> => {
+  const prisma: PrismaClient = c.get("db");
+  return prisma.userServiceProvider.findFirst({
+    where: {
+      userId,
+      serviceProviderId,
+      enabled: true,
+    },
+  });
 }
 
 export const createUserServiceProvider = (c: Context, input: CreateUserServiceProviderInput) => {

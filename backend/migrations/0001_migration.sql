@@ -72,6 +72,17 @@ CREATE TABLE "SamlAuthRequest" (
     CONSTRAINT "SamlAuthRequest_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
+-- CreateTable
+CREATE TABLE "Session" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "sessionId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "expiresAt" DATETIME NOT NULL,
+    "revokedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Company_peopleVineId_key" ON "Company"("peopleVineId");
 
@@ -89,3 +100,6 @@ CREATE UNIQUE INDEX "UserServiceProvider_userId_serviceProviderId_key" ON "UserS
 
 -- CreateIndex
 CREATE UNIQUE INDEX "SamlAuthRequest_serviceProviderId_inResponseTo_key" ON "SamlAuthRequest"("serviceProviderId", "inResponseTo");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Session_sessionId_key" ON "Session"("sessionId");

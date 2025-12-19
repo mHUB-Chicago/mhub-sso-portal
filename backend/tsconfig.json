@@ -1,5 +1,5 @@
 {
-  "include": ["src", "../common", "global.d.ts"],
+  "include": ["src", "../common"],
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",

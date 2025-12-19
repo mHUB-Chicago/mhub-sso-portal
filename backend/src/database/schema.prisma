@@ -52,6 +52,7 @@ model User {
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]
   samlAuthRequests     SamlAuthRequest[]
+  sessions             Session[]
 }
 
 model ServiceProvider {
@@ -100,4 +101,14 @@ model SamlAuthRequest {
   updatedAt         DateTime        @updatedAt
 
   @@unique([serviceProviderId, inResponseTo])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  sessionId String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 }
