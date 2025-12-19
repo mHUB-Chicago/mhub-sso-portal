@@ -5,6 +5,8 @@ import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
 import { DashboardPage } from '@/pages/dashboard'
 import { UnauthorizedPage } from '@/pages/unauthorized'
+import { NotFoundPage } from '@/pages/not-found'
+import { ForgotPasswordPage } from '@/pages/forgot-password'
 import { AdminLoginPage } from '@/pages/admin/login'
 import { AdminDashboardPage } from '@/pages/admin/dashboard'
 import { AdminUsersPage } from '@/pages/admin/users'
@@ -41,6 +43,10 @@ export const router = createBrowserRouter([
     element: <LoginPage />
   },
   {
+    path: '/forgot-password',
+    element: <ForgotPasswordPage />
+  },
+  {
     path: '/admin/login',
     element: <AdminLoginPage />
   },
@@ -75,7 +81,19 @@ export const router = createBrowserRouter([
       {
         path: 'settings',
         element: <div>Admin Settings Page (TODO)</div>
+      },
+      {
+        path: '*',
+        element: <NotFoundPage />
       }
     ]
+  },
+  {
+    path: '*',
+    element: <NotFoundPage />
+  },
+  {
+    path: '*',
+    element: <NotFoundPage />
   }
 ])

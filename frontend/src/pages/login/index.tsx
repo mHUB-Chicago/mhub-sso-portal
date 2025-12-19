@@ -117,7 +117,7 @@ export function LoginPage() {
         </form>
 
         <div className="text-center mt-6">
-          <Link to="/forgot-password" className="text-sm text-[#E91E63] hover:underline">
+          <Link to="/forgot-password" className="text-sm text-[#D30046] hover:underline">
             Forgot Password?
           </Link>
         </div>
