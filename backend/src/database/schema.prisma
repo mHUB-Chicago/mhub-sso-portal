@@ -1,7 +1,7 @@
 generator client {
   provider = "prisma-client-js"
-  output = "./models"
-  runtime = "cloudflare"
+  output   = "./models"
+  runtime  = "cloudflare"
 }
 
 datasource db {
@@ -13,30 +13,91 @@ enum Role {
   ADMIN
 }
 
+enum SamlBinding {
+  HTTP_REDIRECT
+  HTTP_POST
+}
+
+enum SamlSignTarget {
+  ASSERTION
+  RESPONSE
+  BOTH
+}
+
 model Company {
-  id                  Int @id @default(autoincrement())
-  peopleVineId        String? @unique
-  active              Boolean @default(true)
-  name                String
-  users               User[]
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id           String   @id @default(uuid())
+  peopleVineId String?  @unique
+  active       Boolean  @default(true)
+  name         String
+  users        User[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model User {
-  id                  Int @id @default(autoincrement())
-  peopleVineId        String? @unique
-  name                String
-  email               String @unique
-  password            String? // Nullable hashed password
-  role                Role
-  companyId           Int
-  company             Company @relation(fields: [companyId], references: [id])
-  emailVerified       Boolean @default(false)
-  locked              Boolean @default(false)
-  mustResetPassword   Boolean @default(false)
-  failedLoginAttempts Json?
-  lastLogin           DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                   String                @id @default(uuid())
+  peopleVineId         String?               @unique
+  name                 String
+  email                String                @unique
+  password             String?
+  role                 Role
+  companyId            String
+  company              Company               @relation(fields: [companyId], references: [id])
+  emailVerified        Boolean               @default(false)
+  locked               Boolean               @default(false)
+  mustResetPassword    Boolean               @default(false)
+  failedLoginAttempts  Json?
+  lastLogin            DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  userServiceProviders UserServiceProvider[]
+  samlAuthRequests     SamlAuthRequest[]
+}
+
+model ServiceProvider {
+  id               String                @id @default(uuid())
+  name             String
+  entityId         String                @unique
+  acsUrl           String
+  nameIdFormat     String?
+  nameIdSource     String                @default("email")
+  signTarget       SamlSignTarget        @default(ASSERTION)
+  active           Boolean               @default(true)
+  users            UserServiceProvider[]
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  samlAuthRequests SamlAuthRequest[]
+}
+
+model UserServiceProvider {
+  id                String          @id @default(uuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceProviderId String
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  enabled           Boolean         @default(true)
+  revokedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([userId, serviceProviderId])
+}
+
+model SamlAuthRequest {
+  id                String          @id @default(uuid())
+  serviceProviderId String
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id])
+  userId            String?
+  user              User?           @relation(fields: [userId], references: [id])
+  inResponseTo      String
+  acsUrl            String
+  relayState        String?
+  requestBinding    SamlBinding     @default(HTTP_REDIRECT)
+  responseBinding   SamlBinding     @default(HTTP_POST)
+  expiresAt         DateTime
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([serviceProviderId, inResponseTo])
 }
