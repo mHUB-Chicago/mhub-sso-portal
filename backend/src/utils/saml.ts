@@ -1,5 +1,5 @@
 import xpath from "xpath";
-import { SamlAuthRequest, SamlSignTarget, ServiceProvider, User } from "@/database/models";
+import { SamlAuthRequest, SamlSignTarget, ServiceProvider, Session, User } from "@/database/models";
 import { inflateRaw } from "pako";
 import * as xmldom from "@xmldom/xmldom";
 import * as xmldsigjs from "xmldsigjs";
@@ -91,6 +91,7 @@ export type IssueSamlResponseInput = {
   serviceProvider: ServiceProvider,
   samlRequest: SamlAuthRequest;
   user: User,
+  sessionId: string,
   relayState?: string | null;
   idp: {
     entityId: string;
@@ -138,17 +139,18 @@ function chooseNameId(user: User, source: string): string {
 function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const { user, serviceProvider, samlRequest } = input;
   const now = new Date();
-  const notOnOrAfter = addMinutes(now, 5).toISOString();
-  const notBefore = addMinutes(now, -1).toISOString(); // allow small skew
+  const notOnOrAfter = addMinutes(now, 60).toISOString();
+  const notBefore = now.toISOString();
 
   const responseId = `_${crypto.randomUUID()}`;
   const assertionId = `_${crypto.randomUUID()}`;
+  const sessionIndex = `_${input.sessionId}`;
 
   const destination = serviceProvider.acsUrl;
-  const inResponseTo = samlRequest.id;
 
   const nameIdValue = chooseNameId(user, serviceProvider.nameIdSource);
-  const nameIdFormat = serviceProvider.nameIdFormat
+  const nameIdFormat = serviceProvider.nameIdFormat;
+  const email = user.email;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <samlp:Response
@@ -157,26 +159,20 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   ID="${responseId}"
   Version="2.0"
   IssueInstant="${now.toISOString()}"
-  Destination="${destination}"
-  InResponseTo="${inResponseTo}">
-  <saml:Issuer>${input.idp.entityId}</saml:Issuer>
+  Destination="${escapeHtmlAttr(destination)}"
+>
+  <saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">${input.idp.entityId}</saml:Issuer>
   <samlp:Status>
     <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
   </samlp:Status>
-
-  <saml:Assertion
-    ID="${assertionId}"
-    Version="2.0"
-    IssueInstant="${now.toISOString()}">
+  <saml:Assertion ID="${assertionId}" Version="2.0" IssueInstant="${now.toISOString()}">
     <saml:Issuer>${input.idp.entityId}</saml:Issuer>
-
     <saml:Subject>
       <saml:NameID Format="${nameIdFormat}">${nameIdValue}</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
         <saml:SubjectConfirmationData
-          InResponseTo="${inResponseTo}"
-          Recipient="${destination}"
-          NotOnOrAfter="${notOnOrAfter}"/>
+          NotOnOrAfter="${notOnOrAfter}"
+          Recipient="${escapeHtmlAttr(destination)}"/>
       </saml:SubjectConfirmation>
     </saml:Subject>
 
@@ -186,13 +182,28 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
       </saml:AudienceRestriction>
     </saml:Conditions>
 
-    <saml:AuthnStatement AuthnInstant="${now.toISOString()}" SessionNotOnOrAfter="${notOnOrAfter}">
+    <saml:AuthnStatement AuthnInstant="${now.toISOString()}" SessionIndex="${sessionIndex}">
       <saml:AuthnContext>
         <saml:AuthnContextClassRef>
-          urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport
+          urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified
         </saml:AuthnContextClassRef>
       </saml:AuthnContext>
     </saml:AuthnStatement>
+
+    <saml:AttributeStatement xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <saml:Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${nameIdValue}</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
+      </saml:Attribute>
+      <saml:Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
+      </saml:Attribute>
+    </saml:AttributeStatement>
   </saml:Assertion>
 </samlp:Response>`;
 

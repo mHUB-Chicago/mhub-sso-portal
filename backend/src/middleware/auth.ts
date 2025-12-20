@@ -9,6 +9,11 @@ export const authMiddleware = async (c: Context, next: () => Promise<any>) => {
   return next();
 };
 
+export const getSessionId = (c: Context): string | null => {
+  const sessionId = getCookie(c, COOKIE_NAME);
+  return sessionId || null;
+}
+
 export const verifySession = async (c: Context): Promise<User | null> => {
   const sessionId = getCookie(c, COOKIE_NAME);
   if (!sessionId) {

@@ -1,4 +1,4 @@
-import { Context } from "hono/jsx";
+import { Context } from "hono";
 import { AppType, JsonInput } from "..";
 import { LoginUserRequestSchema } from "@common/schemas/user";
 import { getUserByEmail } from "@/services/userService";

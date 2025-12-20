@@ -5,7 +5,7 @@ import { createSamlAuthRequest, getSamlAuthRequestById } from "@/services/samlAu
 import { SamlBinding } from "@/database/models";
 import { decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
 import { getServiceProviderByEntityId, getServiceProviderById } from "@/services/serviceProviderService";
-import { verifySession } from "@/middleware/auth";
+import { getSessionId, verifySession } from "@/middleware/auth";
 import { getUserServiceProvider } from "@/services/userServiceProviderService";
 
 interface IssueSamlResponseInput {
@@ -36,9 +36,9 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
     responseBinding: SamlBinding.HTTP_POST,
     expiresAt: new Date(Date.now() + 5 * 60 * 1000), // Expires in 5 minutes
   });
-
   const currentUser = await verifySession(c);
-  if (currentUser) {
+  const sessionId = getSessionId(c);
+  if (currentUser && sessionId) {
     const userServiceProvider = await getUserServiceProvider(c, currentUser.id, serviceProvider.id);
     if (!userServiceProvider) {
       return c.json({ message: "Access to Service Provider not authorized" }, 403);
@@ -48,11 +48,12 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
       serviceProvider,
       samlRequest: samlAuthRequest,
       user: currentUser,
+      sessionId,
       relayState,
       idp: {
         entityId: "https://sso.mhubchicago.com/",
-        certPem: c.env.SAML_PUBLIC_CERT,
-        privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY,
+        certPem: c.env.SAML_PUBLIC_CERT as string,
+        privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
       }
     });
     return c.html(html);
@@ -73,7 +74,8 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
     return c.json({ message: "Invalid SAML transaction" }, 400);
   }
   const currentUser = await verifySession(c);
-  if (!currentUser) {
+  const sessionId = getSessionId(c);
+  if (!currentUser || !sessionId) {
     return c.json({ message: "Unauthorized" }, 401);
   }
   const serviceProvider = await getServiceProviderById(c, samlAuthRequest.serviceProviderId);
@@ -90,10 +92,11 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
     samlRequest: samlAuthRequest,
     user: currentUser,
     relayState: samlAuthRequest.relayState || undefined,
+    sessionId,
     idp: {
       entityId: "https://sso.mhubchicago.com/",
-      certPem: c.env.SAML_PUBLIC_CERT,
-      privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY,
+      certPem: c.env.SAML_PUBLIC_CERT as string,
+      privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
     }
   });
   return c.html(html);

@@ -51,14 +51,6 @@ export const runSeed = async (c: Context) => {
     active: true,
   });
 
-  const adminUser = await createUser(c, {
-    name: "Admin User",
-    email: "mike+admin@breezydev.com",
-    role: Role.ADMIN,
-    companyId: company.id,
-    peopleVineId: "admin-user-pvid",
-  });
-
   const regularUser = await createUser(c, {
     name: "Test User",
     email: "axsmodern@gmail.com",
@@ -67,10 +59,5 @@ export const runSeed = async (c: Context) => {
     companyId: company.id,
     peopleVineId: "test-user-pvid",
   });
-
-  console.log(`Created service provider with entity ID: ${peopleVineServiceProvider.entityId}`);
-  console.log(`Created company with name: ${company.name}`);
-  console.log(`Created admin user with email: ${adminUser.email}`);
-  console.log(`Created regular user with email: ${regularUser.email}`);
 };
 export default app;
