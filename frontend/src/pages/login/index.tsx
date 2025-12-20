@@ -1,6 +1,4 @@
 import { useNavigate, Link } from 'react-router-dom'
-import { useAppDispatch } from '@/store'
-import { loginSuccess } from '@/store/slices/authSlice'
 import { useLoginMutation } from '@/store/api/authApi'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +15,6 @@ interface LoginFormData {
 
 export function LoginPage() {
   const txQueryParam = new URLSearchParams(window.location.search).get('tx')
-  const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>()
@@ -25,14 +22,12 @@ export function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     try {
-      const loginResult = await fetch(`${import.meta.env.VITE_API_URL}/api/user/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      }).then(res => res.json());
+      await login({
+        email: data.email,
+        password: data.password,
+      });
       if (txQueryParam) {
+        // Redirect to SAML continue endpoint
         window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`);
       } else {
         navigate('/dashboard')
