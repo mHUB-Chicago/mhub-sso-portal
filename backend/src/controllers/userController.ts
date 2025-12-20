@@ -21,7 +21,7 @@ export const handleLoginUser = async (c: Context<AppType, string, JsonInput<type
     setCookie(c, "sid", sessionId, {
       httpOnly: true,
       secure: true,
-      sameSite: "None", // TODO: Change for production once we have a shared subdomain.
+      sameSite: "Lax",
     });
     return c.json({ message: "Login successful" });
   } catch (error) {
