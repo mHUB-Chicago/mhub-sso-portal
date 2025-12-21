@@ -22,6 +22,8 @@ export const handleLoginUser = async (c: Context<AppType, string, JsonInput<type
       httpOnly: true,
       secure: true,
       sameSite: "Lax",
+      path: "/",
+      domain: `.${c.env.DOMAIN}`
     });
     return c.json({ message: "Login successful" });
   } catch (error) {
