@@ -23,7 +23,7 @@ export const handleLoginUser = async (c: Context<AppType, string, JsonInput<type
       secure: true,
       sameSite: "Lax",
       path: "/",
-      domain: `.${c.env.DOMAIN}`
+      domain: c.env.DOMAIN as string
     });
     return c.json({ message: "Login successful" });
   } catch (error) {

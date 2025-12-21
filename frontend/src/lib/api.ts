@@ -21,6 +21,7 @@ export async function apiFetch(
   const authToken = localStorage.getItem("authToken");
   const res = await fetch(apiUrl, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
