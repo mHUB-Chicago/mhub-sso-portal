@@ -45,6 +45,15 @@ export const runSeed = async (c: Context) => {
     signTarget: SamlSignTarget.ASSERTION,
   });
 
+  const learnworldsServiceProvider = await createServiceProvider(c, {
+    name: "LearnWorlds",
+    entityId: "https://mhub.getlearnworlds.com/admin/api/saml/629643ac243d26e0ea4ed0ae/17663187076931/sp/metadata",
+    acsUrl: "https://mhub.getlearnworlds.com/admin/api/saml/629643ac243d26e0ea4ed0ae/17663187076931/sp/saml2-acs",
+    nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    nameIdSource: "email",
+    signTarget: SamlSignTarget.ASSERTION,
+  });
+
   const company = await createCompany(c, {
     name: "Example Company",
     peopleVineId: "example-company-pvid",
