@@ -29,6 +29,7 @@ export const runSeed = async (c: Context) => {
   const prisma: PrismaClient = c.get("db");
 
   // Clear existing data
+  await prisma.session.deleteMany();
   await prisma.samlAuthRequest.deleteMany();
   await prisma.userServiceProvider.deleteMany();
   await prisma.user.deleteMany();
