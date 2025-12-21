@@ -157,6 +157,7 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
   xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
   ID="${responseId}"
+  InResponseTo="${samlRequest.inResponseTo}"
   Version="2.0"
   IssueInstant="${now.toISOString()}"
   Destination="${escapeHtmlAttr(destination)}"
@@ -171,6 +172,7 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
       <saml:NameID Format="${nameIdFormat}">${nameIdValue}</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
         <saml:SubjectConfirmationData
+          InResponseTo="${samlRequest.inResponseTo}"
           NotOnOrAfter="${notOnOrAfter}"
           Recipient="${escapeHtmlAttr(destination)}"/>
       </saml:SubjectConfirmation>
