@@ -5,6 +5,7 @@ export const corsOptions = {
   allowHeaders: ["Content-Type", "Authorization"],
   allowMethods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
   allowCredentials: true,
+  credentials: true,
 };
 
 export const corsMiddleware = async (c: Context, next: () => Promise<any>) => {
