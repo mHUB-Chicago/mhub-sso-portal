@@ -25,7 +25,7 @@ export function LoginPage() {
       await login({
         email: data.email,
         password: data.password,
-      });
+      }).unwrap();
       if (txQueryParam) {
         // Redirect to SAML continue endpoint
         window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`);
