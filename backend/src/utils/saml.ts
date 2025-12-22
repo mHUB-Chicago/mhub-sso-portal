@@ -258,7 +258,25 @@ async function signXmlByReference(opts: {
     }
   );
 
-  return signer.toString();
+  const signedXml = signer.toString();
+  // Move the Signature element to be the first child of the signed element
+  const signedDoc = new xmldom.DOMParser().parseFromString(signedXml, "text/xml");
+  const signatureNode = xpath.select1(
+    "/*[local-name()='Response']/*[local-name()='Signature'] | /*[local-name()='Assertion']/*[local-name()='Signature']",
+    signedDoc
+  ) as Node | undefined;
+  const referenceId = opts.referenceUri.substring(1); // strip leading #
+  const referenceNode = xpath.select1(
+    `//*[@ID='${referenceId}']`,
+    signedDoc
+  ) as Node | undefined;
+  if (signatureNode && referenceNode) {
+    // Remove signature from current position
+    signatureNode.parentNode?.removeChild(signatureNode);
+    // Insert as 2nd child of referenceNode (after the Issuer)
+    referenceNode.insertBefore(signatureNode, referenceNode.childNodes[2]);
+  }
+  return new xmldom.XMLSerializer().serializeToString(signedDoc);
 }
 
 function buildHttpPostFormHtml(acsUrl: string, samlResponseXmlSigned: string, relayState?: string | null) {
