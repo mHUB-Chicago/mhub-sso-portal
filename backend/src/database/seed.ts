@@ -55,6 +55,25 @@ export const runSeed = async (c: Context) => {
     signTarget: SamlSignTarget.ASSERTION,
   });
 
+  // TODO: Add DigiFabster service provider once support team gets back to us
+  // const digifabsterServiceProvider = await createServiceProvider(c, {
+  //   name: "DigiFabster",
+  //   entityId: "",
+  //   acsUrl: "",
+  //   nameIdFormat: "",
+  //   nameIdSource: "email",
+  //   signTarget: SamlSignTarget.ASSERTION,
+  // });
+
+  const mhubShopServiceProvider = await createServiceProvider(c, {
+    name: "mHub Shop",
+    entityId: "https://shop.mhubchicago.com/",
+    acsUrl: "https://shop.mhubchicago.com/wp-login.php",
+    nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    nameIdSource: "email",
+    signTarget: SamlSignTarget.ASSERTION,
+  });
+
   const company = await createCompany(c, {
     name: "Example Company",
     peopleVineId: "example-company-pvid",

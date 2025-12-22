@@ -51,7 +51,7 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
       sessionId,
       relayState,
       idp: {
-        entityId: "https://sso.mhubchicago.com/",
+        entityId: c.env.SAML_ENTITY_ID as string,
         certPem: c.env.SAML_PUBLIC_CERT as string,
         privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
       }
@@ -94,7 +94,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
     relayState: samlAuthRequest.relayState || undefined,
     sessionId,
     idp: {
-      entityId: "https://sso.mhubchicago.com/",
+      entityId: c.env.SAML_ENTITY_ID as string,
       certPem: c.env.SAML_PUBLIC_CERT as string,
       privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
     }
