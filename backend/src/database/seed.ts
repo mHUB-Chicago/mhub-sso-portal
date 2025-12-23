@@ -6,6 +6,7 @@ import { databaseMiddleware } from "@/middleware/database";
 import { createCompany } from "@/services/companyService";
 import { createUser } from "@/services/userService";
 import { createServiceProvider } from "@/services/serviceProviderService";
+import { getCompaniesFromSubscriptions } from "@/services/peopleVineService";
 
 const app = new Hono<AppType>();
 
@@ -35,6 +36,7 @@ export const runSeed = async (c: Context) => {
   await prisma.user.deleteMany();
   await prisma.company.deleteMany();
   await prisma.serviceProvider.deleteMany();
+  await prisma.peopleVineToken.deleteMany();
 
   // Create service providers
   const peopleVineServiceProvider = await createServiceProvider(c, {

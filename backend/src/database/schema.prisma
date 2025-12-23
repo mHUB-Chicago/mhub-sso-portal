@@ -24,6 +24,11 @@ enum SamlSignTarget {
   BOTH
 }
 
+enum PeopleVineTokenType {
+  USER_COMPANY
+  USER
+}
+
 model Company {
   id           String   @id @default(uuid())
   peopleVineId String?  @unique
@@ -111,4 +116,14 @@ model Session {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
+}
+
+model PeopleVineToken {
+  id           String              @id @default(uuid())
+  tokenType    PeopleVineTokenType
+  accessToken  String
+  refreshToken String
+  createdAt    DateTime            @default(now())
+  expiresAt    DateTime
+  updatedAt    DateTime            @updatedAt
 }
