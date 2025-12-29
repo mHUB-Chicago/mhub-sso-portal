@@ -1,5 +1,7 @@
 import { Context } from 'hono';
-import { PeopleVineToken, PeopleVineTokenType, PrismaClient } from '@prisma/client';
+import { Company, PeopleVineToken, PeopleVineTokenType, PrismaClient, Role, User } from '@prisma/client';
+import { createCompany, deactivateCompany, updateCompany } from './companyService';
+import { createUser, deleteUser, updateUser } from './userService';
 
 const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 
@@ -10,6 +12,14 @@ interface RequestOptions {
   queryParams?: Record<string, string>;
   body?: any;
   headers?: Record<string, string>;
+}
+
+export interface PeopleVineCustomer {
+  id: number;
+  company_name: string;
+  full_name: string;
+  email: string;
+  // other fields are available but omitted for brevity and type safety
 }
 
 const setToken = async (c: Context, tokenType: PeopleVineTokenType, accessToken: string, refreshToken: string, expiresAt: Date): Promise<PeopleVineToken> => {
@@ -163,7 +173,18 @@ const apiRequest = async (c: Context, options: RequestOptions): Promise<any> => 
   return response.json();
 }
 
-export const getCompaniesFromSubscriptions = async (c: Context): Promise<any[]> => {
+const normalizeCustomers = (customers: PeopleVineCustomer[]): PeopleVineCustomer[] => {
+  return customers.map((customer) => ({
+    ...customer,
+    full_name: customer.full_name ? customer.full_name.trim() : customer.full_name,
+    company_name: customer.company_name ? customer.company_name.trim() : customer.company_name,
+    email: customer.email ? customer.email.toLowerCase() : customer.email,
+  })).filter((customer) => {
+    return customer.full_name && customer.full_name.length > 0 && customer.email && customer.email.length > 0;
+  });
+}
+
+const getCustomersFromSubscriptions = async (c: Context): Promise<PeopleVineCustomer[]> => {
   let subscriptions: any[] = [];
   let pageNumber = 1;
   const pageSize = 100;
@@ -186,5 +207,270 @@ export const getCompaniesFromSubscriptions = async (c: Context): Promise<any[]> 
   } while (true);
   let companies = subscriptions.map((sub: any) => sub?.customer || null)
   companies = Array.from(new Map(companies.map(company => [`${company.id}${company.company_name}`, company])).values());
-  return companies;
+  companies = companies.filter(company => company !== null && company.status === 'active');
+  return normalizeCustomers(companies);
 };
+
+const getCustomers = async (c: Context): Promise<PeopleVineCustomer[]> => {
+  let customers: PeopleVineCustomer[] = [];
+  let pageNumber = 1;
+  const pageSize = 100;
+  do {
+    const retrievedCustomers: PeopleVineCustomer[] = await apiRequest(c, {
+      tokenType: PeopleVineTokenType.USER_COMPANY,
+      endpoint: '/customers',
+      method: 'GET',
+      queryParams: {
+        status: 'active',
+        page_size: pageSize.toString(),
+        page_number: pageNumber.toString(),
+      },
+    });
+    customers = customers.concat(retrievedCustomers);
+    pageNumber++;
+    if (retrievedCustomers.length === 0 || retrievedCustomers.length < 100) {
+      break;
+    }
+  } while (true);
+  return normalizeCustomers(customers);
+};
+
+export const syncAll = async (c: Context): Promise<void> => {
+  // Get companies from active subscriptions
+  const prisma: PrismaClient = c.get('db');
+  
+  //
+  // Step 1: Sync companies based on PeopleVine customers
+  //
+
+  // Fetch customers from PeopleVine which have active subscriptions
+  const peopleVineCustomersFromSubscriptions: PeopleVineCustomer[] = await getCustomersFromSubscriptions(c);
+  
+  // Create a map of PeopleVine companies by their PeopleVine ID for easy lookup
+  let companyProfilesMap: Map<string, PeopleVineCustomer> = new Map();
+  for (const company of peopleVineCustomersFromSubscriptions) {
+    companyProfilesMap.set(company.id.toString(), company);
+  }
+
+  // Fetch all companies from our database
+  let dbCompanies = await prisma.company.findMany();
+
+  // Create a map of DB companies by their PeopleVine ID for easy lookup
+  let dbCompaniesMap: Map<string, Company> = new Map();
+  for (const dbCompany of dbCompanies) {
+    if (dbCompany.peopleVineId) {
+      dbCompaniesMap.set(dbCompany.peopleVineId, dbCompany);
+    }
+  }
+
+  // Process each PeopleVine company and create or update companies accordingly
+  await Promise.all(companyProfilesMap.values().map(async (customer) => {
+    const peopleVineId = customer.id.toString();
+    const existingCompany = dbCompaniesMap.get(peopleVineId);
+
+    // Update company name if changed
+    let companyName = customer.company_name.trim();
+    if (companyName.length === 0) {
+      companyName = customer.full_name.trim().concat("'s Company");
+    }
+    if (existingCompany) {
+      return updateCompany(c, {
+        id: existingCompany.id,
+        name: companyName,
+        active: true,
+      });
+    } else {
+      return createCompany(c, {
+        name: companyName,
+        peopleVineId: customer.id.toString(),
+        active: true,
+      });
+    }
+  }));
+
+  //
+  // Step 2: Sync users based on PeopleVine customers
+  //
+
+  // Fetch companies again to get updated list with newly created ones
+  dbCompanies = await prisma.company.findMany();
+  const companiesByNameMap: Map<string, Company> = new Map();
+  for (const company of dbCompanies) {
+    companiesByNameMap.set(company.name, company);
+  }
+
+  // Fetch all customers from PeopleVine
+  const allPeopleVineCustomers: PeopleVineCustomer[] = await getCustomers(c);
+
+  // Normalize and map customers by their PeopleVine ID
+  const allCustomersMap: Map<string, PeopleVineCustomer> = new Map();
+  for (const customer of allPeopleVineCustomers) {
+    allCustomersMap.set(customer.id.toString(), customer);
+  }
+
+  // Fetch all existing users from our database
+  let existingUsers = await prisma.user.findMany();
+
+  // Create a map of existing users by their PeopleVine ID for easy lookup
+  let existingUsersMap: Map<string, User> = new Map();
+  for (const user of existingUsers) {
+    if (user.peopleVineId) {
+      existingUsersMap.set(user.peopleVineId, user);
+    }
+  }
+
+  // Process each customer and create or update users accordingly
+  await Promise.all(allCustomersMap.values().map(async (customer) => {
+    const peopleVineId = customer.id.toString();
+    const existingUser = existingUsersMap.get(peopleVineId);
+    let companyName = customer.company_name.trim();
+    if (companyName.length === 0) {
+      companyName = customer.full_name.trim().concat("'s Company");
+    }
+
+    let associatedCompanyByName = companiesByNameMap.get(companyName);
+    if (!associatedCompanyByName) {
+      console.log(`No associated company found for user ${customer.full_name} (${customer.email}), skipping user creation.`);
+      return;
+    }
+
+    if (existingUser && associatedCompanyByName.id !== existingUser.companyId) {
+      console.log(`User ${customer.full_name} (${customer.email}) is associated with a different company, updating company association.`);
+      return updateUser(c, {
+        id: existingUser.id,
+        name: customer.full_name,
+        email: customer.email,
+        companyId: associatedCompanyByName.id,
+      });
+    }
+
+    if (existingUser && associatedCompanyByName.id === existingUser.companyId) {
+      console.log(`User ${customer.full_name} (${customer.email}) already exists with correct company association.`);
+      if (existingUser.name !== customer.full_name || existingUser.email !== customer.email.toLowerCase()) {
+        console.log(`Updating user ${customer.full_name} (${customer.email}) details.`);
+        return updateUser(c, {
+          id: existingUser.id,
+          name: customer.full_name,
+          email: customer.email,
+        });
+      }
+    }
+
+    if (!existingUser) {
+      console.log(`Creating user for ${customer.full_name} (${customer.email}).`);
+      return createUser(c, {
+        name: customer.full_name,
+        email: customer.email,
+        peopleVineId: peopleVineId,
+        role: Role.USER,
+        companyId: associatedCompanyByName.id,
+      });
+    }
+  }));
+
+  //
+  // Step 3: Deactivate any companies or users that no longer exist in PeopleVine
+  //
+
+  dbCompanies = await prisma.company.findMany();
+
+  const activePeopleVineIdsForCompanies = new Set<string>(companyProfilesMap.keys());
+  const activePeopleVineIdsForUsers = new Set<string>(allCustomersMap.keys());
+  
+  // Deactivate companies not in PeopleVine
+  await Promise.all(dbCompanies.map(async (dbCompany) => {
+    if (dbCompany.peopleVineId && !activePeopleVineIdsForCompanies.has(dbCompany.peopleVineId)) {
+      console.log(`Deactivating company ${dbCompany.name} as it no longer exists in PeopleVine.`);
+      return deactivateCompany(c, dbCompany.id);
+    }
+  }));
+
+  // Deactivate users not in PeopleVine
+  existingUsers = await prisma.user.findMany();
+  await Promise.all(existingUsers.map(async (user) => {
+    if (user.peopleVineId && !activePeopleVineIdsForUsers.has(user.peopleVineId)) {
+      console.log(`Deactivating user ${user.name} (${user.email}) as they no longer exist in PeopleVine.`);
+      return deleteUser(c, user.id);
+    }
+  }));
+
+  console.log('PeopleVine synchronization complete.');
+}
+
+export const syncOne = async (c: Context, customer: PeopleVineCustomer): Promise<void> => {
+  const prisma: PrismaClient = c.get('db');
+
+  // Normalize customer data
+  const normalizedCustomers = normalizeCustomers([customer]);
+  if (normalizedCustomers.length === 0) {
+    console.log(`Customer data for ID ${customer.id} is invalid after normalization, skipping.`);
+    return;
+  }
+  const normalizedCustomer = normalizedCustomers[0];
+
+  // Fetch customers from PeopleVine which have active subscriptions
+  const peopleVineCustomersFromSubscriptions: PeopleVineCustomer[] = await getCustomersFromSubscriptions(c);
+  
+  // Create a map of PeopleVine companies by their PeopleVine ID for easy lookup
+  let companyProfilesMap: Map<string, PeopleVineCustomer> = new Map();
+  for (const company of peopleVineCustomersFromSubscriptions) {
+    companyProfilesMap.set(company.id.toString(), company);
+  }
+
+  let companyName = normalizedCustomer.company_name.trim();
+  if (companyName.length === 0) {
+    companyName = normalizedCustomer.full_name.trim().concat("'s Company");
+  }
+  const isCompanyProfile = companyProfilesMap.has(normalizedCustomer.id.toString());
+  const existingCompany = await prisma.company.findFirst({
+    where: { peopleVineId: normalizedCustomer.id.toString() },
+  });
+
+  if (isCompanyProfile) {
+    if (existingCompany) {
+      await updateCompany(c, {
+        id: existingCompany.id,
+        name: companyName,
+        active: true,
+      });
+    } else {
+      await createCompany(c, {
+        name: companyName,
+        peopleVineId: normalizedCustomer.id.toString(),
+        active: true,
+      });
+    }
+  }
+
+  const associatedCompany = await prisma.company.findFirst({
+    where: { name: companyName },
+  });
+  if (!associatedCompany) {
+    console.log(`No associated company found for user ${normalizedCustomer.full_name} (${normalizedCustomer.email}), skipping user creation.`);
+    return;
+  }
+  const associatedUser = await prisma.user.findFirst({
+    where: { peopleVineId: normalizedCustomer.id.toString() },
+  });
+
+  if (associatedUser) {
+    if (associatedUser.name !== normalizedCustomer.full_name || associatedUser.email !== normalizedCustomer.email.toLowerCase() || associatedUser.companyId !== associatedCompany.id) {
+      console.log(`Updating user ${normalizedCustomer.full_name} (${normalizedCustomer.email}) details.`);
+      await updateUser(c, {
+        id: associatedUser.id,
+        name: normalizedCustomer.full_name,
+        email: normalizedCustomer.email,
+        companyId: associatedCompany.id
+      });
+    }
+  } else {
+    console.log(`Creating user for ${normalizedCustomer.full_name} (${normalizedCustomer.email}).`);
+    await createUser(c, {
+      name: normalizedCustomer.full_name,
+      email: normalizedCustomer.email,
+      peopleVineId: normalizedCustomer.id.toString(),
+      role: Role.USER,
+      companyId: associatedCompany.id
+    });
+  }
+}

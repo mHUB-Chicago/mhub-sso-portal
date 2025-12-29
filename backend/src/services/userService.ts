@@ -13,6 +13,16 @@ export interface CreateUserInput {
   peopleVineId: string;
 }
 
+export interface UpdateUserInput {
+  id: string;
+  name?: string;
+  email?: string;
+  password?: string;
+  role?: Role;
+  companyId?: string;
+  peopleVineId?: string;
+}
+
 export const getUserByEmail = (c: Context, email: string): Promise<User | null> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.user.findUnique({
@@ -59,4 +69,37 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
     )
   );
   return createdUser;
+}
+
+export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
+  const prisma: PrismaClient = c.get("db");
+  const { id, name, email, password, role, companyId, peopleVineId } = updateUserInput;
+  const hashedPassword = password ? await hashPassword(password) : undefined;
+
+  return prisma.user.update({
+    where: { id },
+    data: {
+      name: name ? name.trim() : undefined,
+      email: email ? email.toLowerCase().trim() : undefined,
+      password: hashedPassword,
+      role,
+      companyId,
+      peopleVineId,
+    },
+  });
+}
+
+export const deleteUser = async (c: Context, id: string): Promise<void> => {
+  const prisma: PrismaClient = c.get("db");
+  await prisma.user.delete({
+    where: { id },
+  });
+}
+
+export const deleteUsersByCompanyId = async (c: Context, companyId: string) => {
+  const prisma: PrismaClient = c.get("db");
+  const { count } = await prisma.user.deleteMany({
+    where: { companyId },
+  });
+  console.log(`Deleted ${count} users for company ID: ${companyId}`);
 }

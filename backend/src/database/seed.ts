@@ -6,7 +6,6 @@ import { databaseMiddleware } from "@/middleware/database";
 import { createCompany } from "@/services/companyService";
 import { createUser } from "@/services/userService";
 import { createServiceProvider } from "@/services/serviceProviderService";
-import { getCompaniesFromSubscriptions } from "@/services/peopleVineService";
 
 const app = new Hono<AppType>();
 
