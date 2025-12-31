@@ -241,6 +241,19 @@ const getCustomers = async (c: Context): Promise<PeopleVineCustomer[]> => {
   return normalizeCustomers(customers);
 };
 
+const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
+  const customer: PeopleVineCustomer = await apiRequest(c, {
+    tokenType: PeopleVineTokenType.USER_COMPANY,
+    endpoint: `/customers/${peopleVineId}`,
+    method: 'GET',
+  });
+  const normalizedCustomers = normalizeCustomers([customer]);
+  if (normalizedCustomers.length === 0) {
+    return null;
+  }
+  return normalizedCustomers[0];
+};
+
 export const syncAll = async (c: Context): Promise<void> => {
   // Get companies from active subscriptions
   const prisma: PrismaClient = c.get('db');
@@ -401,16 +414,19 @@ export const syncAll = async (c: Context): Promise<void> => {
   console.log('PeopleVine synchronization complete.');
 }
 
-export const syncOne = async (c: Context, customerData: PeopleVineCustomer): Promise<void> => {
+export const syncOne = async (c: Context, peopleVineId: number): Promise<void> => {
   const prisma: PrismaClient = c.get('db');
 
-  // Normalize customer data
-  const normalizedCustomers = normalizeCustomers([customerData]);
-  if (normalizedCustomers.length === 0) {
-    console.log(`Customer data for ID ${customerData.id} is invalid after normalization, skipping.`);
+  // Fetch the specific customer from PeopleVine
+  console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
+  const customer = await getCustomer(c, peopleVineId.toString());
+
+  if (!customer) {
+    console.log(`Customer with PeopleVine ID ${peopleVineId} not found.`);
     return;
   }
-  const customer = normalizedCustomers[0];
+
+  console.log('Retrieved customer:', customer);
 
   // Fetch customers from PeopleVine which have active subscriptions
   const peopleVineCustomersFromSubscriptions: PeopleVineCustomer[] = await getCustomersFromSubscriptions(c);
@@ -427,6 +443,7 @@ export const syncOne = async (c: Context, customerData: PeopleVineCustomer): Pro
   });
 
   if (isCompanyProfile) {
+    console.log(`Syncing ${existingCompany ? "existing" : "new"} company for ${customer.company_name}.`);
     if (existingCompany) {
       await updateCompany(c, {
         id: existingCompany.id,
@@ -473,4 +490,5 @@ export const syncOne = async (c: Context, customerData: PeopleVineCustomer): Pro
       companyId: associatedCompany.id
     });
   }
+  console.log(`Sync for customer with PeopleVine ID ${peopleVineId} complete.`);
 }

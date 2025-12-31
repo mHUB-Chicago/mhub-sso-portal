@@ -9,6 +9,7 @@ import { handleError } from "@/utils/handleError";
 import userRoutes from "@/routes/user";
 import samlRoutes from "@/routes/saml";
 import seedRoute from "@/database/seed";
+import webhookRoutes from "@/routes/webhook";
 import { swaggerUI } from "@hono/swagger-ui";
 import queueConsumer from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
@@ -54,6 +55,9 @@ app.get("/openapi", swaggerUI({ url: "/openapi.json" }));
 
 app.use("/api/*", corsMiddleware, databaseMiddleware, authMiddleware);
 app.route("/api/user", userRoutes);
+
+app.use("/webhook/*", corsMiddleware, databaseMiddleware);
+app.route("/webhook", webhookRoutes);
 
 app.use("/saml/*", corsMiddleware, databaseMiddleware);
 app.route("/saml", samlRoutes);

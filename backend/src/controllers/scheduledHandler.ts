@@ -1,7 +1,9 @@
-import { createMockContext } from "@/utils/createMockContext";
+import { JobType } from "./queueConsumer";
 
 export default async (event: ScheduledEvent, env: any, ctx: ExecutionContext) => {
-  const context = createMockContext(env, ctx);
-
-  console.log(`Cron job triggered: ${event.cron}`);
+  env.QUEUE.send({
+    jobId: `${crypto.randomUUID()}-${Date.now()}`,
+    jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+    payload: {},
+  });
 };

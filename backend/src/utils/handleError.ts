@@ -12,6 +12,7 @@ const formatZodIssues = (issues: any) => {
 };
 
 export const handleError = (error: any, c: Context) => {
+  console.log("Error occurred:", error);
   let message: string = "An unknown error occurred";
   let status: ContentfulStatusCode = 500;
   if (error instanceof HTTPException) {
