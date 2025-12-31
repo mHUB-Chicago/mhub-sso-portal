@@ -6,6 +6,8 @@ import { databaseMiddleware } from "@/middleware/database";
 import { createCompany } from "@/services/companyService";
 import { createUser } from "@/services/userService";
 import { createServiceProvider } from "@/services/serviceProviderService";
+import { syncAll } from "@/services/peopleVineService";
+import { JobType } from "@/controllers/queueConsumer";
 
 const app = new Hono<AppType>();
 
@@ -75,19 +77,11 @@ export const runSeed = async (c: Context) => {
     signTarget: SamlSignTarget.ASSERTION,
   });
 
-  const company = await createCompany(c, {
-    name: "Example Company",
-    peopleVineId: "example-company-pvid",
-    active: true,
-  });
-
-  const regularUser = await createUser(c, {
-    name: "Test User",
-    email: "axsmodern@gmail.com",
-    password: "Example123!",
-    role: Role.USER,
-    companyId: company.id,
-    peopleVineId: "test-user-pvid",
+  // Queue full PeopleVine sync
+  c.env.QUEUE.send({
+    jobId: `${crypto.randomUUID()}-${Date.now()}`,
+    jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+    payload: {},
   });
 };
 export default app;

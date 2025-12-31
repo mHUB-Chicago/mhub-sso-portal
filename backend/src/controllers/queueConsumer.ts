@@ -24,7 +24,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
       if (jobType === JobType.SYNC_PEOPLEVINE_EVERYTHING) {
         await syncAllPeopleVine(context);
       } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
-        await syncOnePeopleVine(context, payload.customerId);
+        await syncOnePeopleVine(context, payload);
       } else {
         console.log(`Unknown job type: ${jobType}`);
       }
