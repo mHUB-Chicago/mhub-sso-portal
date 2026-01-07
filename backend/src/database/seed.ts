@@ -78,14 +78,14 @@ export const runSeed = async (c: Context) => {
 
   // Create company
   const testCompany = await createCompany(c, {
-    name: "Test",
+    name: "AXSmodern",
     peopleVineId: "", // No PeopleVine ID for seed company
     active: true,
   });
 
   const testUser = await createUser(c, {
-    name: "Test User",
-    email: "test@example.com",
+    name: "Xavier John",
+    email: "axsmodern@gmail.com",
     password: "Example123!",
     peopleVineId: "", // No PeopleVine ID for seed user
     role: Role.USER,

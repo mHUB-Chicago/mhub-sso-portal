@@ -11,12 +11,12 @@ import samlRoutes from "@/routes/saml";
 import seedRoute from "@/database/seed";
 import webhookRoutes from "@/routes/webhook";
 import { swaggerUI } from "@hono/swagger-ui";
-import queueConsumer from "./controllers/queueConsumer";
+import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 
 type Bindings = {
   DB: D1Database;
-  QUEUE: Queue<{ jobId: string; payload: unknown }>;
+  QUEUE: Queue<{ jobId: string; jobType: JobType; payload: unknown }>;
   [key: string]: string | D1Database | Queue<any>;
 };
 type Variables = {
