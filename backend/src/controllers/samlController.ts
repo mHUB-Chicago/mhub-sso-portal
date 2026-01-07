@@ -3,17 +3,10 @@ import { AppType, QueryInput } from "..";
 import { SamlContinueRequestSchema, SamlRequestSchema } from "@common/schemas/saml";
 import { createSamlAuthRequest, getSamlAuthRequestById } from "@/services/samlAuthRequestService";
 import { SamlBinding } from "@/database/models";
-import { decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
+import { buildIdpMetadataXml, decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
 import { getServiceProviderByEntityId, getServiceProviderById } from "@/services/serviceProviderService";
 import { getSessionId, verifySession } from "@/middleware/auth";
 import { getUserServiceProvider } from "@/services/userServiceProviderService";
-
-interface IssueSamlResponseInput {
-  serviceProviderId: string;
-  inResponseTo: string;
-  userId: string;
-  relayState?: string;
-}
 
 export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<typeof SamlRequestSchema>>) => {
   const { SAMLRequest: samlRequest, RelayState: relayState } = c.req.valid("query");
@@ -101,3 +94,15 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
   });
   return c.html(html);
 }
+
+export const handleSamlMetadata = async (c: Context<AppType>) => {
+  const samlMetadataXml = buildIdpMetadataXml({
+    entityId: c.env.SAML_ENTITY_ID as string,
+    ssoRedirectUrl: `${c.env.BACKEND_URL}/saml/request`,
+    ssoPostUrl: `${c.env.BACKEND_URL}/saml/request`,
+    signingCertPem: c.env.SAML_PUBLIC_CERT as string,
+  });
+  return c.html(samlMetadataXml, 200, {
+    "Content-Type": "application/samlmetadata+xml",
+  });
+};

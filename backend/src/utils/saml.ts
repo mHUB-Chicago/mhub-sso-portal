@@ -100,6 +100,13 @@ export type IssueSamlResponseInput = {
   };
 };
 
+export type IdpMetadataInput = {
+  entityId: string;
+  ssoRedirectUrl: string;
+  ssoPostUrl: string;
+  signingCertPem: string;
+};
+
 function stripPem(pem: string): string {
   return pem.replace(/-----(BEGIN|END)[^-----]+-----/g, "").replace(/\s+/g, "");
 }
@@ -124,7 +131,8 @@ function escapeHtmlAttr(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/'/g, "&apos;");
 }
 
 function addMinutes(date: Date, minutes: number): Date {
@@ -346,4 +354,34 @@ export async function issueSamlResponse(input: IssueSamlResponseInput) {
     signedXml,
     html,
   };
+}
+
+export function buildIdpMetadataXml(input: IdpMetadataInput): string {
+  const wantSigned = false;
+  const cert = stripPem(input.signingCertPem);
+  const ssoRedirect = escapeHtmlAttr(input.ssoRedirectUrl);
+  const ssoPost = escapeHtmlAttr(input.ssoPostUrl);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<EntityDescriptor
+  xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+  entityID="${escapeHtmlAttr(input.entityId)}">
+  <IDPSSODescriptor
+    protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol"
+    WantAuthnRequestsSigned="${wantSigned ? "true" : "false"}">
+    <KeyDescriptor use="signing">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data>
+          <ds:X509Certificate>${cert}</ds:X509Certificate>
+        </ds:X509Data>
+      </ds:KeyInfo>
+    </KeyDescriptor>
+    <SingleSignOnService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
+      Location="${ssoRedirect}" />
+    <SingleSignOnService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+      Location="${ssoPost}" />
+  </IDPSSODescriptor>
+</EntityDescriptor>`;
 }
