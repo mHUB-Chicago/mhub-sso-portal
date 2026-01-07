@@ -103,7 +103,6 @@ export type IssueSamlResponseInput = {
 export type IdpMetadataInput = {
   entityId: string;
   ssoRedirectUrl: string;
-  ssoPostUrl: string;
   signingCertPem: string;
 };
 
@@ -360,7 +359,6 @@ export function buildIdpMetadataXml(input: IdpMetadataInput): string {
   const wantSigned = false;
   const cert = stripPem(input.signingCertPem);
   const ssoRedirect = escapeHtmlAttr(input.ssoRedirectUrl);
-  const ssoPost = escapeHtmlAttr(input.ssoPostUrl);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <EntityDescriptor
@@ -379,9 +377,6 @@ export function buildIdpMetadataXml(input: IdpMetadataInput): string {
     <SingleSignOnService
       Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
       Location="${ssoRedirect}" />
-    <SingleSignOnService
-      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
-      Location="${ssoPost}" />
   </IDPSSODescriptor>
 </EntityDescriptor>`;
 }
