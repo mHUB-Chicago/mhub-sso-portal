@@ -1,5 +1,6 @@
 CORS_ORIGIN="http://localhost:5173"
 DOMAIN="localhost:5173"
+BACKEND_URL="http://localhost:8000"
 FRONTEND_URL="http://localhost:5173"
 PEOPLEVINE_ADMIN_PASSWORD="your_peoplevine_admin_password"
 PEOPLEVINE_ADMIN_USERNAME="your_peoplevine_admin_username"

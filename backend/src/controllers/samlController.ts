@@ -98,7 +98,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
 export const handleSamlMetadata = async (c: Context<AppType>) => {
   const samlMetadataXml = buildIdpMetadataXml({
     entityId: c.env.SAML_ENTITY_ID as string,
-    ssoRedirectUrl: `${c.env.FRONTEND_URL}/saml`,
+    ssoRedirectUrl: `${c.env.BACKEND_URL}/saml`,
     signingCertPem: c.env.SAML_PUBLIC_CERT as string,
   });
   return c.html(samlMetadataXml, 200, {
