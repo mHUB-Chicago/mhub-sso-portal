@@ -92,6 +92,15 @@ export const runSeed = async (c: Context) => {
     companyId: testCompany.id
   });
 
+  const testUser2 = await createUser(c, {
+    name: "Michael Elnajami",
+    email: "mike@breezydev.com",
+    password: "Example123!",
+    peopleVineId: "", // No PeopleVine ID for seed user
+    role: Role.USER,
+    companyId: testCompany.id
+  });
+
   // Queue full PeopleVine sync, disabled for now
   // c.env.QUEUE.send({
   //   jobId: `${crypto.randomUUID()}-${Date.now()}`,
