@@ -87,7 +87,7 @@ export const runSeed = async (c: Context) => {
     name: "Xavier John",
     email: "axsmodern@gmail.com",
     password: "Example123!",
-    peopleVineId: "", // No PeopleVine ID for seed user
+    peopleVineId: "000001", // No PeopleVine ID for seed user
     role: Role.USER,
     companyId: testCompany.id
   });
@@ -96,7 +96,7 @@ export const runSeed = async (c: Context) => {
     name: "Michael Elnajami",
     email: "mike@breezydev.com",
     password: "Example123!",
-    peopleVineId: "", // No PeopleVine ID for seed user
+    peopleVineId: "000002", // No PeopleVine ID for seed user
     role: Role.USER,
     companyId: testCompany.id
   });
