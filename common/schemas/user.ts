@@ -7,8 +7,8 @@ export const UserSchema = z.object({
   name: z.string(),
   emailVerified: z.boolean(),
   mustResetPassword: z.boolean(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
 });
 
 export const GetMyUserResponseSchema = SuccessResponseSchema(z.object({

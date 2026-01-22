@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { useAppSelector, useAppDispatch } from '@/store'
 import { logout } from '@/store/slices/authSlice'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useNavigate } from 'react-router-dom'
-import { 
+import {
   Search,
   Bell,
   User,
@@ -18,12 +19,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 export function AdminHeader() {
   const user = useAppSelector(state => state.auth.user)
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false)
 
   const handleLogout = () => {
     dispatch(logout())
@@ -67,12 +79,32 @@ export function AdminHeader() {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
+            <DropdownMenuItem onClick={() => setShowLogoutDialog(true)}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Logout</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to log out? You will need to sign in again to access the admin panel.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleLogout}
+                className="bg-[#D30046] hover:bg-[#B8003C]"
+              >
+                Logout
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </header>
   )

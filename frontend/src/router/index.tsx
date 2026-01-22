@@ -7,6 +7,7 @@ import { DashboardPage } from '@/pages/dashboard'
 import { UnauthorizedPage } from '@/pages/unauthorized'
 import { NotFoundPage } from '@/pages/not-found'
 import { ForgotPasswordPage } from '@/pages/forgot-password'
+import { ChangePasswordPage } from '@/pages/change-password'
 import { AdminLoginPage } from '@/pages/admin/login'
 import { AdminDashboardPage } from '@/pages/admin/dashboard'
 import { AdminUsersPage } from '@/pages/admin/users'
@@ -45,6 +46,14 @@ export const router = createBrowserRouter([
   {
     path: '/forgot-password',
     element: <ForgotPasswordPage />
+  },
+  {
+    path: '/change-password',
+    element: (
+      <ProtectedRoute>
+        <ChangePasswordPage />
+      </ProtectedRoute>
+    )
   },
   {
     path: '/admin/login',
@@ -87,10 +96,6 @@ export const router = createBrowserRouter([
         element: <NotFoundPage />
       }
     ]
-  },
-  {
-    path: '*',
-    element: <NotFoundPage />
   },
   {
     path: '*',

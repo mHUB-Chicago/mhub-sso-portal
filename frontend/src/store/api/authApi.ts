@@ -1,43 +1,65 @@
 import { apiFetch } from '@/lib/api'
 import { createApi } from '@reduxjs/toolkit/query/react'
+import {
+  StartLoginResponseSchema,
+  VerifyLoginResponseSchema,
+  ChangePasswordResponseSchema,
+  ForgotPasswordResponseSchema,
+} from '../../../../common/schemas/login'
+import { GetMyUserResponseSchema } from '../../../../common/schemas/user'
 import z from 'zod'
 
-interface LoginRequest {
+// Request types
+interface StartLoginRequest {
   email: string
+}
+
+interface VerifyLoginRequest {
+  request_id: string
   password: string
 }
 
-interface LoginResponse {
-  user: {
-    id: string
-    email: string
-    name: string
-    role: 'admin' | 'user'
-  }
-  token: string
+interface ChangePasswordRequest {
+  password: string
 }
 
-// Custom base query using your apiFetch function (for when you have real backend)
-const customBaseQuery = async (args: any) => {
-  console.log('customBaseQuery called with args:', args);
+interface ForgotPasswordRequest {
+  email: string
+}
+
+// Response types inferred from schemas
+type StartLoginResponse = z.infer<typeof StartLoginResponseSchema>
+type VerifyLoginResponse = z.infer<typeof VerifyLoginResponseSchema>
+type ChangePasswordResponse = z.infer<typeof ChangePasswordResponseSchema>
+type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponseSchema>
+type GetMyUserResponse = z.infer<typeof GetMyUserResponseSchema>
+
+// Custom base query using apiFetch
+const customBaseQuery = async (args: {
+  path: string
+  method?: string
+  body?: unknown
+  schema: z.ZodSchema
+}) => {
   try {
-    const { path, method = 'GET', body } = args
+    const { path, method = 'GET', body, schema } = args
     const result = await apiFetch(
       path,
       {
         method,
         body: body ? JSON.stringify(body) : undefined,
       },
-      z.any()
+      schema
     )
-    
+
     if (result.error) {
       return { error: result.error }
     }
-    
+
     return { data: result.data }
-  } catch (error: any) {
-    return { error: { message: error.message } }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return { error: { message } }
   }
 }
 
@@ -45,14 +67,62 @@ export const authApi = createApi({
   reducerPath: 'authApi',
   baseQuery: customBaseQuery,
   endpoints: (builder) => ({
-    login: builder.mutation<LoginResponse, LoginRequest>({
-      query: (credentials) => ({
-        path: 'user/login',
+    // Step 1: Start login with email
+    startLogin: builder.mutation<StartLoginResponse, StartLoginRequest>({
+      query: (body) => ({
+        path: 'login/start',
         method: 'POST',
-        body: credentials,
+        body,
+        schema: StartLoginResponseSchema,
+      }),
+    }),
+
+    // Step 2: Verify with password or OTP
+    verifyLogin: builder.mutation<VerifyLoginResponse, VerifyLoginRequest>({
+      query: (body) => ({
+        path: 'login/verify',
+        method: 'POST',
+        body,
+        schema: VerifyLoginResponseSchema,
+      }),
+    }),
+
+    // Change password (requires auth)
+    changePassword: builder.mutation<ChangePasswordResponse, ChangePasswordRequest>({
+      query: (body) => ({
+        path: 'login/change-password',
+        method: 'POST',
+        body,
+        schema: ChangePasswordResponseSchema,
+      }),
+    }),
+
+    // Forgot password - sends OTP and sets mustResetPassword
+    forgotPassword: builder.mutation<ForgotPasswordResponse, ForgotPasswordRequest>({
+      query: (body) => ({
+        path: 'login/forgot-password',
+        method: 'POST',
+        body,
+        schema: ForgotPasswordResponseSchema,
+      }),
+    }),
+
+    // Get current user (check if logged in)
+    getMe: builder.query<GetMyUserResponse, void>({
+      query: () => ({
+        path: 'user/me',
+        method: 'GET',
+        schema: GetMyUserResponseSchema,
       }),
     }),
   }),
 })
 
-export const { useLoginMutation } = authApi
+export const {
+  useStartLoginMutation,
+  useVerifyLoginMutation,
+  useChangePasswordMutation,
+  useForgotPasswordMutation,
+  useGetMeQuery,
+  useLazyGetMeQuery,
+} = authApi
