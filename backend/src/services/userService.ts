@@ -11,6 +11,8 @@ export interface CreateUserInput {
   role: Role;
   companyId: string;
   peopleVineId: string;
+  mustResetPassword?: boolean;
+  emailVerified?: boolean;
 }
 
 export interface UpdateUserInput {
@@ -41,7 +43,7 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, password, role, companyId, peopleVineId } = createUserInput;
+  const { name, email, password, role, companyId, peopleVineId, mustResetPassword, emailVerified } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const existingUser = await prisma.user.findUnique({
     where: { email: normalizedEmail },
@@ -58,8 +60,8 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       role,
       passwordHashed: hashedPassword,
       email: normalizedEmail,
-      mustResetPassword: true,
-      emailVerified: false,
+      mustResetPassword: mustResetPassword ?? true,
+      emailVerified: emailVerified ?? false,
     },
   });
   if (!createdUser) {

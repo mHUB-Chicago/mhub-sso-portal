@@ -156,7 +156,7 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const destination = serviceProvider.acsUrl;
 
   const nameIdValue = chooseNameId(user, serviceProvider.nameIdSource);
-  const nameIdFormat = serviceProvider.nameIdFormat;
+  const nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress';//serviceProvider.nameIdFormat;
   const email = user.email;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
