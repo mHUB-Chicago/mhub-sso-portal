@@ -14,17 +14,28 @@ CREATE TABLE "User" (
     "peopleVineId" TEXT,
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "password" TEXT,
+    "passwordHashed" TEXT,
     "role" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
-    "locked" BOOLEAN NOT NULL DEFAULT false,
     "mustResetPassword" BOOLEAN NOT NULL DEFAULT false,
-    "failedLoginAttempts" JSONB,
     "lastLogin" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "User_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "LoginRequest" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userId" TEXT NOT NULL,
+    "attemptsCount" INTEGER NOT NULL DEFAULT 0,
+    "otpHashed" TEXT,
+    "otpVerifiedAt" DATETIME,
+    "passwordVerifiedAt" DATETIME,
+    "expiresAt" DATETIME NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "LoginRequest_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -102,6 +113,9 @@ CREATE UNIQUE INDEX "User_peopleVineId_key" ON "User"("peopleVineId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE INDEX "LoginRequest_userId_expiresAt_idx" ON "LoginRequest"("userId", "expiresAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ServiceProvider_entityId_key" ON "ServiceProvider"("entityId");

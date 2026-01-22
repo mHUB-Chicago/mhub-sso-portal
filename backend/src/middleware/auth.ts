@@ -6,6 +6,22 @@ import { getCookie } from "hono/cookie";
 const COOKIE_NAME = "sid";
 
 export const authMiddleware = async (c: Context, next: () => Promise<any>) => {
+  if (c.get("skipAuth")) {
+    return next();
+  }
+  const sessionId = getSessionId(c);
+  if (sessionId) {
+    const user = await getActiveSessionById(c, sessionId);
+    if (user) {
+      c.set("user", user);
+    } else {
+      // Invalid session, reject 
+      return c.json({ success: false, message: "Unauthorized" }, 401);
+    }
+  } else {
+    // No session, reject
+    return c.json({ success: false, message: "Unauthorized" }, 401);
+  }
   return next();
 };
 

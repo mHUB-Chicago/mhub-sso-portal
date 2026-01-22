@@ -44,20 +44,33 @@ model User {
   peopleVineId         String?               @unique
   name                 String
   email                String                @unique
-  password             String?
+  passwordHashed       String?
   role                 Role
   companyId            String
   company              Company               @relation(fields: [companyId], references: [id])
   emailVerified        Boolean               @default(false)
-  locked               Boolean               @default(false)
   mustResetPassword    Boolean               @default(false)
-  failedLoginAttempts  Json?
   lastLogin            DateTime?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]
   samlAuthRequests     SamlAuthRequest[]
   sessions             Session[]
+  loginRequests        LoginRequest[]
+}
+
+model LoginRequest {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attemptsCount Int       @default(0)
+  otpHashed     String?
+  otpVerifiedAt DateTime?
+  passwordVerifiedAt DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 model ServiceProvider {

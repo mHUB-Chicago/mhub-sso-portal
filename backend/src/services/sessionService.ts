@@ -1,5 +1,6 @@
 import { PrismaClient, Session, User } from "@/database/models";
 import { Context } from "hono";
+import { setCookie } from "hono/cookie";
 
 // TODO: make this longer, just short for testing naturally expired sessions
 const SESSION_EXPIRE_TIME_MS = 10 * 60 * 1000; // 10 minutes
@@ -35,7 +36,15 @@ export const createSession = async (c: Context, userId: string): Promise<string>
       expiresAt,
     },
   });
-  return createdSession.sessionId;
+  const createdSessionId = createdSession.sessionId;
+  setCookie(c, "sid", createdSessionId, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    path: "/",
+    domain: c.env.DOMAIN as string
+  });
+  return createdSessionId;
 }
 
 export const revokeSession = async (c: Context, sessionId: string): Promise<void> => {

@@ -21,12 +21,21 @@ export interface UpdateUserInput {
   role?: Role;
   companyId?: string;
   peopleVineId?: string;
+  emailVerified?: boolean;
+  mustResetPassword?: boolean;
 }
 
 export const getUserByEmail = (c: Context, email: string): Promise<User | null> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.user.findUnique({
     where: { email },
+  });
+}
+
+export const getUserById = (c: Context, id: string): Promise<User | null> => {
+  const prisma: PrismaClient = c.get("db");
+  return prisma.user.findUnique({
+    where: { id },
   });
 }
 
@@ -47,11 +56,10 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       peopleVineId,
       companyId,
       role,
-      password: hashedPassword,
+      passwordHashed: hashedPassword,
       email: normalizedEmail,
       mustResetPassword: true,
       emailVerified: false,
-      locked: false,
     },
   });
   if (!createdUser) {
@@ -73,7 +81,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, password, role, companyId, peopleVineId } = updateUserInput;
+  const { id, name, email, password, role, companyId, peopleVineId, emailVerified, mustResetPassword } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   return prisma.user.update({
@@ -81,10 +89,12 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
     data: {
       name: name ? name.trim() : undefined,
       email: email ? email.toLowerCase().trim() : undefined,
-      password: hashedPassword,
+      passwordHashed: hashedPassword,
       role,
       companyId,
       peopleVineId,
+      emailVerified,
+      mustResetPassword,
     },
   });
 }

@@ -1,10 +1,10 @@
-import { z, ZodAny } from "zod";
+import { z, ZodType } from "zod";
 
-export const SuccessResponseSchema = <T extends ZodAny>(dataSchema?: T) =>
+export const SuccessResponseSchema = <T extends ZodType>(dataSchema?: T) =>
   z.object({
     success: z.boolean(),
     message: z.string().optional(),
-    data: dataSchema ? dataSchema : z.null(),
+    data: dataSchema ? dataSchema : z.undefined().or(z.null()),
   });
 
 export const FailedResponseSchema = z.object({

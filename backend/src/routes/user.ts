@@ -1,22 +1,28 @@
 import { Hono } from "hono";
 import { AppType } from "@/index";
-import { validate } from "@/middleware/validate";
 import { describeRoute } from "@/utils/describeRoute";
-import z from "zod";
-import { LoginUserRequestSchema } from "@common/schemas/user";
-import { handleLoginUser } from "@/controllers/userController";
+import { GetMyUserResponseSchema } from "@common/schemas/user";
 
 const app = new Hono<AppType>();
 
-app.post(
-  "/login",
+app.get(
+  "/me",
   describeRoute({
-    summary: "Login a user",
-    successMessage: "User logged in successfully",
-    responseSchema: z.any(), // TODO: Replace with actual schema,
+    summary: "Get my user information",
+    successMessage: "User information retrieved successfully",
+    responseSchema: GetMyUserResponseSchema,
   }),
-  validate(LoginUserRequestSchema),
-  handleLoginUser
+  async (c) => {
+    const user = c.get("user");
+    const response = GetMyUserResponseSchema.parse({
+      success: true,
+      message: "Success",
+      data: {
+        user,
+      },
+    });
+    return c.json(response);
+  }
 );
 
 export default app;

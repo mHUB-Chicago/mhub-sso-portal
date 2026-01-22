@@ -3,6 +3,12 @@ import { Context } from "hono";
 const SENDGRID_API_URL = "https://api.sendgrid.com/v3";
 const EMAIL_FROM_NAME = "mHUB";
 
+export interface SendOneTimePasswordInput {
+  to: string;
+  to_name: string;
+  password: string;
+}
+
 interface SendEmailInput {
   to: string;
   to_name?: string;
@@ -30,6 +36,7 @@ const sendEmail = async (c: Context, sendEmailInput: SendEmailInput): Promise<vo
   const msg = {
     personalizations: [
       {
+        subject: sendEmailInput.subject,
         to: [{
           email: sendEmailInput.to,
           name: sendEmailInput.to_name ?? undefined
@@ -38,7 +45,6 @@ const sendEmail = async (c: Context, sendEmailInput: SendEmailInput): Promise<vo
           email: emailFrom,
           name: EMAIL_FROM_NAME
         },
-        subject: sendEmailInput.subject,
         dynamic_template_data: {
           html: sendEmailInput.html,
         }
@@ -124,3 +130,16 @@ const sendBulkEmails = async (c: Context, sendEmailInputs: SendEmailInput[]): Pr
   }
   console.log(`Bulk email sent to ${sendEmailInputs.length} recipients`);
 };
+
+export const sendOneTimePasswordEmail = async (c: Context, sendOneTimePasswordInput: SendOneTimePasswordInput): Promise<void> => {
+  const { to, to_name, password } = sendOneTimePasswordInput;
+  const subject = 'mHUB - Your one-time password';
+  const html = `<p>Hi, ${to_name}</p>
+<p>Your one-time password is ${password}</p>`;
+  return sendEmail(c, {
+    to,
+    to_name,
+    subject,
+    html,
+  });
+}

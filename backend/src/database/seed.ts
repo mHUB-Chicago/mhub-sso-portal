@@ -6,7 +6,6 @@ import { databaseMiddleware } from "@/middleware/database";
 import { createCompany } from "@/services/companyService";
 import { createUser } from "@/services/userService";
 import { createServiceProvider } from "@/services/serviceProviderService";
-import { JobType } from "@/controllers/queueConsumer";
 
 const app = new Hono<AppType>();
 
@@ -79,7 +78,7 @@ export const runSeed = async (c: Context) => {
   // Create company
   const testCompany = await createCompany(c, {
     name: "AXSmodern",
-    peopleVineId: "", // No PeopleVine ID for seed company
+    peopleVineId: "100001", // No PeopleVine ID for seed company
     active: true,
   });
 
@@ -87,7 +86,7 @@ export const runSeed = async (c: Context) => {
     name: "Xavier John",
     email: "axsmodern@gmail.com",
     password: "Example123!",
-    peopleVineId: "000001", // No PeopleVine ID for seed user
+    peopleVineId: "100002", // No PeopleVine ID for seed user
     role: Role.USER,
     companyId: testCompany.id
   });
@@ -96,7 +95,7 @@ export const runSeed = async (c: Context) => {
     name: "Michael Elnajami",
     email: "mike@breezydev.com",
     password: "Example123!",
-    peopleVineId: "000002", // No PeopleVine ID for seed user
+    peopleVineId: "100003", // No PeopleVine ID for seed user
     role: Role.USER,
     companyId: testCompany.id
   });

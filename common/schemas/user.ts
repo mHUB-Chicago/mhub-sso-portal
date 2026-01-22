@@ -1,6 +1,16 @@
 import z from "zod";
+import { SuccessResponseSchema } from "./response";
 
-export const LoginUserRequestSchema = z.object({
-  email: z.email().min(1, "Email is required"),
-  password: z.string().min(1, "Password is required"),
+export const UserSchema = z.object({
+  id: z.string(),
+  email: z.email(),
+  name: z.string(),
+  emailVerified: z.boolean(),
+  mustResetPassword: z.boolean(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
 });
+
+export const GetMyUserResponseSchema = SuccessResponseSchema(z.object({
+  user: UserSchema,
+}));

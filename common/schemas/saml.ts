@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 export const SamlRequestSchema = z.object({
   SAMLRequest: z.string(),
   RelayState: z.string().optional(),
