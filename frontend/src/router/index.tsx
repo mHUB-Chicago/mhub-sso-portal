@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { RootLayout } from '@/layouts/RootLayout'
+import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { AdminLayout } from '@/layouts/AdminLayout'
 import { HomePage } from '@/pages/home'
 import { LoginPage } from '@/pages/login'
@@ -8,7 +9,6 @@ import { UnauthorizedPage } from '@/pages/unauthorized'
 import { NotFoundPage } from '@/pages/not-found'
 import { ForgotPasswordPage } from '@/pages/forgot-password'
 import { ChangePasswordPage } from '@/pages/change-password'
-import { AdminLoginPage } from '@/pages/admin/login'
 import { AdminDashboardPage } from '@/pages/admin/dashboard'
 import { AdminUsersPage } from '@/pages/admin/users'
 import { AdminEditUserPage } from '@/pages/admin/users/edit'
@@ -26,16 +26,22 @@ export const router = createBrowserRouter([
         element: <HomePage />
       },
       {
-        path: 'dashboard',
-        element: (
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        )
-      },
-      {
         path: 'unauthorized',
         element: <UnauthorizedPage />
+      }
+    ]
+  },
+  {
+    path: '/dashboard',
+    element: (
+      <ProtectedRoute>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      {
+        index: true,
+        element: <DashboardPage />
       }
     ]
   },
@@ -54,10 +60,6 @@ export const router = createBrowserRouter([
         <ChangePasswordPage />
       </ProtectedRoute>
     )
-  },
-  {
-    path: '/admin/login',
-    element: <AdminLoginPage />
   },
   {
     path: '/admin',

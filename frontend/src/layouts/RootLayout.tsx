@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, Link, useNavigate } from 'react-router-dom'
-import { Toaster } from 'sonner'
 import { useAppSelector, useAppDispatch } from '@/store'
-import { logout } from '@/store/slices/authSlice'
+import { logout, loginSuccess } from '@/store/slices/authSlice'
+import { useGetMeQuery } from '@/store/api/authApi'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -20,6 +20,23 @@ export function RootLayout() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const [showLogoutDialog, setShowLogoutDialog] = useState(false)
+
+  // Check session on mount if not authenticated in Redux
+  const { data } = useGetMeQuery(undefined, {
+    skip: isAuthenticated,
+  })
+
+  // Update Redux state if session is valid
+  useEffect(() => {
+    if (data?.data?.user) {
+      dispatch(loginSuccess({
+        id: data.data.user.id,
+        email: data.data.user.email,
+        name: data.data.user.name,
+        role: data.data.user.role,
+      }))
+    }
+  }, [data, dispatch])
 
   const handleLogout = () => {
     dispatch(logout())
@@ -42,7 +59,7 @@ export function RootLayout() {
                 <Link to="/dashboard" className="text-sm font-medium hover:text-primary">
                   Dashboard
                 </Link>
-                {user?.role === 'admin' && (
+                {user?.role === 'ADMIN' && (
                   <Link to="/admin/dashboard" className="text-sm font-medium hover:text-primary">
                     Admin Panel
                   </Link>
@@ -57,14 +74,9 @@ export function RootLayout() {
                 </Button>
               </>
             ) : (
-              <>
-                <Link to="/login" className="text-sm font-medium hover:text-primary">
-                  User Login
-                </Link>
-                <Link to="/admin/login" className="text-sm font-medium hover:text-primary">
-                  Admin Login
-                </Link>
-              </>
+              <Link to="/login" className="text-sm font-medium hover:text-primary">
+                Login
+              </Link>
             )}
           </nav>
         </div>
@@ -92,8 +104,6 @@ export function RootLayout() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Toaster />
     </div>
   )
 }

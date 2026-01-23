@@ -1,51 +1,47 @@
-import { useAppSelector } from '@/store'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent} from '@/components/ui/card'
-import { User, Building2, Mail } from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { Loader2 } from 'lucide-react'
 import { useGetMeQuery } from '@/store/api/authApi'
 
 export function DashboardPage() {
-  const user = useAppSelector(state => state.auth.user)
-  const { data } = useGetMeQuery();
+  const { data, isLoading } = useGetMeQuery()
+
+  const apps = data?.data?.apps || []
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-[#D30046]" />
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold">Your Profile</h1>
-        <Button variant="outline">
-          Edit Details
-        </Button>
+    <div className="max-w-3xl mx-auto py-8">
+      {/* App Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {apps.map((app) => (
+          <a
+            key={app.name}
+            href={app.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+          >
+            <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-[#D30046]/30">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-16 h-16 flex items-center justify-center">
+                  <img
+                    src={app.logo}
+                    alt={`${app.name} logo`}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                </div>
+                <span className="text-lg font-medium text-gray-900">{app.name}</span>
+              </div>
+            </Card>
+          </a>
+        ))}
       </div>
-
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-6">
-            <div className="flex items-center gap-4">
-              <User className="h-5 w-5 text-gray-500" />
-              <div className="flex-1">
-                <label className="text-sm text-gray-600">Full Name</label>
-                <p className="font-medium">{data?.data?.user.name || 'Alice Smith'}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Building2 className="h-5 w-5 text-gray-500" />
-              <div className="flex-1">
-                <label className="text-sm text-gray-600">Company</label>
-                <p className="font-medium">mHub Innovations</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Mail className="h-5 w-5 text-gray-500" />
-              <div className="flex-1">
-                <label className="text-sm text-gray-600">Email</label>
-                <p className="font-medium">{data?.data?.user.email || 'alice.smith@mhub.com'}</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

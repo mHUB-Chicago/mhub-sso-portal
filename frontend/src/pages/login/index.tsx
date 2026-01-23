@@ -69,7 +69,7 @@ export function LoginPage() {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: 'user', // API doesn't return role, default to user
+        role: user.role,
       }))
 
       // Check if user needs to reset password
@@ -101,7 +101,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />

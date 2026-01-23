@@ -25,7 +25,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         id: data.data.user.id,
         email: data.data.user.email,
         name: data.data.user.name,
-        role: 'user',
+        role: data.data.user.role,
       }))
     }
   }, [data, dispatch])

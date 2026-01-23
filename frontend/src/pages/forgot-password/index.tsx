@@ -69,7 +69,7 @@ export function ForgotPasswordPage() {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: 'user',
+        role: user.role,
       }))
 
       // User is now logged in - redirect to change password
