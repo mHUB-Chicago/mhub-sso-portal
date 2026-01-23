@@ -5,8 +5,8 @@ export interface CreateServiceProviderInput {
   name: string;
   entityId: string;
   acsUrl: string;
-  nameIdFormat?: string;
-  nameIdSource: string;
+  logo: string;
+  loginUrl: string;
   signTarget?: SamlSignTarget;
 }
 
@@ -17,8 +17,8 @@ export const createServiceProvider = (c: Context, input: CreateServiceProviderIn
       name: input.name,
       entityId: input.entityId,
       acsUrl: input.acsUrl,
-      nameIdFormat: input.nameIdFormat,
-      nameIdSource: input.nameIdSource,
+      loginUrl: input.loginUrl,
+      logo: input.logo,
       signTarget: input.signTarget, 
     },
   });

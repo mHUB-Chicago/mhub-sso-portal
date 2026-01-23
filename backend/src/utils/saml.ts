@@ -1,5 +1,5 @@
 import xpath from "xpath";
-import { SamlAuthRequest, SamlSignTarget, ServiceProvider, Session, User } from "@/database/models";
+import { SamlAuthRequest, SamlSignTarget, ServiceProvider, User } from "@/database/models";
 import { inflateRaw } from "pako";
 import * as xmldom from "@xmldom/xmldom";
 import * as xmldsigjs from "xmldsigjs";
@@ -138,11 +138,6 @@ function addMinutes(date: Date, minutes: number): Date {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
-function chooseNameId(user: User, source: string): string {
-  // only "email" supported for now
-  return user.email;
-}
-
 function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const { user, serviceProvider, samlRequest } = input;
   const now = new Date();
@@ -155,8 +150,8 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
 
   const destination = serviceProvider.acsUrl;
 
-  const nameIdValue = chooseNameId(user, serviceProvider.nameIdSource);
-  const nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress';//serviceProvider.nameIdFormat;
+  const nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress';
+  const nameIdValue = user.email;
   const email = user.email;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -298,14 +293,25 @@ function buildHttpPostFormHtml(acsUrl: string, samlResponseXmlSigned: string, re
 
   return `<!doctype html>
 <html>
-  <head><meta charset="utf-8"><title>SSO Redirect</title></head>
-  <body>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SSO Redirect</title>
+  </head>
+  <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#ffffff;">
+    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="margin: auto; background: transparent; display: block; shape-rendering: auto;" width="200px" height="200px" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid"><circle cx="84" cy="50" r="10" fill="#0a0a0a"><animate attributeName="r" repeatCount="indefinite" dur="0.25s" calcMode="spline" keyTimes="0;1" values="10;0" keySplines="0 0.5 0.5 1" begin="0s"></animate><animate attributeName="fill" repeatCount="indefinite" dur="1s" calcMode="discrete" keyTimes="0;0.25;0.5;0.75;1" values="#0a0a0a;#929292;#545454;#292929;#0a0a0a" begin="0s"></animate></circle><circle cx="16" cy="50" r="10" fill="#0a0a0a"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="0s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="0s"></animate></circle><circle cx="50" cy="50" r="10" fill="#292929"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.25s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.25s"></animate></circle><circle cx="84" cy="50" r="10" fill="#545454"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.5s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.5s"></animate></circle><circle cx="16" cy="50" r="10" fill="#929292"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.75s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.75s"></animate></circle></svg>
     <form method="post" action="${escapeHtmlAttr(acsUrl)}">
       <input type="hidden" name="SAMLResponse" value="${escapeHtmlAttr(samlResponseB64)}" />
       ${relayStateInput}
       <noscript><button type="submit">Continue</button></noscript>
     </form>
-    <script>document.forms[0].submit();</script>
+    <script>
+      window.addEventListener('load', function () {
+        var form = document.forms[0];
+        if (!form) return;
+        form.submit();
+      });
+    </script>
   </body>
 </html>`;
 }

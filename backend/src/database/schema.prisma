@@ -76,10 +76,10 @@ model LoginRequest {
 model ServiceProvider {
   id               String                @id @default(uuid())
   name             String
+  logo             String
   entityId         String                @unique
   acsUrl           String
-  nameIdFormat     String?
-  nameIdSource     String                @default("email")
+  loginUrl         String
   signTarget       SamlSignTarget        @default(ASSERTION)
   active           Boolean               @default(true)
   users            UserServiceProvider[]

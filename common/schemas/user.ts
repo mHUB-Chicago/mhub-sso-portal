@@ -11,6 +11,13 @@ export const UserSchema = z.object({
   updatedAt: z.coerce.date(),
 });
 
+export const AppSchema = z.object({
+  name: z.string(),
+  logo: z.string(),
+  url: z.string(),
+});
+
 export const GetMyUserResponseSchema = SuccessResponseSchema(z.object({
   user: UserSchema,
+  apps: z.array(AppSchema)
 }));

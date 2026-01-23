@@ -1,10 +1,12 @@
 import { useAppSelector } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent} from '@/components/ui/card'
-import { User, Building2, Mail, Phone } from 'lucide-react'
+import { User, Building2, Mail } from 'lucide-react'
+import { useGetMeQuery } from '@/store/api/authApi'
 
 export function DashboardPage() {
   const user = useAppSelector(state => state.auth.user)
+  const { data } = useGetMeQuery();
 
   return (
     <div className="space-y-6">
@@ -22,7 +24,7 @@ export function DashboardPage() {
               <User className="h-5 w-5 text-gray-500" />
               <div className="flex-1">
                 <label className="text-sm text-gray-600">Full Name</label>
-                <p className="font-medium">{user?.name || 'Alice Smith'}</p>
+                <p className="font-medium">{data?.data?.user.name || 'Alice Smith'}</p>
               </div>
             </div>
 
@@ -38,15 +40,7 @@ export function DashboardPage() {
               <Mail className="h-5 w-5 text-gray-500" />
               <div className="flex-1">
                 <label className="text-sm text-gray-600">Email</label>
-                <p className="font-medium">{user?.email || 'alice.smith@mhub.com'}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Phone className="h-5 w-5 text-gray-500" />
-              <div className="flex-1">
-                <label className="text-sm text-gray-600">Phone</label>
-                <p className="font-medium">+1 (555) 123-4567</p>
+                <p className="font-medium">{data?.data?.user.email || 'alice.smith@mhub.com'}</p>
               </div>
             </div>
           </div>

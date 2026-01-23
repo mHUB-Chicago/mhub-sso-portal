@@ -42,10 +42,10 @@ CREATE TABLE "LoginRequest" (
 CREATE TABLE "ServiceProvider" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
+    "logo" TEXT NOT NULL,
     "entityId" TEXT NOT NULL,
     "acsUrl" TEXT NOT NULL,
-    "nameIdFormat" TEXT,
-    "nameIdSource" TEXT NOT NULL DEFAULT 'email',
+    "loginUrl" TEXT NOT NULL,
     "signTarget" TEXT NOT NULL DEFAULT 'ASSERTION',
     "active" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
