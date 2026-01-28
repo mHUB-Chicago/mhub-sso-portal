@@ -6,6 +6,7 @@ import { databaseMiddleware } from "@/middleware/database";
 import { createCompany } from "@/services/companyService";
 import { createUser } from "@/services/userService";
 import { createServiceProvider } from "@/services/serviceProviderService";
+import { JobType } from "@/controllers/queueConsumer";
 
 const app = new Hono<AppType>();
 
@@ -117,11 +118,11 @@ export const runSeed = async (c: Context) => {
   });
 
   // Queue full PeopleVine sync, disabled for now
-  // c.env.QUEUE.send({
-  //   jobId: `${crypto.randomUUID()}-${Date.now()}`,
-  //   jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
-  //   payload: {},
-  // });
+  c.env.QUEUE.send({
+    jobId: `${crypto.randomUUID()}-${Date.now()}`,
+    jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+    payload: {},
+  });
 };
 
 export default app;
