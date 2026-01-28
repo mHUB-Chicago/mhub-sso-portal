@@ -5,6 +5,7 @@ import { getPaginatedUsers, GetPaginatedUsersResult, getUserById, updateUser } f
 import { allowUserServiceProvider, getAllowedServiceProvidersForUser, revokeUserServiceProvider } from "@/services/userServiceProviderService";
 import { getAllowedServiceProvidersForCompany } from "@/services/companyServiceProviderService";
 import { getAllServiceProviders } from "@/services/serviceProviderService";
+import { getCompanyById } from "@/services/companyService";
 
 export const handleGetMyUser = async (c: Context<AppType>) => {
   const user = c.get("user");
@@ -48,11 +49,13 @@ export const handleGetUserById = async (c: Context<AppType>) => {
   }
   const allowedServiceProviders = await getAllowedServiceProvidersForCompany(c, user.companyId);
   const enabledServiceProviders = await getAllowedServiceProvidersForUser(c, user.id);
+  const company = await getCompanyById(c, user.companyId);
   const response = GetUserResponseSchema.parse({
     success: true,
     message: "Success",
     data: {
       user,
+      company,
       allowedServiceProviders: allowedServiceProviders,
       enabledServiceProviders: enabledServiceProviders,
     },

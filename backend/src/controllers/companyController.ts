@@ -83,6 +83,7 @@ export const handleUpdateCompany = async (c: Context<AppType, string, JsonInput<
     message: "Company updated successfully",
     data: {
       company,
+      allowedServiceProviders: allServiceProviders,
       enabledServiceProviders: updatedEnabledServiceProviders,
     }
   });
