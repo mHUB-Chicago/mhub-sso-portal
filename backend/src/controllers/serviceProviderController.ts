@@ -1,5 +1,5 @@
-import { createServiceProvider, CreateServiceProviderInput, getAllServiceProviders, getServiceProviderById, updateServiceProvider, UpdateServiceProviderInput } from "@/services/serviceProviderService";
-import { CreateServiceProviderRequestSchema, CreateServiceProviderResponseSchema, GetServiceProviderResponseSchema, GetServiceProvidersResponseSchema, UpdateServiceProviderRequestSchema, UpdateServiceProviderResponseSchema } from "@common/schemas/serviceProvider";
+import { createServiceProvider, CreateServiceProviderInput, deleteServiceProvider, getAllServiceProviders, getServiceProviderById, updateServiceProvider, UpdateServiceProviderInput } from "@/services/serviceProviderService";
+import { CreateServiceProviderRequestSchema, CreateServiceProviderResponseSchema, DeleteServiceProviderResponseSchema, GetServiceProviderResponseSchema, GetServiceProvidersResponseSchema, UpdateServiceProviderRequestSchema, UpdateServiceProviderResponseSchema } from "@common/schemas/serviceProvider";
 import { Context } from "hono";
 
 export const handleGetServiceProviders = async (c: Context) => {
@@ -89,7 +89,6 @@ export const handleUpdateServiceProvider = async (c: Context) => {
   } else if (logo) {
     throw "Invalid logo file";
   }
-
   const updatedServiceProvider = await updateServiceProvider(c, updateServiceProviderInput);
   const response = UpdateServiceProviderResponseSchema.parse({
     success: true,
@@ -97,6 +96,20 @@ export const handleUpdateServiceProvider = async (c: Context) => {
     data: {
       serviceProvider: updatedServiceProvider,
     },
+  });
+  return c.json(response);
+}
+
+export const handleDeleteServiceProvider = async (c: Context) => {
+  const serviceProviderId = c.req.param("id");
+  const serviceProvider = await getServiceProviderById(c, serviceProviderId);
+  if (!serviceProvider) {
+    throw "Service provider not found";
+  }
+  await deleteServiceProvider(c, serviceProviderId);
+  const response = DeleteServiceProviderResponseSchema.parse({
+    success: true,
+    message: "Service provider deleted successfully",
   });
   return c.json(response);
 }

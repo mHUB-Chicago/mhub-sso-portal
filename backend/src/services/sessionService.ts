@@ -2,8 +2,7 @@ import { PrismaClient, Session, User } from "@/database/models";
 import { Context } from "hono";
 import { setCookie } from "hono/cookie";
 
-// TODO: make this longer, just short for testing naturally expired sessions
-const SESSION_EXPIRE_TIME_MS = 10 * 60 * 1000; // 10 minutes
+const SESSION_EXPIRE_TIME_MS = 24 * 60 * 60 * 1000; // 1 day
 
 const generateSessionId = (): string => {
   const array = new Uint8Array(32);

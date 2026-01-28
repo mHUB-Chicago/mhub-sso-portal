@@ -5,7 +5,7 @@ import { validate } from "@/middleware/validate";
 import { roleMiddleware } from "@/middleware/role";
 import { Role } from "@/database/models";
 import { CreateServiceProviderRequestSchema, CreateServiceProviderResponseSchema, GetServiceProviderResponseSchema, GetServiceProvidersResponseSchema, UpdateServiceProviderRequestSchema, UpdateServiceProviderResponseSchema } from "@common/schemas/serviceProvider";
-import { handleCreateServiceProvider, handleGetServiceProviderById, handleGetServiceProviders, handleUpdateServiceProvider } from "@/controllers/serviceProviderController";
+import { handleCreateServiceProvider, handleDeleteServiceProvider, handleGetServiceProviderById, handleGetServiceProviders, handleUpdateServiceProvider } from "@/controllers/serviceProviderController";
 
 const app = new Hono<AppType>();
 
@@ -47,7 +47,7 @@ app.post(
     successMessage: "Service provider created successfully",
     responseSchema: CreateServiceProviderResponseSchema,
   }),
-  validate(CreateServiceProviderRequestSchema),
+  validate(CreateServiceProviderRequestSchema, "form"),
   handleCreateServiceProvider
 )
 
@@ -70,5 +70,23 @@ app.put(
   validate(UpdateServiceProviderRequestSchema, "form"),
   handleUpdateServiceProvider
 );
+
+app.delete(
+  "/:id",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Delete service provider",
+    successMessage: "Service provider deleted successfully",
+    parameters: [
+      {
+        name: "id",
+        in: "path",
+        required: true,
+        schema: { type: "string" }
+      }
+    ]
+  }),
+  handleDeleteServiceProvider
+)
 
 export default app;

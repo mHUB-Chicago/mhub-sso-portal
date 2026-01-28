@@ -69,3 +69,10 @@ export const updateServiceProvider = (c: Context, input: UpdateServiceProviderIn
     },
   });
 }
+
+export const deleteServiceProvider = (c: Context, id: string): Promise<void> => {
+  const prisma: PrismaClient = c.get("db");
+  return prisma.serviceProvider.delete({
+    where: { id },
+  }).then(() => {});
+};

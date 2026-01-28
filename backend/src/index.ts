@@ -17,6 +17,7 @@ import { swaggerUI } from "@hono/swagger-ui";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
+import { HTTPException } from "hono/http-exception";
 
 type Bindings = {
   DB: D1Database;
@@ -43,7 +44,14 @@ export type AppType = {
 export type JsonInput<T extends ZodType> = JsonInputSchema<T>;
 export type QueryInput<T extends ZodType> = QueryInputSchema<T>;
 const app = new Hono<AppType>();
-
+app.onError(handleError);
+app.use("*", async (c, next) => {
+  try {
+    return await next();
+  } catch (err) {
+    return handleError(err, c);
+  }
+});
 app.get(
   "/openapi.json",
   openAPIRouteHandler(app, {
@@ -76,7 +84,6 @@ app.use("/saml/*", corsMiddleware, databaseMiddleware);
 app.route("/saml", samlRoutes);
 
 app.route("/__internal/seed", seedRoute);
-app.onError(handleError);
 
 export default {
   fetch: app.fetch,
