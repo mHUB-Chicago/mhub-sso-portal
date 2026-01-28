@@ -6,7 +6,7 @@ import { SamlBinding } from "@/database/models";
 import { buildIdpMetadataXml, decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
 import { getServiceProviderByEntityId, getServiceProviderById } from "@/services/serviceProviderService";
 import { getSessionId, verifySession } from "@/middleware/auth";
-import { getUserServiceProvider } from "@/services/userServiceProviderService";
+import { getAllowedServiceProvidersForUser, getUserServiceProvider } from "@/services/userServiceProviderService";
 
 export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<typeof SamlRequestSchema>>) => {
   const { SAMLRequest: samlRequest, RelayState: relayState } = c.req.valid("query");
@@ -32,8 +32,9 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
   const currentUser = await verifySession(c);
   const sessionId = getSessionId(c);
   if (currentUser && sessionId) {
-    const userServiceProvider = await getUserServiceProvider(c, currentUser.id, serviceProvider.id);
-    if (!userServiceProvider) {
+    const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
+    const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
+    if (!isAllowed) {
       return c.json({ message: "Access to Service Provider not authorized" }, 403);
     }
     // Issue SAML response
@@ -75,8 +76,9 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
   if (!serviceProvider) {
     return c.json({ message: "Unknown Service Provider" }, 400);
   }
-  const userServiceProvider = await getUserServiceProvider(c, currentUser.id, serviceProvider.id);
-  if (!userServiceProvider) {
+  const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
+  const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
+  if (!isAllowed) {
     return c.json({ message: "Access to Service Provider not authorized" }, 403);
   }
   // Issue SAML response
