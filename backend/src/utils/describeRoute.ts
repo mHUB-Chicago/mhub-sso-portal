@@ -9,14 +9,12 @@ interface DescribeRouteOptions {
   description?: string;
   successMessage?: string;
   parameters?: (OpenAPIV3.ParameterObject | OpenAPIV3.ParameterObject)[];
-  requestType?: "json" | "form" | "query";
   responseSchema?: z.ZodType<any>;
 }
 
 export const describeRoute = (options: DescribeRouteOptions) => {
-  const { summary, successMessage, requestType, responseSchema, parameters, description } = options;
+  const { summary, successMessage, responseSchema, parameters, description } = options;
   const currentParameters = parameters ?? [];
-  const selectedRequestType = requestType ?? "json";
   const successResponse = {
     description: successMessage ?? "Success",
     ...(responseSchema !== undefined ? {

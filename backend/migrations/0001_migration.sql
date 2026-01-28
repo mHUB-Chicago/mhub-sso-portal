@@ -4,6 +4,7 @@ CREATE TABLE "Company" (
     "peopleVineId" TEXT,
     "active" BOOLEAN NOT NULL DEFAULT true,
     "name" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
@@ -58,11 +59,22 @@ CREATE TABLE "UserServiceProvider" (
     "userId" TEXT NOT NULL,
     "serviceProviderId" TEXT NOT NULL,
     "enabled" BOOLEAN NOT NULL DEFAULT true,
-    "revokedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "UserServiceProvider_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "UserServiceProvider_serviceProviderId_fkey" FOREIGN KEY ("serviceProviderId") REFERENCES "ServiceProvider" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "CompanyServiceProvider" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "companyId" TEXT NOT NULL,
+    "serviceProviderId" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "CompanyServiceProvider_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "CompanyServiceProvider_serviceProviderId_fkey" FOREIGN KEY ("serviceProviderId") REFERENCES "ServiceProvider" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -109,6 +121,9 @@ CREATE TABLE "PeopleVineToken" (
 CREATE UNIQUE INDEX "Company_peopleVineId_key" ON "Company"("peopleVineId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Company_email_key" ON "Company"("email");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "User_peopleVineId_key" ON "User"("peopleVineId");
 
 -- CreateIndex
@@ -122,6 +137,9 @@ CREATE UNIQUE INDEX "ServiceProvider_entityId_key" ON "ServiceProvider"("entityI
 
 -- CreateIndex
 CREATE UNIQUE INDEX "UserServiceProvider_userId_serviceProviderId_key" ON "UserServiceProvider"("userId", "serviceProviderId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CompanyServiceProvider_companyId_serviceProviderId_key" ON "CompanyServiceProvider"("companyId", "serviceProviderId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "SamlAuthRequest_serviceProviderId_inResponseTo_key" ON "SamlAuthRequest"("serviceProviderId", "inResponseTo");

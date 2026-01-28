@@ -4,6 +4,17 @@ import { getAllServiceProviders } from "./serviceProviderService";
 import { createUserServiceProvider } from "./userServiceProviderService";
 import { hashPassword } from "@/utils/jwt";
 
+export interface GetPaginatedUsersInput {
+  role?: Role;
+  limit: number;
+  offset: number;
+}
+
+export interface GetPaginatedUsersResult {
+  users: User[];
+  total: number;
+}
+
 export interface CreateUserInput {
   name: string;
   email: string;
@@ -25,6 +36,21 @@ export interface UpdateUserInput {
   peopleVineId?: string;
   emailVerified?: boolean;
   mustResetPassword?: boolean;
+}
+
+export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
+  const prisma: PrismaClient = c.get("db");
+  const whereClause = input.role ? { role: input.role } : {};
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where: whereClause,
+      skip: input.offset,
+      take: input.limit,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.user.count({ where: whereClause }),
+  ]);
+  return { users, total };
 }
 
 export const getUserByEmail = (c: Context, email: string): Promise<User | null> => {

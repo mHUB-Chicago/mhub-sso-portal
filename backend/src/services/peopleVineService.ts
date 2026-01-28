@@ -302,6 +302,7 @@ export const syncAll = async (c: Context): Promise<void> => {
         name: customer.company_name,
         peopleVineId: customer.id.toString(),
         active: true,
+        email: customer.email.toLowerCase(),
       });
     }
   }));
@@ -454,6 +455,7 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
       await createCompany(c, {
         name: customer.company_name,
         peopleVineId: customer.id.toString(),
+        email: customer.email.toLowerCase(),
         active: true,
       });
     }

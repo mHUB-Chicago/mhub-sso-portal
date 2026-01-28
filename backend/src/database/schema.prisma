@@ -30,13 +30,15 @@ enum PeopleVineTokenType {
 }
 
 model Company {
-  id           String   @id @default(uuid())
-  peopleVineId String?  @unique
-  active       Boolean  @default(true)
-  name         String
-  users        User[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                      String                   @id @default(uuid())
+  peopleVineId            String?                  @unique
+  active                  Boolean                  @default(true)
+  name                    String
+  email                   String                   @unique
+  users                   User[]
+  companyServiceProviders CompanyServiceProvider[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 }
 
 model User {
@@ -60,31 +62,32 @@ model User {
 }
 
 model LoginRequest {
-  id            String    @id @default(uuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  attemptsCount Int       @default(0)
-  otpHashed     String?
-  otpVerifiedAt DateTime?
+  id                 String    @id @default(uuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attemptsCount      Int       @default(0)
+  otpHashed          String?
+  otpVerifiedAt      DateTime?
   passwordVerifiedAt DateTime?
-  expiresAt     DateTime
-  createdAt     DateTime  @default(now())
+  expiresAt          DateTime
+  createdAt          DateTime  @default(now())
 
   @@index([userId, expiresAt])
 }
 
 model ServiceProvider {
-  id               String                @id @default(uuid())
+  id               String                   @id @default(uuid())
   name             String
   logo             String
-  entityId         String                @unique
+  entityId         String                   @unique
   acsUrl           String
   loginUrl         String
-  signTarget       SamlSignTarget        @default(ASSERTION)
-  active           Boolean               @default(true)
+  signTarget       SamlSignTarget           @default(ASSERTION)
+  active           Boolean                  @default(true)
   users            UserServiceProvider[]
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  companies        CompanyServiceProvider[]
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
   samlAuthRequests SamlAuthRequest[]
 }
 
@@ -95,11 +98,23 @@ model UserServiceProvider {
   serviceProviderId String
   serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
   enabled           Boolean         @default(true)
-  revokedAt         DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
   @@unique([userId, serviceProviderId])
+}
+
+model CompanyServiceProvider {
+  id                String          @id @default(uuid())
+  companyId         String
+  company           Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  serviceProviderId String
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  enabled           Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([companyId, serviceProviderId])
 }
 
 model SamlAuthRequest {

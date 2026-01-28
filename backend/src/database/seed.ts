@@ -78,6 +78,7 @@ export const runSeed = async (c: Context) => {
   // Create company
   const testCompany = await createCompany(c, {
     name: "AXSmodern",
+    email: "contact@axsmodern.com",
     peopleVineId: "100001", // No PeopleVine ID for seed company
     active: true,
   });
@@ -89,7 +90,7 @@ export const runSeed = async (c: Context) => {
     mustResetPassword: false,
     emailVerified: true,
     peopleVineId: "100002", // No PeopleVine ID for seed user
-    role: Role.USER,
+    role: Role.ADMIN,
     companyId: testCompany.id
   });
 
@@ -100,7 +101,7 @@ export const runSeed = async (c: Context) => {
     mustResetPassword: false,
     emailVerified: true,
     peopleVineId: "100003", // No PeopleVine ID for seed user
-    role: Role.USER,
+    role: Role.ADMIN,
     companyId: testCompany.id
   });
 
@@ -111,7 +112,7 @@ export const runSeed = async (c: Context) => {
     mustResetPassword: false,
     emailVerified: true,
     peopleVineId: "100004", // No PeopleVine ID for seed user
-    role: Role.USER,
+    role: Role.ADMIN,
     companyId: testCompany.id
   });
 

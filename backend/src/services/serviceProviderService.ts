@@ -10,6 +10,17 @@ export interface CreateServiceProviderInput {
   signTarget?: SamlSignTarget;
 }
 
+export interface UpdateServiceProviderInput {
+  id: string;
+  active?: boolean;
+  name?: string;
+  entityId?: string;
+  acsUrl?: string;
+  logo?: string;
+  loginUrl?: string;
+  signTarget?: SamlSignTarget;
+}
+
 export const createServiceProvider = (c: Context, input: CreateServiceProviderInput): Promise<ServiceProvider> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.serviceProvider.create({
@@ -41,4 +52,20 @@ export const getServiceProviderByEntityId = (c: Context, entityId: string): Prom
 export const getAllServiceProviders = (c: Context): Promise<ServiceProvider[]> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.serviceProvider.findMany();
+}
+
+export const updateServiceProvider = (c: Context, input: UpdateServiceProviderInput): Promise<ServiceProvider> => {
+  const prisma: PrismaClient = c.get("db");
+  return prisma.serviceProvider.update({
+    where: { id: input.id },
+    data: {
+      name: input.name,
+      active: input.active,
+      entityId: input.entityId,
+      acsUrl: input.acsUrl,
+      logo: input.logo,
+      loginUrl: input.loginUrl,
+      signTarget: input.signTarget,
+    },
+  });
 }
