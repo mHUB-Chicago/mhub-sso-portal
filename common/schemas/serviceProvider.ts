@@ -38,7 +38,7 @@ export const CreateServiceProviderResponseSchema = SuccessResponseSchema(z.objec
 export const UpdateServiceProviderRequestSchema = z.object({
   name: z.string().optional(),
   logo: z.any().optional(), // File upload
-  active: z.boolean().optional(),
+  active: z.enum(['true', 'false']).optional(),
   entityId: z.string().optional(),
   acsUrl: z.string().optional(),
   loginUrl: z.string().optional(),

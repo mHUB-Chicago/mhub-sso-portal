@@ -1,5 +1,5 @@
-import { getAllServiceProviders } from "@/services/serviceProviderService";
-import { CreateServiceProviderResponseSchema, GetServiceProviderResponseSchema, GetServiceProvidersResponseSchema, UpdateServiceProviderRequestSchema, UpdateServiceProviderResponseSchema } from "@common/schemas/serviceProvider";
+import { createServiceProvider, CreateServiceProviderInput, getAllServiceProviders, getServiceProviderById, updateServiceProvider, UpdateServiceProviderInput } from "@/services/serviceProviderService";
+import { CreateServiceProviderRequestSchema, CreateServiceProviderResponseSchema, GetServiceProviderResponseSchema, GetServiceProvidersResponseSchema, UpdateServiceProviderRequestSchema, UpdateServiceProviderResponseSchema } from "@common/schemas/serviceProvider";
 import { Context } from "hono";
 
 export const handleGetServiceProviders = async (c: Context) => {
@@ -32,9 +32,27 @@ export const handleGetServiceProviderById = async (c: Context) => {
 };
 
 export const handleCreateServiceProvider = async (c: Context) => {
-  // TODO
-  const serviceProviders = await getAllServiceProviders(c);
-  const newServiceProvider = serviceProviders[0];
+  const body = await c.req.parseBody();
+  const createServiceProviderBody = CreateServiceProviderRequestSchema.parse(body);
+  const createServiceProviderInput: CreateServiceProviderInput = {
+    name: createServiceProviderBody.name,
+    entityId: createServiceProviderBody.entityId,
+    acsUrl: createServiceProviderBody.acsUrl,
+    loginUrl: createServiceProviderBody.loginUrl,
+    signTarget: createServiceProviderBody.signTarget,
+    logo: "",
+  };
+  const logo = body["logo"];
+  if (logo && logo instanceof File) {
+    const arrayBuffer = await logo.arrayBuffer();
+    const base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    createServiceProviderInput.logo = `data:${logo.type};base64,${base64String}`;
+  } else if (logo) {
+    throw "Invalid logo file";
+  } else {
+    throw "Logo file is required";
+  }
+  const newServiceProvider = await createServiceProvider(c, createServiceProviderInput);
   const response = CreateServiceProviderResponseSchema.parse({
     success: true,
     message: "Service provider created successfully",
@@ -44,15 +62,35 @@ export const handleCreateServiceProvider = async (c: Context) => {
   });
   return c.json(response);
 }
+
 export const handleUpdateServiceProvider = async (c: Context) => {
-  // TODO
-  const spId = c.req.param("id");
-  const updateData = c.req.parseBody();
-  const serviceProvider = await getAllServiceProviders(c).then(sps => sps.find(sp => sp.id === spId));
+  const serviceProviderId = c.req.param("id");
+  const body = await c.req.parseBody();
+  const updateServiceProviderBody = UpdateServiceProviderRequestSchema.parse(body);
+  const serviceProvider = await getServiceProviderById(c, serviceProviderId);
   if (!serviceProvider) {
     throw "Service provider not found";
   }
-  const updatedServiceProvider = serviceProvider;
+  const updateServiceProviderInput: UpdateServiceProviderInput = {
+    id: serviceProvider.id,
+    active: updateServiceProviderBody.active ? updateServiceProviderBody.active === 'true' : undefined,
+    name: updateServiceProviderBody.name,
+    entityId: updateServiceProviderBody.entityId,
+    acsUrl: updateServiceProviderBody.acsUrl,
+    loginUrl: updateServiceProviderBody.loginUrl,
+    signTarget: updateServiceProviderBody.signTarget,
+    logo: undefined,
+  };
+  const logo = body["logo"];
+  if (logo && logo instanceof File) {
+    const arrayBuffer = await logo.arrayBuffer();
+    const base64String = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    updateServiceProviderInput.logo = `data:${logo.type};base64,${base64String}`;
+  } else if (logo) {
+    throw "Invalid logo file";
+  }
+
+  const updatedServiceProvider = await updateServiceProvider(c, updateServiceProviderInput);
   const response = UpdateServiceProviderResponseSchema.parse({
     success: true,
     message: "Service provider updated successfully",
