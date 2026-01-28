@@ -5,10 +5,17 @@ import { Download, Settings, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+
+const PAGE_SIZE = 10
 
 export function AdminUsersPage() {
-  const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({ limit: 100, offset: 0, role: 'USER' })
+  const [page, setPage] = useState(0)
+  const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+    role: 'USER'
+  })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 100, offset: 0 })
 
   // Create a map of company IDs to names
@@ -109,7 +116,11 @@ export function AdminUsersPage() {
           data={usersWithCompany}
           searchPlaceholder="Search by name, email..."
           filters={filters}
-          pageSize={10}
+          pageSize={PAGE_SIZE}
+          serverSide
+          totalRows={usersData?.data?.total ?? 0}
+          currentPage={page}
+          onPageChange={setPage}
         />
       </div>
     </div>

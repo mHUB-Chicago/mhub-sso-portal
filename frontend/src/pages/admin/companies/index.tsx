@@ -5,11 +5,18 @@ import { Download, Settings, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
 import { useGetUsersQuery } from "@/store/api/userApi"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+
+const PAGE_SIZE = 10
 
 export function AdminCompaniesPage() {
-  const { data: companiesData, isLoading: companiesLoading, error: companiesError } = useGetCompaniesQuery({ limit: 100, offset: 0 })
-  const { data: usersData, isLoading: usersLoading } = useGetUsersQuery({ limit: 100, offset: 0 })
+  const [page, setPage] = useState(0)
+  const { data: companiesData, isLoading: companiesLoading, error: companiesError } = useGetCompaniesQuery({
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE
+  })
+  // Fetch all users for user count (TODO: backend should return this with companies)
+  const { data: usersData, isLoading: usersLoading } = useGetUsersQuery({ limit: 1000, offset: 0 })
 
   // Create a map of company IDs to user counts
   const userCountMap = useMemo(() => {
@@ -95,7 +102,11 @@ export function AdminCompaniesPage() {
           columns={companyColumns}
           data={companiesWithUserCount}
           searchPlaceholder="Search by company name, email..."
-          pageSize={10}
+          pageSize={PAGE_SIZE}
+          serverSide
+          totalRows={companiesData?.data?.total ?? 0}
+          currentPage={page}
+          onPageChange={setPage}
         />
       </div>
     </div>

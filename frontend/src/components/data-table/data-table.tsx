@@ -49,6 +49,11 @@ interface DataTableProps<TData, TValue> {
   searchPlaceholder?: string
   filters?: FilterConfig[]
   pageSize?: number
+  // Server-side pagination props
+  serverSide?: boolean
+  totalRows?: number
+  currentPage?: number
+  onPageChange?: (page: number) => void
 }
 
 export function DataTable<TData, TValue>({
@@ -57,10 +62,16 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "Search...",
   filters = [],
   pageSize = 10,
+  serverSide = false,
+  totalRows = 0,
+  currentPage = 0,
+  onPageChange,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = React.useState("")
+
+  const pageCount = serverSide ? Math.ceil(totalRows / pageSize) : undefined
 
   const table = useReactTable({
     data,
@@ -69,18 +80,23 @@ export function DataTable<TData, TValue>({
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getPaginationRowModel: serverSide ? undefined : getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
+    getFilteredRowModel: serverSide ? undefined : getFilteredRowModel(),
+    manualPagination: serverSide,
+    manualFiltering: serverSide,
+    pageCount,
     initialState: {
       pagination: {
         pageSize,
+        pageIndex: currentPage,
       },
     },
     state: {
       sorting,
       columnFilters,
       globalFilter,
+      pagination: serverSide ? { pageIndex: currentPage, pageSize } : undefined,
     },
   })
 
@@ -185,27 +201,47 @@ export function DataTable<TData, TValue>({
       </div>
       <div className="flex items-center justify-between space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
-          Showing {table.getRowModel().rows.length} of{" "}
-          {table.getFilteredRowModel().rows.length} row(s).
+          {serverSide ? (
+            <>
+              Showing {currentPage * pageSize + 1}-{Math.min((currentPage + 1) * pageSize, totalRows)} of {totalRows} row(s).
+            </>
+          ) : (
+            <>
+              Showing {table.getRowModel().rows.length} of{" "}
+              {table.getFilteredRowModel().rows.length} row(s).
+            </>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           <span className="text-sm text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{" "}
-            {table.getPageCount()}
+            Page {(serverSide ? currentPage : table.getState().pagination.pageIndex) + 1} of{" "}
+            {serverSide ? pageCount : table.getPageCount()}
           </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => {
+              if (serverSide && onPageChange) {
+                onPageChange(currentPage - 1)
+              } else {
+                table.previousPage()
+              }
+            }}
+            disabled={serverSide ? currentPage === 0 : !table.getCanPreviousPage()}
           >
             Previous
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => {
+              if (serverSide && onPageChange) {
+                onPageChange(currentPage + 1)
+              } else {
+                table.nextPage()
+              }
+            }}
+            disabled={serverSide ? currentPage >= (pageCount ?? 1) - 1 : !table.getCanNextPage()}
           >
             Next
           </Button>

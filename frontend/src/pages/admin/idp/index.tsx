@@ -5,8 +5,11 @@ import { Loader2, Plus } from "lucide-react"
 import { Link, useNavigate } from "react-router-dom"
 import { useGetServiceProvidersQuery } from "@/store/api/serviceProviderApi"
 
+const PAGE_SIZE = 10
+
 export function IDPManagementPage() {
   const navigate = useNavigate()
+  // IDP uses client-side pagination (typically few service providers)
   const { data, isLoading, error } = useGetServiceProvidersQuery()
 
   if (isLoading) {
@@ -58,7 +61,7 @@ export function IDPManagementPage() {
         columns={serviceProviderColumns}
         data={serviceProviders}
         searchPlaceholder="Search applications..."
-        pageSize={10}
+        pageSize={PAGE_SIZE}
       />
     </div>
   )
