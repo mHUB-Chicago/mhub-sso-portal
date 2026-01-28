@@ -347,12 +347,12 @@ export const syncAll = async (c: Context): Promise<void> => {
 
     let associatedCompanyByName = companiesByNameMap.get(customer.company_name);
     if (!associatedCompanyByName) {
-      console.log(`No associated company found for user ${customer.full_name} (${customer.email}), skipping user creation.`);
+      // console.log(`No associated company found for user ${customer.full_name} (${customer.email}), skipping user creation.`);
       return;
     }
 
     if (existingUser && associatedCompanyByName.id !== existingUser.companyId) {
-      console.log(`User ${customer.full_name} (${customer.email}) is associated with a different company, updating company association.`);
+      // console.log(`User ${customer.full_name} (${customer.email}) is associated with a different company, updating company association.`);
       return updateUser(c, {
         id: existingUser.id,
         name: customer.full_name,
@@ -362,7 +362,7 @@ export const syncAll = async (c: Context): Promise<void> => {
     }
 
     if (existingUser && associatedCompanyByName.id === existingUser.companyId) {
-      console.log(`User ${customer.full_name} (${customer.email}) already exists with correct company association.`);
+      // console.log(`User ${customer.full_name} (${customer.email}) already exists with correct company association.`);
       if (existingUser.name !== customer.full_name || existingUser.email !== customer.email.toLowerCase()) {
         console.log(`Updating user ${customer.full_name} (${customer.email}) details.`);
         return updateUser(c, {
@@ -374,7 +374,7 @@ export const syncAll = async (c: Context): Promise<void> => {
     }
 
     if (!existingUser) {
-      console.log(`Creating user for ${customer.full_name} (${customer.email}).`);
+      // console.log(`Creating user for ${customer.full_name} (${customer.email}).`);
       return createUser(c, {
         name: customer.full_name,
         email: customer.email,
@@ -398,7 +398,7 @@ export const syncAll = async (c: Context): Promise<void> => {
   // Deactivate companies not in PeopleVine
   await Promise.all(dbCompanies.map(async (dbCompany) => {
     if (dbCompany.peopleVineId && !activePeopleVineIdsForCompanies.has(dbCompany.peopleVineId)) {
-      console.log(`Deactivating company ${dbCompany.name} as it no longer exists in PeopleVine.`);
+      // console.log(`Deactivating company ${dbCompany.name} as it no longer exists in PeopleVine.`);
       return deactivateCompany(c, dbCompany.id);
     }
   }));
@@ -407,7 +407,7 @@ export const syncAll = async (c: Context): Promise<void> => {
   existingUsers = await prisma.user.findMany();
   await Promise.all(existingUsers.map(async (user) => {
     if (user.peopleVineId && !activePeopleVineIdsForUsers.has(user.peopleVineId)) {
-      console.log(`Deactivating user ${user.name} (${user.email}) as they no longer exist in PeopleVine.`);
+      // console.log(`Deactivating user ${user.name} (${user.email}) as they no longer exist in PeopleVine.`);
       return deleteUser(c, user.id);
     }
   }));
