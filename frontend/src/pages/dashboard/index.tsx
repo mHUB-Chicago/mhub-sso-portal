@@ -1,11 +1,19 @@
 import { Card } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Settings } from 'lucide-react'
 import { useGetMeQuery } from '@/store/api/authApi'
+import { Link } from 'react-router-dom'
+
+interface App {
+  name: string
+  logo: string
+  url: string
+}
 
 export function DashboardPage() {
   const { data, isLoading } = useGetMeQuery()
 
-  const apps = data?.data?.apps || []
+  const apps: App[] = data?.data?.apps || []
+  const isAdmin = data?.data?.user?.role === 'ADMIN'
 
   if (isLoading) {
     return (
@@ -41,6 +49,20 @@ export function DashboardPage() {
             </Card>
           </a>
         ))}
+
+        {/* Admin Panel Link */}
+        {isAdmin && (
+          <Link to="/admin/users" className="block">
+            <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-[#D30046]/30">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-16 h-16 flex items-center justify-center">
+                  <Settings className="w-12 h-12 text-[#D30046]" />
+                </div>
+                <span className="text-lg font-medium text-gray-900">Admin Panel</span>
+              </div>
+            </Card>
+          </Link>
+        )}
       </div>
     </div>
   )

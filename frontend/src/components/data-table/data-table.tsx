@@ -31,68 +31,107 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
+export interface FilterOption {
+  value: string
+  label: string
+}
+
+export interface FilterConfig {
+  columnId: string
+  placeholder: string
+  options: FilterOption[]
+  width?: string
+}
+
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
   data: TData[]
+  searchPlaceholder?: string
+  filters?: FilterConfig[]
+  pageSize?: number
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
+  searchPlaceholder = "Search...",
+  filters = [],
+  pageSize = 10,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
+  const [globalFilter, setGlobalFilter] = React.useState("")
 
   const table = useReactTable({
     data,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    initialState: {
+      pagination: {
+        pageSize,
+      },
+    },
     state: {
       sorting,
       columnFilters,
+      globalFilter,
     },
   })
+
+  const handleFilterChange = (columnId: string, value: string) => {
+    if (value === "all") {
+      table.getColumn(columnId)?.setFilterValue(undefined)
+    } else {
+      table.getColumn(columnId)?.setFilterValue(value)
+    }
+  }
+
+  const handleResetFilters = () => {
+    setColumnFilters([])
+    setGlobalFilter("")
+  }
 
   return (
     <div className="w-full">
       <div className="flex items-center justify-between py-4">
         <Input
-          placeholder="Search by name, email, company..."
-          value={(table.getColumn("fullName")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
-            table.getColumn("fullName")?.setFilterValue(event.target.value)
-          }
+          placeholder={searchPlaceholder}
+          value={globalFilter ?? ""}
+          onChange={(event) => setGlobalFilter(event.target.value)}
           className="max-w-sm"
         />
-        <div className="flex items-center gap-2">
-          <Select>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Company" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Companies</SelectItem>
-              <SelectItem value="tech">Tech Solutions</SelectItem>
-              <SelectItem value="global">Global Innovations</SelectItem>
-              <SelectItem value="future">Future Systems</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Membership Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="premium">Premium</SelectItem>
-              <SelectItem value="standard">Standard</SelectItem>
-              <SelectItem value="enterprise">Enterprise</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {filters.length > 0 && (
+          <div className="flex items-center gap-2">
+            {filters.map((filter) => (
+              <Select
+                key={filter.columnId}
+                onValueChange={(value) => handleFilterChange(filter.columnId, value)}
+                value={(table.getColumn(filter.columnId)?.getFilterValue() as string) ?? "all"}
+              >
+                <SelectTrigger className={filter.width ?? "w-40"}>
+                  <SelectValue placeholder={filter.placeholder} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All {filter.placeholder}</SelectItem>
+                  {filter.options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ))}
+            <Button variant="ghost" size="sm" onClick={handleResetFilters}>
+              Reset
+            </Button>
+          </div>
+        )}
       </div>
       <div className="overflow-hidden rounded-md border">
         <Table>
@@ -144,12 +183,16 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end space-x-2 py-4">
+      <div className="flex items-center justify-between space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
-          {table.getFilteredRowModel().rows.length} of{" "}
-          {table.getFilteredRowModel().rows.length} row(s) total.
+          Showing {table.getRowModel().rows.length} of{" "}
+          {table.getFilteredRowModel().rows.length} row(s).
         </div>
-        <div className="space-x-2">
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-muted-foreground">
+            Page {table.getState().pagination.pageIndex + 1} of{" "}
+            {table.getPageCount()}
+          </span>
           <Button
             variant="outline"
             size="sm"

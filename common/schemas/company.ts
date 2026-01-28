@@ -12,8 +12,8 @@ export const CompanySchema = z.object({
 });
 
 export const GetCompaniesRequestSchema = z.object({
-  limit: z.number().min(1).max(100).default(20),
-  offset: z.number().min(0).default(0),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  offset: z.coerce.number().min(0).default(0),
   active: z.boolean().optional(),
 });
 

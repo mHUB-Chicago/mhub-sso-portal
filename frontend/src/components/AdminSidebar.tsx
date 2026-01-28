@@ -1,8 +1,11 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAppSelector } from '@/store'
-import { 
-  Users, 
-  Gauge
+import {
+  Users,
+  Building2,
+  ShieldCheck,
+  KeyRound,
+  LayoutDashboard
 } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
@@ -17,23 +20,15 @@ export function AdminSidebar() {
           <img src="/logo.png" alt="MHUB Logo" className="h-8 mx-auto" />
         </div>
         <nav className="space-y-3">
-          <Link 
-            to="/admin/dashboard" 
-            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
-              location.pathname === '/admin/dashboard' || location.pathname === '/admin'
-                ? 'bg-[#D30046] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
+          <Link
+            to="/dashboard"
+            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
           >
-            <Gauge className={`h-5 w-5 ${
-              location.pathname === '/admin/dashboard' || location.pathname === '/admin'
-                ? 'text-white'
-                : 'text-gray-500'
-            }`} />
+            <LayoutDashboard className="h-5 w-5 text-gray-500" />
             Dashboard
           </Link>
-          <Link 
-            to="/admin/users" 
+          <Link
+            to="/admin/users"
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
               location.pathname.startsWith('/admin/users')
                 ? 'bg-[#D30046] text-white'
@@ -46,6 +41,51 @@ export function AdminSidebar() {
                 : 'text-gray-500'
             }`} />
             Users
+          </Link>
+          <Link
+            to="/admin/companies"
+            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+              location.pathname.startsWith('/admin/companies')
+                ? 'bg-[#D30046] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <Building2 className={`h-5 w-5 ${
+              location.pathname.startsWith('/admin/companies')
+                ? 'text-white'
+                : 'text-gray-500'
+            }`} />
+            Companies
+          </Link>
+          <Link
+            to="/admin/admins"
+            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+              location.pathname.startsWith('/admin/admins')
+                ? 'bg-[#D30046] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <ShieldCheck className={`h-5 w-5 ${
+              location.pathname.startsWith('/admin/admins')
+                ? 'text-white'
+                : 'text-gray-500'
+            }`} />
+            Admins
+          </Link>
+          <Link
+            to="/admin/idp"
+            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+              location.pathname.startsWith('/admin/idp')
+                ? 'bg-[#D30046] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <KeyRound className={`h-5 w-5 ${
+              location.pathname.startsWith('/admin/idp')
+                ? 'text-white'
+                : 'text-gray-500'
+            }`} />
+            IDP Management
           </Link>
         </nav>
       </div>

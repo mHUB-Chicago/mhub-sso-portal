@@ -5,18 +5,11 @@ import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { toast } from 'sonner'
 import { Loader2, ExternalLink } from 'lucide-react'
 import { useGetUserByIdQuery, useUpdateUserMutation } from '@/store/api/userApi'
 
-export function AdminEditUserPage() {
+export function AdminEditAdminPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
@@ -24,13 +17,9 @@ export function AdminEditUserPage() {
   const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation()
 
   // Track user changes separately from server data
-  const [localChanges, setLocalChanges] = useState<{
-    role?: 'USER' | 'ADMIN'
-    enabledServiceProviderIds?: string[]
-  }>({})
+  const [localChanges, setLocalChanges] = useState<{ enabledServiceProviderIds?: string[] }>({})
 
   // Derive current values from server data + local changes
-  const role = localChanges.role ?? userData?.data?.user.role ?? 'USER'
   const enabledServiceProviderIds = useMemo(() => {
     if (localChanges.enabledServiceProviderIds !== undefined) {
       return localChanges.enabledServiceProviderIds
@@ -46,29 +35,25 @@ export function AdminEditUserPage() {
     setLocalChanges(prev => ({ ...prev, enabledServiceProviderIds: newIds }))
   }
 
-  const handleRoleChange = (value: 'USER' | 'ADMIN') => {
-    setLocalChanges(prev => ({ ...prev, role: value }))
-  }
-
   const handleSave = async () => {
     if (!id) return
 
     try {
       await updateUser({
         id,
-        role,
+        role: 'ADMIN',
         enabledServiceProviderIds,
       }).unwrap()
-      toast.success('User updated successfully!')
-      navigate('/admin/users')
+      toast.success('Admin updated successfully!')
+      navigate('/admin/admins')
     } catch (err) {
-      toast.error('Failed to update user. Please try again.')
-      console.error('Error updating user:', err)
+      toast.error('Failed to update admin. Please try again.')
+      console.error('Error updating admin:', err)
     }
   }
 
   const handleCancel = () => {
-    navigate('/admin/users')
+    navigate('/admin/admins')
   }
 
   if (isLoading) {
@@ -83,9 +68,9 @@ export function AdminEditUserPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <p className="text-red-500 mb-2">Failed to load user</p>
-          <Button variant="outline" onClick={() => navigate('/admin/users')}>
-            Back to Users
+          <p className="text-red-500 mb-2">Failed to load admin</p>
+          <Button variant="outline" onClick={() => navigate('/admin/admins')}>
+            Back to Admins
           </Button>
         </div>
       </div>
@@ -101,13 +86,13 @@ export function AdminEditUserPage() {
       <nav className="text-sm text-gray-500">
         <Link to="/admin/dashboard" className="hover:text-gray-700">Home</Link>
         <span className="mx-1">›</span>
-        <Link to="/admin/users" className="hover:text-gray-700">Users</Link>
+        <Link to="/admin/admins" className="hover:text-gray-700">Admins</Link>
         <span className="mx-1">›</span>
-        <span className="font-semibold text-gray-900">Edit User</span>
+        <span className="font-semibold text-gray-900">Edit Admin</span>
       </nav>
 
       {/* Header */}
-      <h1 className="text-xl font-semibold">Edit User</h1>
+      <h1 className="text-xl font-semibold">Edit Admin</h1>
 
       <div className="bg-white rounded-lg border p-6 space-y-8">
         {/* Profile Section */}
@@ -121,6 +106,7 @@ export function AdminEditUserPage() {
               <p className="text-sm text-gray-500">{user.email}</p>
             </div>
             <div className="flex gap-2">
+              <Badge variant="destructive">Admin</Badge>
               <Badge variant={user.emailVerified ? "default" : "outline"}>
                 {user.emailVerified ? "Email Verified" : "Email Pending"}
               </Badge>
@@ -131,7 +117,7 @@ export function AdminEditUserPage() {
           </div>
         </div>
 
-        {/* User Info (Read-only) */}
+        {/* Admin Info (Read-only) */}
         <div className="grid grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label className="text-gray-500">Company</Label>
@@ -166,27 +152,12 @@ export function AdminEditUserPage() {
           </div>
         </div>
 
-        {/* Role Selection */}
-        <div className="space-y-2">
-          <Label htmlFor="role">User Role</Label>
-          <Select value={role} onValueChange={handleRoleChange}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="USER">User</SelectItem>
-              <SelectItem value="ADMIN">Admin</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-gray-500">Admins can manage users, companies, and service providers.</p>
-        </div>
-
         {/* Service Provider Access */}
         <div className="space-y-4">
           <div>
             <h2 className="text-lg font-medium">Service Provider Access</h2>
             <p className="text-sm text-gray-500">
-              Select which applications this user can access. Only service providers enabled for their company are shown.
+              Select which applications this admin can access. Only service providers enabled for their company are shown.
             </p>
           </div>
 

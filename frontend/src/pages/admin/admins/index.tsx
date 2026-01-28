@@ -1,14 +1,14 @@
 import { Button } from "@/components/ui/button"
 import { DataTable, type FilterConfig } from "@/components/data-table/data-table"
-import { userColumns, type UserWithCompany } from "@/components/data-table/columns"
+import { adminColumns, type UserWithCompany } from "@/components/data-table/columns"
 import { Download, Settings, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
 import { useMemo } from "react"
 
-export function AdminUsersPage() {
-  const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({ limit: 100, offset: 0, role: 'USER' })
+export function AdminManagementPage() {
+  const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({ limit: 100, offset: 0, role: 'ADMIN' })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 100, offset: 0 })
 
   // Create a map of company IDs to names
@@ -57,7 +57,7 @@ export function AdminUsersPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <p className="text-red-500 mb-2">Failed to load users</p>
+          <p className="text-red-500 mb-2">Failed to load admins</p>
           <Button variant="outline" onClick={() => window.location.reload()}>
             Retry
           </Button>
@@ -73,9 +73,9 @@ export function AdminUsersPage() {
         <nav className="text-sm text-gray-500 mb-2">
           <Link to="/admin/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
           <span className="mx-1">›</span>
-          <span className="font-semibold text-gray-900">Users</span>
+          <span className="font-semibold text-gray-900">Admins</span>
         </nav>
-        <h1 className="text-2xl font-bold">User Summary</h1>
+        <h1 className="text-2xl font-bold">Admin Management</h1>
       </div>
 
       {/* Action Bar */}
@@ -92,11 +92,11 @@ export function AdminUsersPage() {
         </div>
       </div>
 
-      {/* User Accounts Section */}
+      {/* Admin Accounts Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
-            User Accounts
+            Admin Accounts
             <span className="text-sm font-normal text-gray-500 ml-2">
               ({usersData?.data?.total || 0} total)
             </span>
@@ -105,7 +105,7 @@ export function AdminUsersPage() {
 
         {/* Data Table */}
         <DataTable
-          columns={userColumns}
+          columns={adminColumns}
           data={usersWithCompany}
           searchPlaceholder="Search by name, email..."
           filters={filters}

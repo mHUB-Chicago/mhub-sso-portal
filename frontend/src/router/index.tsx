@@ -13,6 +13,13 @@ import { AdminDashboardPage } from '@/pages/admin/dashboard'
 import { AdminUsersPage } from '@/pages/admin/users'
 import { AdminEditUserPage } from '@/pages/admin/users/edit'
 import AdminAddUserPage from '@/pages/admin/users/add'
+import { AdminCompaniesPage } from '@/pages/admin/companies'
+import { AdminEditCompanyPage } from '@/pages/admin/companies/edit'
+import { AdminManagementPage } from '@/pages/admin/admins'
+import { AdminEditAdminPage } from '@/pages/admin/admins/edit'
+import { IDPManagementPage } from '@/pages/admin/idp'
+import { IDPEditPage } from '@/pages/admin/idp/edit'
+import { IDPAddPage } from '@/pages/admin/idp/add'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminRoute } from '@/components/AdminRoute'
 
@@ -88,6 +95,34 @@ export const router = createBrowserRouter([
       {
         path: 'users/new',
         element: <AdminAddUserPage />
+      },
+      {
+        path: 'companies',
+        element: <AdminCompaniesPage />
+      },
+      {
+        path: 'companies/:id/edit',
+        element: <AdminEditCompanyPage />
+      },
+      {
+        path: 'admins',
+        element: <AdminManagementPage />
+      },
+      {
+        path: 'admins/:id/edit',
+        element: <AdminEditAdminPage />
+      },
+      {
+        path: 'idp',
+        element: <IDPManagementPage />
+      },
+      {
+        path: 'idp/add',
+        element: <IDPAddPage />
+      },
+      {
+        path: 'idp/:id/edit',
+        element: <IDPEditPage />
       },
       {
         path: 'settings',

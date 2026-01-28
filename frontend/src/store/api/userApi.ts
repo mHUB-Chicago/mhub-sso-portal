@@ -1,102 +1,133 @@
-import { createApi } from '@reduxjs/toolkit/query/react'
+import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
 
-interface CreateUserRequest {
-  fullName: string
-  email: string
-  company: string
-  gender: string
-  dateOfBirth: string
-  phone: string
-  address: string
-  digifaster: boolean
-  learnworlds: boolean
-  mhubShop: boolean
-  peoplevine: boolean
-}
-
-interface User {
+// Types matching backend schemas
+export interface User {
   id: string
-  fullName: string
+  companyId: string
   email: string
-  company: string
-  gender: string
-  dateOfBirth: string
-  phone: string
-  address: string
-  digifaster: boolean
-  learnworlds: boolean
-  mhubShop: boolean
-  peoplevine: boolean
+  name: string
+  peopleVineId: string | null
+  role: 'USER' | 'ADMIN'
+  emailVerified: boolean
+  mustResetPassword: boolean
   createdAt: string
   updatedAt: string
 }
 
-// Mock base query for development
-const mockBaseQuery = async (args: any) => {
-  const { body, method } = args
-  
-  // Mock API delay
-  await new Promise(resolve => setTimeout(resolve, 1500))
-  
-  if (method === 'POST' && args.path === 'users') {
-    // Mock user creation
-    const newUser: User = {
-      id: Date.now().toString(),
-      ...body,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-    
-    return { data: newUser }
-  }
-  
-  return {
-    error: {
-      status: 404,
-      message: 'Not found'
-    }
+export interface Company {
+  id: string
+  peopleVineId: string | null
+  name: string
+  email: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ServiceProvider {
+  id: string
+  name: string
+  active: boolean
+  logo: string
+  entityId: string
+  acsUrl: string
+  loginUrl: string
+  signTarget: 'ASSERTION' | 'RESPONSE' | 'BOTH'
+  createdAt: string
+  updatedAt: string
+}
+
+// Request/Response types
+interface GetUsersRequest {
+  limit?: number
+  offset?: number
+  role?: 'USER' | 'ADMIN'
+}
+
+interface GetUsersResponse {
+  success: boolean
+  message: string
+  data: {
+    users: User[]
+    total: number
+    limit: number
+    offset: number
   }
 }
 
-// Real base query - uncomment when backend is ready
-/*
-const customBaseQuery = async (args: any) => {
-  try {
-    const { path, method = 'GET', body } = args
-    const result = await apiFetch(
-      path,
-      {
-        method,
-        body: body ? JSON.stringify(body) : undefined,
-      },
-      z.any()
-    )
-    
-    if (result.error) {
-      return { error: result.error }
-    }
-    
-    return { data: result.data }
-  } catch (error: any) {
-    return { error: { message: error.message } }
+interface GetUserResponse {
+  success: boolean
+  message: string
+  data: {
+    user: User
+    company: Company
+    allowedServiceProviders: ServiceProvider[]
+    enabledServiceProviders: ServiceProvider[]
   }
 }
-*/
+
+interface UpdateUserRequest {
+  id: string
+  role?: 'USER' | 'ADMIN'
+  enabledServiceProviderIds?: string[]
+}
+
+interface UpdateUserResponse {
+  success: boolean
+  message: string
+  data: {
+    user: User
+    allowedServiceProviders: ServiceProvider[]
+    enabledServiceProviders: ServiceProvider[]
+  }
+}
+
+const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
+const basePath = import.meta.env.VITE_API_BASE_PATH ?? '/api'
 
 export const userApi = createApi({
   reducerPath: 'userApi',
-  baseQuery: mockBaseQuery, // Switch to customBaseQuery when backend is ready
-  tagTypes: ['User'],
+  baseQuery: fetchBaseQuery({
+    baseUrl: `${baseUrl}${basePath}`,
+    credentials: 'include',
+    prepareHeaders: (headers) => {
+      const token = localStorage.getItem('authToken')
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`)
+      }
+      return headers
+    },
+  }),
+  tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
-    createUser: builder.mutation<User, CreateUserRequest>({
-      query: (user) => ({
-        path: 'users',
-        method: 'POST',
-        body: user,
+    getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
+      query: ({ limit = 20, offset = 0, role }) => ({
+        url: '/user',
+        params: { limit, offset, ...(role && { role }) },
       }),
-      invalidatesTags: ['User'],
+      providesTags: ['Users'],
+    }),
+
+    getUserById: builder.query<GetUserResponse, string>({
+      query: (id) => `/user/${id}`,
+      providesTags: (_result, _error, id) => [{ type: 'User', id }],
+    }),
+
+    updateUser: builder.mutation<UpdateUserResponse, UpdateUserRequest>({
+      query: ({ id, ...body }) => ({
+        url: `/user/${id}`,
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'User', id },
+        'Users',
+      ],
     }),
   }),
 })
 
-export const { useCreateUserMutation } = userApi
+export const {
+  useGetUsersQuery,
+  useGetUserByIdQuery,
+  useUpdateUserMutation,
+} = userApi

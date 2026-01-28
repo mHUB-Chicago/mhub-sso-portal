@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { useCreateUserMutation } from "@/store/api/userApi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { StepIndicator } from "./components/StepIndicator";
@@ -27,6 +26,7 @@ interface FormData {
 const AdminAddUserPage = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     fullName: "",
     email: "",
@@ -43,7 +43,7 @@ const AdminAddUserPage = () => {
 
   const totalSteps = 4;
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: unknown) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -59,24 +59,30 @@ const AdminAddUserPage = () => {
     }
   };
 
-  const [createUser, { isLoading }] = useCreateUserMutation();
-
+  // Note: User creation is handled via PeopleVine sync
+  // This is a placeholder for manual user creation if needed in the future
   const handleSaveAndFinish = async () => {
+    setIsLoading(true);
     try {
-      await createUser(formData).unwrap();
-      toast.success("User created successfully!");
+      // TODO: Implement when backend supports manual user creation
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.info("User creation via admin panel coming soon. Users are synced from PeopleVine.");
       navigate("/admin/users");
     } catch (error) {
       toast.error("Failed to create user. Please try again.");
       console.error("Error creating user:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSaveAndAddMore = async (sameCompany: boolean) => {
+    setIsLoading(true);
     try {
-      await createUser(formData).unwrap();
-      toast.success("User created successfully!");
-      
+      // TODO: Implement when backend supports manual user creation
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.info("User creation via admin panel coming soon. Users are synced from PeopleVine.");
+
       setCurrentStep(1);
       if (sameCompany) {
         setFormData(prev => ({
@@ -106,6 +112,8 @@ const AdminAddUserPage = () => {
     } catch (error) {
       toast.error("Failed to create user. Please try again.");
       console.error("Error creating user:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 

@@ -11,36 +11,36 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import type { User, Company } from "@/store/api/userApi"
+import type { ServiceProvider } from "@/store/api/serviceProviderApi"
 
-export type User = {
-  id: string
-  fullName: string
-  email: string
-  company: string
-  membership: "Premium" | "Standard" | "Enterprise"
-  accessLevel: "Admin" | "Editor" | "Viewer"
-  modifiedOn: string
-  avatar?: string
+// Extended user type with company name for display
+export type UserWithCompany = User & {
+  companyName?: string
 }
 
-export const userColumns: ColumnDef<User>[] = [
+// Extended company type with user count for display
+export type CompanyWithUserCount = Company & {
+  userCount?: number
+}
+
+export const userColumns: ColumnDef<UserWithCompany>[] = [
   {
-    accessorKey: "fullName",
+    accessorKey: "name",
     header: "Full Name",
     cell: ({ row }) => {
       const user = row.original
-      const initials = user.fullName.split(' ').map(n => n[0]).join('').toUpperCase()
-      
+      const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
+
       return (
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
           <div>
-            <div className="font-medium">{user.fullName}</div>
+            <div className="font-medium">{user.name}</div>
             <div className="text-sm text-muted-foreground">{user.email}</div>
           </div>
         </div>
@@ -48,18 +48,10 @@ export const userColumns: ColumnDef<User>[] = [
     },
   },
   {
-    accessorKey: "company",
+    accessorKey: "companyName",
     header: "Company",
-  },
-  {
-    accessorKey: "membership",
-    header: "Peoplevine Membership",
     cell: ({ row }) => {
-      const membership = row.getValue("membership") as string
-      const variant = membership === "Premium" ? "default" : 
-                    membership === "Enterprise" ? "secondary" : "outline"
-      
-      return <Badge variant={variant}>{membership}</Badge>
+      return <span>{row.original.companyName || '-'}</span>
     },
   },
   {
@@ -67,22 +59,23 @@ export const userColumns: ColumnDef<User>[] = [
     header: "Email",
   },
   {
-    accessorKey: "accessLevel",
-    header: "Access Level",
+    accessorKey: "emailVerified",
+    header: "Status",
     cell: ({ row }) => {
-      const level = row.getValue("accessLevel") as string
-      const variant = level === "Admin" ? "destructive" : 
-                    level === "Editor" ? "default" : "secondary"
-      
-      return <Badge variant={variant}>{level}</Badge>
+      const verified = row.getValue("emailVerified") as boolean
+      return (
+        <Badge variant={verified ? "default" : "outline"}>
+          {verified ? "Verified" : "Pending"}
+        </Badge>
+      )
     },
   },
   {
-    accessorKey: "modifiedOn",
+    accessorKey: "updatedAt",
     header: "Modified On",
     cell: ({ row }) => {
-      const date = row.getValue("modifiedOn") as string
-      return <div className="text-sm text-muted-foreground">{date}</div>
+      const date = new Date(row.getValue("updatedAt") as string)
+      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
     },
   },
   {
@@ -99,21 +92,211 @@ export const userColumns: ColumnDef<User>[] = [
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem className="text-blue-600">
-              View
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <Link to={`/admin/users/${row.original.id}/edit`} className="w-full">
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link to={`/admin/users/${row.original.id}/edit`}>
                 Edit user
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem>Change access level</DropdownMenuItem>
-            <DropdownMenuItem className="text-red-600">
-              Deactivate user
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )
+    },
+  },
+]
+
+export const adminColumns: ColumnDef<UserWithCompany>[] = [
+  {
+    accessorKey: "name",
+    header: "Full Name",
+    cell: ({ row }) => {
+      const user = row.original
+      const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
+
+      return (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+          </Avatar>
+          <div>
+            <div className="font-medium">{user.name}</div>
+            <div className="text-sm text-muted-foreground">{user.email}</div>
+          </div>
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "companyName",
+    header: "Company",
+    cell: ({ row }) => {
+      return <span>{row.original.companyName || '-'}</span>
+    },
+  },
+  {
+    accessorKey: "email",
+    header: "Email",
+  },
+  {
+    accessorKey: "emailVerified",
+    header: "Status",
+    cell: ({ row }) => {
+      const verified = row.getValue("emailVerified") as boolean
+      return (
+        <Badge variant={verified ? "default" : "outline"}>
+          {verified ? "Verified" : "Pending"}
+        </Badge>
+      )
+    },
+  },
+  {
+    accessorKey: "updatedAt",
+    header: "Modified On",
+    cell: ({ row }) => {
+      const date = new Date(row.getValue("updatedAt") as string)
+      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
+    },
+  },
+  {
+    id: "actions",
+    header: "Actions",
+    cell: ({ row }) => {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="h-8 w-8 p-0">
+              <span className="sr-only">Open menu</span>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link to={`/admin/admins/${row.original.id}/edit`}>
+                Edit admin
+              </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      )
+    },
+  },
+]
+
+export const companyColumns: ColumnDef<CompanyWithUserCount>[] = [
+  {
+    accessorKey: "name",
+    header: "Company Name",
+    cell: ({ row }) => {
+      const company = row.original
+      const initials = company.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+
+      return (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+          </Avatar>
+          <div className="font-medium">{company.name}</div>
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "email",
+    header: "Email",
+  },
+  {
+    accessorKey: "userCount",
+    header: "Users",
+    cell: ({ row }) => {
+      return <span>{row.original.userCount ?? '-'}</span>
+    },
+  },
+  {
+    accessorKey: "createdAt",
+    header: "Created",
+    cell: ({ row }) => {
+      const date = new Date(row.getValue("createdAt") as string)
+      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
+    },
+  },
+  {
+    id: "actions",
+    header: "Actions",
+    cell: ({ row }) => {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="h-8 w-8 p-0">
+              <span className="sr-only">Open menu</span>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link to={`/admin/companies/${row.original.id}/edit`}>
+                Edit company
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )
+    },
+  },
+]
+
+export const serviceProviderColumns: ColumnDef<ServiceProvider>[] = [
+  {
+    accessorKey: "name",
+    header: "Application Name",
+    cell: ({ row }) => {
+      const sp = row.original
+
+      return (
+        <div className="flex items-center gap-3">
+          {sp.logo ? (
+            <img src={sp.logo} alt={sp.name} className="h-8 w-8 object-contain" />
+          ) : (
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="text-xs">{sp.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+            </Avatar>
+          )}
+          <div className="font-medium">{sp.name}</div>
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "active",
+    header: "Status",
+    cell: ({ row }) => {
+      const active = row.getValue("active") as boolean
+      return (
+        <Badge variant={active ? "default" : "outline"}>
+          {active ? "Active" : "Inactive"}
+        </Badge>
+      )
+    },
+  },
+  {
+    accessorKey: "updatedAt",
+    header: "Modified On",
+    cell: ({ row }) => {
+      const date = new Date(row.getValue("updatedAt") as string)
+      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
+    },
+  },
+  {
+    id: "actions",
+    header: "Actions",
+    cell: ({ row }) => {
+      return (
+        <Link
+          to={`/admin/idp/${row.original.id}/edit`}
+          className="text-[#D30046] hover:underline text-sm font-medium"
+        >
+          View Settings
+        </Link>
       )
     },
   },
