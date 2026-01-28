@@ -17,7 +17,6 @@ import { swaggerUI } from "@hono/swagger-ui";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
-import { HTTPException } from "hono/http-exception";
 
 type Bindings = {
   DB: D1Database;

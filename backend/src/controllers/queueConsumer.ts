@@ -21,13 +21,13 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
       console.log(`Processing job ${jobId} of type ${jobType}`);
       console.log("Payload:", payload);
 
-      if (jobType === JobType.SYNC_PEOPLEVINE_EVERYTHING) {
-        await syncAllPeopleVine(context);
-      } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
-        await syncOnePeopleVine(context, payload.peopleVineId);
-      } else {
-        console.log(`Unknown job type: ${jobType}`);
-      }
+      // if (jobType === JobType.SYNC_PEOPLEVINE_EVERYTHING) {
+      //   await syncAllPeopleVine(context);
+      // } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
+      //   await syncOnePeopleVine(context, payload.peopleVineId);
+      // } else {
+      //   console.log(`Unknown job type: ${jobType}`);
+      // }
       await msg.ack();
     })
   );
