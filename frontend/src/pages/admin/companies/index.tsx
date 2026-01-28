@@ -1,43 +1,21 @@
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table/data-table"
-import { companyColumns, type CompanyWithUserCount } from "@/components/data-table/columns"
+import { companyColumns } from "@/components/data-table/columns"
 import { Download, Settings, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
-import { useGetUsersQuery } from "@/store/api/userApi"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 
 const PAGE_SIZE = 10
 
 export function AdminCompaniesPage() {
   const [page, setPage] = useState(0)
-  const { data: companiesData, isLoading: companiesLoading, error: companiesError } = useGetCompaniesQuery({
+  const { data: companiesData, isLoading, error: companiesError } = useGetCompaniesQuery({
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE
   })
-  // Fetch all users for user count (TODO: backend should return this with companies)
-  const { data: usersData, isLoading: usersLoading } = useGetUsersQuery({ limit: 1000, offset: 0 })
 
-  // Create a map of company IDs to user counts
-  const userCountMap = useMemo(() => {
-    if (!usersData?.data?.users) return new Map<string, number>()
-    const counts = new Map<string, number>()
-    usersData.data.users.forEach(user => {
-      counts.set(user.companyId, (counts.get(user.companyId) || 0) + 1)
-    })
-    return counts
-  }, [usersData])
-
-  // Enrich companies with user counts
-  const companiesWithUserCount: CompanyWithUserCount[] = useMemo(() => {
-    if (!companiesData?.data?.companies) return []
-    return companiesData.data.companies.map(company => ({
-      ...company,
-      userCount: userCountMap.get(company.id) || 0
-    }))
-  }, [companiesData, userCountMap])
-
-  const isLoading = companiesLoading || usersLoading
+  const companies = companiesData?.data?.companies ?? []
 
   if (isLoading) {
     return (
@@ -100,7 +78,7 @@ export function AdminCompaniesPage() {
         {/* Data Table */}
         <DataTable
           columns={companyColumns}
-          data={companiesWithUserCount}
+          data={companies}
           searchPlaceholder="Search by company name, email..."
           pageSize={PAGE_SIZE}
           serverSide

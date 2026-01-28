@@ -96,7 +96,7 @@ export function DataTable<TData, TValue>({
       sorting,
       columnFilters,
       globalFilter,
-      pagination: serverSide ? { pageIndex: currentPage, pageSize } : undefined,
+      ...(serverSide && { pagination: { pageIndex: currentPage, pageSize } }),
     },
   })
 

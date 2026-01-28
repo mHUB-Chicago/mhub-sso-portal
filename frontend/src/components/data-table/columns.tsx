@@ -21,11 +21,6 @@ export type UserWithCompany = User & {
   companyName?: string
 }
 
-// Extended company type with user count for display
-export type CompanyWithUserCount = Company & {
-  userCount?: number
-}
-
 export const userColumns: ColumnDef<UserWithCompany>[] = [
   {
     accessorKey: "name",
@@ -182,7 +177,7 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
   },
 ]
 
-export const companyColumns: ColumnDef<CompanyWithUserCount>[] = [
+export const companyColumns: ColumnDef<Company>[] = [
   {
     accessorKey: "name",
     header: "Company Name",
@@ -203,13 +198,6 @@ export const companyColumns: ColumnDef<CompanyWithUserCount>[] = [
   {
     accessorKey: "email",
     header: "Email",
-  },
-  {
-    accessorKey: "userCount",
-    header: "Users",
-    cell: ({ row }) => {
-      return <span>{row.original.userCount ?? '-'}</span>
-    },
   },
   {
     accessorKey: "createdAt",
