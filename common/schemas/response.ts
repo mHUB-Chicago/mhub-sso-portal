@@ -4,7 +4,7 @@ export const SuccessResponseSchema = <T extends ZodType>(dataSchema?: T) =>
   z.object({
     success: z.boolean(),
     message: z.string().optional(),
-    data: dataSchema ? dataSchema : z.undefined().or(z.null()),
+    data: dataSchema ? dataSchema : z.any().optional(),
   });
 
 export const FailedResponseSchema = z.object({

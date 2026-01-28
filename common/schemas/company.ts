@@ -7,8 +7,8 @@ export const CompanySchema = z.object({
   peopleVineId: z.string().nullable(),
   name: z.string(),
   email: z.string(),
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date(),
+  createdAt: z.string(),
+  updatedAt: z.string()
 });
 
 export const GetCompaniesRequestSchema = z.object({

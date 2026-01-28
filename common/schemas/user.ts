@@ -12,8 +12,8 @@ export const UserSchema = z.object({
   role: z.enum(['USER', 'ADMIN']),
   emailVerified: z.boolean(),
   mustResetPassword: z.boolean(),
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const AppSchema = z.object({

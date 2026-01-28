@@ -10,8 +10,8 @@ export const ServiceProviderSchema = z.object({
   acsUrl: z.string(), // this is the Assertion Consumer Service URL from the SP metadata
   loginUrl: z.string(), // This is used for the speedbump to link users to the correct place after clicking the app
   signTarget: z.enum(['ASSERTION', 'RESPONSE', 'BOTH']), // This is usually just always ASSERTION, but some service providers use other ones. ASSERTION should be default value in form.
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const GetServiceProvidersResponseSchema = SuccessResponseSchema(z.object({
