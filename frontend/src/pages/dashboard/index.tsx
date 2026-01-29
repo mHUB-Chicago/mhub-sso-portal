@@ -18,7 +18,7 @@ export function DashboardPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-[#D30046]" />
+        <Loader2 className="h-8 w-8 animate-spin text-brand" />
       </div>
     )
   }
@@ -35,7 +35,7 @@ export function DashboardPage() {
             rel="noopener noreferrer"
             className="block"
           >
-            <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-[#D30046]/30">
+            <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-brand/30">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="w-16 h-16 flex items-center justify-center">
                   <img
@@ -53,10 +53,10 @@ export function DashboardPage() {
         {/* Admin Panel Link */}
         {isAdmin && (
           <Link to="/admin/users" className="block">
-            <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-[#D30046]/30">
+            <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-brand/30">
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="w-16 h-16 flex items-center justify-center">
-                  <Settings className="w-12 h-12 text-[#D30046]" />
+                  <Settings className="w-12 h-12 text-brand" />
                 </div>
                 <span className="text-lg font-medium text-gray-900">Admin Panel</span>
               </div>

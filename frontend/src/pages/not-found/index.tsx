@@ -23,7 +23,7 @@ export function NotFoundPage() {
         <div className="space-y-3">
           <Button 
             onClick={() => navigate("/")}
-            className="w-full bg-[#D30046] hover:bg-[#B8003C]"
+            className="w-full bg-brand hover:bg-brand-hover"
           >
             <Home className="w-4 h-4 mr-2" />
             Go Home
@@ -40,7 +40,7 @@ export function NotFoundPage() {
         </div>
 
         <div className="text-sm text-gray-500">
-          Need help? <a href="mailto:support@mhub.com" className="text-[#D30046] hover:underline">Contact support</a>
+          Need help? <a href="mailto:support@mhub.com" className="text-brand hover:underline">Contact support</a>
         </div>
       </div>
     </div>

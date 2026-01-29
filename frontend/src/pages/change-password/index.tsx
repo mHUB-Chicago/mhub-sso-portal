@@ -53,8 +53,8 @@ export function ChangePasswordPage() {
         <div className="text-center mb-8">
           <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-[#D30046]/10 rounded-full">
-              <ShieldCheck className="h-8 w-8 text-[#D30046]" />
+            <div className="p-3 bg-brand/10 rounded-full">
+              <ShieldCheck className="h-8 w-8 text-brand" />
             </div>
           </div>
           <h2 className="text-3xl font-bold mb-2">Set Your Password</h2>
@@ -151,7 +151,7 @@ export function ChangePasswordPage() {
           <Button
             type="submit"
             disabled={isLoading}
-            className="w-full py-4 h-12 bg-[#D30046] hover:bg-[#B8003C] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
+            className="w-full py-4 h-12 bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
           >
             {isLoading ? (
               <div className="flex items-center justify-center gap-2">

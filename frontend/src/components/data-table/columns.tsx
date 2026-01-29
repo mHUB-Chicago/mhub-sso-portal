@@ -281,7 +281,7 @@ export const serviceProviderColumns: ColumnDef<ServiceProvider>[] = [
       return (
         <Link
           to={`/admin/idp/${row.original.id}/edit`}
-          className="text-[#D30046] hover:underline text-sm font-medium"
+          className="text-brand hover:underline text-sm font-medium"
         >
           View Settings
         </Link>

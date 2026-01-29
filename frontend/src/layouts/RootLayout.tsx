@@ -97,7 +97,7 @@ export function RootLayout() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleLogout}
-              className="bg-[#D30046] hover:bg-[#B8003C]"
+              className="bg-brand hover:bg-brand-hover"
             >
               Logout
             </AlertDialogAction>

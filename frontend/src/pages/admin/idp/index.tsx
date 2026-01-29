@@ -41,7 +41,7 @@ export function IDPManagementPage() {
       <div className="flex items-start justify-between">
         <div>
           <nav className="text-sm text-gray-500 mb-2">
-            <Link to="/admin/users" className="hover:text-gray-700 cursor-pointer">Home</Link>
+            <Link to="/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
             <span className="mx-1">›</span>
             <span className="font-semibold text-gray-900">IDP Management</span>
           </nav>
@@ -49,7 +49,7 @@ export function IDPManagementPage() {
         </div>
         <Button
           onClick={() => navigate('/admin/idp/add')}
-          className="bg-[#D30046] hover:bg-[#B8003C]"
+          className="bg-brand hover:bg-brand-hover"
         >
           <Plus className="h-4 w-4 mr-2" />
           Add New Application

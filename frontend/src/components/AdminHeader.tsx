@@ -10,7 +10,8 @@ import {
   User,
   LogOut,
   ChevronDown,
-  Cog
+  Cog,
+  Menu
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -31,7 +32,11 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
-export function AdminHeader() {
+interface AdminHeaderProps {
+  onMenuClick: () => void
+}
+
+export function AdminHeader({ onMenuClick }: AdminHeaderProps) {
   const user = useAppSelector(state => state.auth.user)
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
@@ -43,21 +48,38 @@ export function AdminHeader() {
   }
 
   return (
-    <header className="bg-white border-b h-16 px-6 flex items-center justify-between w-full">
+    <header className="bg-white border-b h-16 px-4 md:px-6 flex items-center justify-between w-full">
       <div className="flex items-center gap-4">
-        <div className="relative">
+        {/* Hamburger menu - mobile only */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden"
+          onClick={onMenuClick}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+
+        {/* Search - hidden on small screens */}
+        <div className="relative hidden sm:block">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input 
-            placeholder="Search..." 
-            className="pl-10 w-80 bg-gray-50 border-gray-200"
+          <Input
+            placeholder="Search..."
+            className="pl-10 w-48 md:w-80 bg-gray-50 border-gray-200"
           />
         </div>
       </div>
-      
-      <div className="flex items-center gap-3">
+
+      <div className="flex items-center gap-2 md:gap-3">
+        {/* Search button - mobile only */}
+        <Button variant="ghost" size="icon" className="sm:hidden">
+          <Search className="h-5 w-5 text-gray-600" />
+        </Button>
+
         <Button variant="ghost" size="icon">
           <Bell className="h-5 w-5 text-gray-600" />
         </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="flex items-center gap-2 h-8">
@@ -66,7 +88,7 @@ export function AdminHeader() {
                   {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'A'}
                 </AvatarFallback>
               </Avatar>
-              <ChevronDown className="h-4 w-4 text-gray-600" />
+              <ChevronDown className="h-4 w-4 text-gray-600 hidden sm:block" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -98,7 +120,7 @@ export function AdminHeader() {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleLogout}
-                className="bg-[#D30046] hover:bg-[#B8003C]"
+                className="bg-brand hover:bg-brand-hover"
               >
                 Logout
               </AlertDialogAction>

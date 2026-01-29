@@ -151,7 +151,7 @@ export function ForgotPasswordPage() {
             <Button
               type="submit"
               disabled={isSendingOTP}
-              className="w-full py-4 h-12 bg-[#D30046] hover:bg-[#B8003C] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
+              className="w-full py-4 h-12 bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
             >
               {isSendingOTP ? (
                 <div className="flex items-center justify-center gap-2">
@@ -166,7 +166,7 @@ export function ForgotPasswordPage() {
             <div className="text-center">
               <Link
                 to="/login"
-                className="inline-flex items-center text-sm text-[#D30046] hover:underline font-medium"
+                className="inline-flex items-center text-sm text-brand hover:underline font-medium"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back to Sign In
@@ -235,7 +235,7 @@ export function ForgotPasswordPage() {
             <Button
               type="submit"
               disabled={isVerifying}
-              className="w-full py-4 h-12 bg-[#D30046] hover:bg-[#B8003C] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
+              className="w-full py-4 h-12 bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
             >
               {isVerifying ? (
                 <div className="flex items-center justify-center gap-2">
@@ -253,7 +253,7 @@ export function ForgotPasswordPage() {
                 type="button"
                 onClick={handleResendOTP}
                 disabled={isSendingOTP}
-                className="text-[#D30046] hover:underline font-medium disabled:opacity-50"
+                className="text-brand hover:underline font-medium disabled:opacity-50"
               >
                 {isSendingOTP ? 'Sending...' : 'Resend code'}
               </button>

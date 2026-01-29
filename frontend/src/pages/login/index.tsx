@@ -147,7 +147,7 @@ export function LoginPage() {
             <Button
               type="submit"
               disabled={isStartingLogin}
-              className="w-full py-4 h-12 bg-[#D30046] hover:bg-[#B8003C] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
+              className="w-full py-4 h-12 bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
             >
               {isStartingLogin ? (
                 <div className="flex items-center justify-center gap-2">
@@ -160,7 +160,7 @@ export function LoginPage() {
             </Button>
 
             <div className="text-center">
-              <Link to="/forgot-password" className="text-sm text-[#D30046] hover:underline">
+              <Link to="/forgot-password" className="text-sm text-brand hover:underline">
                 Forgot Password?
               </Link>
             </div>
@@ -227,7 +227,7 @@ export function LoginPage() {
             <Button
               type="submit"
               disabled={isVerifying}
-              className="w-full py-4 h-12 bg-[#D30046] hover:bg-[#B8003C] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
+              className="w-full py-4 h-12 bg-brand hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md"
             >
               {isVerifying ? (
                 <div className="flex items-center justify-center gap-2">
@@ -240,7 +240,7 @@ export function LoginPage() {
             </Button>
 
             <div className="text-center">
-              <Link to="/forgot-password" className="text-sm text-[#D30046] hover:underline">
+              <Link to="/forgot-password" className="text-sm text-brand hover:underline">
                 Forgot Password?
               </Link>
             </div>

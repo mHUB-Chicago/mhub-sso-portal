@@ -5,23 +5,52 @@ import {
   Building2,
   ShieldCheck,
   KeyRound,
-  LayoutDashboard
+  LayoutDashboard,
+  X
 } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
   const user = useAppSelector(state => state.auth.user)
   const location = useLocation()
 
+  const handleLinkClick = () => {
+    // Close sidebar on mobile when a link is clicked
+    onClose()
+  }
+
   return (
-    <aside className="w-64 h-screen bg-gray-50 border-r flex flex-col">
+    <aside
+      className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-gray-50 border-r flex flex-col
+        transform transition-transform duration-300 ease-in-out
+        lg:relative lg:translate-x-0
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}
+    >
       <div className="p-6 flex-1">
-        <div className="mb-12">
-          <img src="/logo.png" alt="MHUB Logo" className="h-8 mx-auto" />
+        <div className="mb-12 flex items-center justify-between">
+          <img src="/logo.png" alt="MHUB Logo" className="h-8" />
+          {/* Close button - mobile only */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" />
+          </Button>
         </div>
         <nav className="space-y-3">
           <Link
             to="/dashboard"
+            onClick={handleLinkClick}
             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100"
           >
             <LayoutDashboard className="h-5 w-5 text-gray-500" />
@@ -29,9 +58,10 @@ export function AdminSidebar() {
           </Link>
           <Link
             to="/admin/users"
+            onClick={handleLinkClick}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
               location.pathname.startsWith('/admin/users')
-                ? 'bg-[#D30046] text-white'
+                ? 'bg-brand text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -44,9 +74,10 @@ export function AdminSidebar() {
           </Link>
           <Link
             to="/admin/companies"
+            onClick={handleLinkClick}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
               location.pathname.startsWith('/admin/companies')
-                ? 'bg-[#D30046] text-white'
+                ? 'bg-brand text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -59,9 +90,10 @@ export function AdminSidebar() {
           </Link>
           <Link
             to="/admin/admins"
+            onClick={handleLinkClick}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
               location.pathname.startsWith('/admin/admins')
-                ? 'bg-[#D30046] text-white'
+                ? 'bg-brand text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -74,9 +106,10 @@ export function AdminSidebar() {
           </Link>
           <Link
             to="/admin/idp"
+            onClick={handleLinkClick}
             className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
               location.pathname.startsWith('/admin/idp')
-                ? 'bg-[#D30046] text-white'
+                ? 'bg-brand text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -89,7 +122,7 @@ export function AdminSidebar() {
           </Link>
         </nav>
       </div>
-      
+
       <div className="p-6 border-t bg-gray-50">
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">

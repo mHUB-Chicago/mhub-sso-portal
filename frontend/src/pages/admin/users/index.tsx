@@ -78,7 +78,7 @@ export function AdminUsersPage() {
       {/* Header */}
       <div>
         <nav className="text-sm text-gray-500 mb-2">
-          <Link to="/admin/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
+          <Link to="/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
           <span className="mx-1">›</span>
           <span className="font-semibold text-gray-900">Users</span>
         </nav>

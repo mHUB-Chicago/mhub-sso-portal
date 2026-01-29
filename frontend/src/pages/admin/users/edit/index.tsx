@@ -99,7 +99,7 @@ export function AdminEditUserPage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="text-sm text-gray-500">
-        <Link to="/admin/dashboard" className="hover:text-gray-700">Home</Link>
+        <Link to="/dashboard" className="hover:text-gray-700">Home</Link>
         <span className="mx-1">›</span>
         <Link to="/admin/users" className="hover:text-gray-700">Users</Link>
         <span className="mx-1">›</span>
@@ -150,7 +150,7 @@ export function AdminEditUserPage() {
                 href={`https://control.peoplevine.com/admin_customer_menu.aspx?customer_no=${user.peopleVineId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-[#D30046] hover:underline inline-flex items-center gap-1"
+                className="font-medium text-brand hover:underline inline-flex items-center gap-1"
               >
                 {user.peopleVineId}
                 <ExternalLink className="h-3 w-3" />
@@ -231,7 +231,7 @@ export function AdminEditUserPage() {
           <Button
             onClick={handleSave}
             disabled={isUpdating}
-            className="bg-[#D30046] hover:bg-[#B8003C] px-6"
+            className="bg-brand hover:bg-brand-hover px-6"
           >
             {isUpdating ? (
               <>

@@ -15,12 +15,12 @@ export function HomePage() {
       </p>
       <div className="flex gap-4">
         {isAuthenticated ? (
-          <Button asChild className="bg-[#D30046] hover:bg-[#B8003C]">
+          <Button asChild className="bg-brand hover:bg-brand-hover">
             <Link to="/dashboard">Go to Dashboard</Link>
           </Button>
         ) : (
           <>
-            <Button asChild className="bg-[#D30046] hover:bg-[#B8003C]">
+            <Button asChild className="bg-brand hover:bg-brand-hover">
               <Link to="/login">Sign In</Link>
             </Button>
             <Button variant="outline" asChild>

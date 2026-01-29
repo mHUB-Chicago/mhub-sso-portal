@@ -140,7 +140,7 @@ export function IDPEditPage() {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="text-sm text-gray-500">
-        <Link to="/admin/users" className="hover:text-gray-700">Home</Link>
+        <Link to="/dashboard" className="hover:text-gray-700">Home</Link>
         <span className="mx-1">›</span>
         <Link to="/admin/idp" className="hover:text-gray-700">IDP Management</Link>
         <span className="mx-1">›</span>
@@ -294,7 +294,7 @@ export function IDPEditPage() {
             <Button
               onClick={handleSave}
               disabled={isUpdating || isDeleting}
-              className="bg-[#D30046] hover:bg-[#B8003C] px-6"
+              className="bg-brand hover:bg-brand-hover px-6"
             >
               {isUpdating ? (
                 <>
