@@ -30,10 +30,13 @@ export function RootLayout() {
   useEffect(() => {
     if (data?.data?.user) {
       dispatch(loginSuccess({
-        id: data.data.user.id,
-        email: data.data.user.email,
-        name: data.data.user.name,
-        role: data.data.user.role,
+        user: {
+          id: data.data.user.id,
+          email: data.data.user.email,
+          name: data.data.user.name,
+          role: data.data.user.role,
+        },
+        redirectUrl: null,
       }))
     }
   }, [data, dispatch])
