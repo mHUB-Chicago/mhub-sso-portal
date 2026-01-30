@@ -30,7 +30,11 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <HomePage />
+        element: (
+          <ProtectedRoute>
+            <HomePage />
+          </ProtectedRoute>
+        )
       },
       {
         path: 'unauthorized',

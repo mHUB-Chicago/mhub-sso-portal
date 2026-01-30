@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ export function IDPAddPage() {
   const [entityId, setEntityId] = useState('')
   const [acsUrl, setAcsUrl] = useState('')
   const [loginUrl, setLoginUrl] = useState('')
+  const [autoRedirect, setAutoRedirect] = useState(false)
   const [signTarget, setSignTarget] = useState<'ASSERTION' | 'RESPONSE' | 'BOTH'>('ASSERTION')
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string>('')
@@ -51,6 +53,7 @@ export function IDPAddPage() {
       formData.append('acsUrl', acsUrl)
       formData.append('loginUrl', loginUrl)
       formData.append('signTarget', signTarget)
+      formData.append('autoRedirect', autoRedirect.toString())
       if (logoFile) {
         formData.append('logo', logoFile)
       }
@@ -112,6 +115,19 @@ export function IDPAddPage() {
             onChange={(e) => setName(e.target.value)}
             placeholder="Enter application name"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="autoRedirect">Auto Redirect</Label>
+          <div className="flex items-center gap-2 pt-2">
+            <Switch
+              id="autoRedirect"
+              checked={autoRedirect}
+              onCheckedChange={setAutoRedirect}
+            />
+            <span className="text-sm text-gray-600">{autoRedirect ? 'Enabled' : 'Disabled'}</span>
+          </div>
+          <p className="text-xs text-gray-500">Automatically redirect users to the service provider without showing a speedbump page</p>
         </div>
 
         {/* SAML Configuration */}

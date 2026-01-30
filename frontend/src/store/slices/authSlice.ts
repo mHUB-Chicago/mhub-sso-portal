@@ -8,7 +8,18 @@ interface AuthState {
     name: string
     role: 'ADMIN' | 'USER'
   } | null
+  redirectUrl?: string | null
   loading: boolean
+}
+
+interface LoginSuccessPayload {
+  user: {
+    id: string
+    email: string
+    name: string
+    role: 'ADMIN' | 'USER'
+  }
+  redirectUrl: string | null
 }
 
 const getInitialState = (): AuthState => {
@@ -48,9 +59,10 @@ const authSlice = createSlice({
     loginStart: (state) => {
       state.loading = true
     },
-    loginSuccess: (state, action: PayloadAction<{ id: string; email: string; name: string; role: 'ADMIN' | 'USER' }>) => {
+    loginSuccess: (state, action: PayloadAction<LoginSuccessPayload>) => {
       state.isAuthenticated = true
-      state.user = action.payload
+      state.user = action.payload.user
+      state.redirectUrl = action.payload.redirectUrl
       state.loading = false
     },
     loginFailure: (state) => {

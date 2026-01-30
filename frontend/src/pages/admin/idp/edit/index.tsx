@@ -33,6 +33,7 @@ interface LocalChanges {
   acsUrl?: string
   loginUrl?: string
   signTarget?: 'ASSERTION' | 'RESPONSE' | 'BOTH'
+  autoRedirect?: boolean
   logoPreview?: string
 }
 
@@ -56,6 +57,7 @@ export function IDPEditPage() {
   const acsUrl = localChanges.acsUrl ?? sp?.acsUrl ?? ''
   const loginUrl = localChanges.loginUrl ?? sp?.loginUrl ?? ''
   const signTarget = localChanges.signTarget ?? sp?.signTarget ?? 'ASSERTION'
+  const autoRedirect = localChanges.autoRedirect ?? sp?.autoRedirect ?? false
   const logoPreview = localChanges.logoPreview ?? sp?.logo ?? ''
 
   const updateField = <K extends keyof LocalChanges>(field: K, value: LocalChanges[K]) => {
@@ -85,6 +87,7 @@ export function IDPEditPage() {
       formData.append('acsUrl', acsUrl)
       formData.append('loginUrl', loginUrl)
       formData.append('signTarget', signTarget)
+      formData.append('autoRedirect', autoRedirect.toString())
       if (logoFile) {
         formData.append('logo', logoFile)
       }
@@ -177,7 +180,7 @@ export function IDPEditPage() {
         </div>
 
         {/* Basic Info */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           <div className="space-y-2">
             <Label htmlFor="name">Application Name</Label>
             <Input
@@ -198,6 +201,20 @@ export function IDPEditPage() {
               />
               <span className="text-sm text-gray-600">{active ? 'Active' : 'Inactive'}</span>
             </div>
+            <p className="text-xs text-gray-500">Whether the application is currently active and can be used for authentication</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="autoRedirect">Auto Redirect</Label>
+            <div className="flex items-center gap-2 pt-2">
+              <Switch
+                id="autoRedirect"
+                checked={autoRedirect}
+                onCheckedChange={(checked) => updateField('autoRedirect', checked)}
+              />
+              <span className="text-sm text-gray-600">{autoRedirect ? 'Enabled' : 'Disabled'}</span>
+            </div>
+            <p className="text-xs text-gray-500">Automatically redirect users to the service provider without showing a speedbump page</p>
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import { getUserByEmail, getUserById, updateUser } from "@/services/userService"
 import { createSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
+import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
@@ -78,11 +79,19 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     const { request_id, password } = c.req.valid("json");
     const loginRequest = await verifyLoginRequest(c, { requestId: request_id, password });
     const user = await getUserById(c, loginRequest.userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
     await createSession(c, loginRequest.userId);
+    const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);
+    const autoRedirectableSp = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
     const response = VerifyLoginResponseSchema.parse({
       success: true,
       message: "Success",
-      data: { user },
+      data: {
+        user,
+        redirectUrl: autoRedirectableSp ? autoRedirectableSp.loginUrl : null,
+      },
     });
     return c.json(response);
   } catch (error) {

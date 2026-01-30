@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Lock, Loader2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
+import { useAppSelector } from '@/store'
 
 interface ChangePasswordFormData {
   password: string
@@ -15,6 +16,7 @@ interface ChangePasswordFormData {
 
 export function ChangePasswordPage() {
   const txQueryParam = new URLSearchParams(window.location.search).get('tx')
+  const { redirectUrl } = useAppSelector(state => state.auth)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -38,6 +40,8 @@ export function ChangePasswordPage() {
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
         window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+      } else if (redirectUrl) {
+        window.location.assign(redirectUrl)
       } else {
         navigate('/dashboard')
       }

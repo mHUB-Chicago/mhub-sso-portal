@@ -47,6 +47,7 @@ export const runSeed = async (c: Context) => {
     loginUrl: `https://member.mhubchicago.com/login/sso/start?route=${c.env.BACKEND_URL}/saml`,
     logo: "data:image/webp;base64,UklGRj4CAABXRUJQVlA4TDICAAAvgcAHEGDcRlIY9982ewchxz9CFiTJpm31tW3btm3b99m2bdu2bZtftq1r42D1BHiKqyNMoCtZM67iICvGKA7aTuPqFmTqHuHqL3PoWo1ROmT5eJDwz1rBAAAJHaHZkKMGH4GI/hpJqYEO0y+U+ocPQRJTKDTQZfpBqWZ8CpIo76BzLAEoKNaFj0GPmHXQFZoU9NWOw9lkVmmObd4lQloLHTZcDU7HH2qKLB0IaFVvdzoAlj4Hf5KfRIvEv0fQcDlgUulhh8RwVx5B3aWeOHoeEIVaQym49AjaHgftBbB1kQg69aAEr1CiOzheAVtXCUQk0ZMCnLLL7Lavv5HEvGTBWX81GPVoAEsPEXUZRgGOHf2DRrW1Fsw+MOoAPQ/814cCDHdQg3JoAVsZFOA5TtHYqJ+iRfX70CvGF1lmVNub34igXdJho6+6gKovEgdtp3/DH7ritQdnZqDsflDDqWV7kvQFPQ+CthnAmaBTaoeye4nfF9RdCihA9Mp4g4/olcFNVgS0oMNOfSCncwNceIWeJMFvIRUF+zF6Ap+4Pgo7vwN6LTDRMI80mfAJF/+CD0OAbQnJnTTJEIONtMo3zBrobQmmXFKhy9tdjGZOwU172iUshS3XHCsdd0crRjLRtrt1XvhVYCbZES9o7510h4qneF7cXVTtPeGPSLhAjWgYA2hZqXuH8IE/XKBJNQwClFR7TrQ02cAeviN8kg2jAHDUzzVtifDZFrGweUS7G8YyAQAA",
     signTarget: SamlSignTarget.ASSERTION,
+    autoRedirect: true,
   });
 
   const learnworldsServiceProvider = await createServiceProvider(c, {
@@ -118,11 +119,11 @@ export const runSeed = async (c: Context) => {
   });
 
   // Queue full PeopleVine sync, disabled for now
-  c.env.QUEUE.send({
-    jobId: `${crypto.randomUUID()}-${Date.now()}`,
-    jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
-    payload: {},
-  });
+  // c.env.QUEUE.send({
+  //   jobId: `${crypto.randomUUID()}-${Date.now()}`,
+  //   jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+  //   payload: {},
+  // });
 };
 
 export default app;

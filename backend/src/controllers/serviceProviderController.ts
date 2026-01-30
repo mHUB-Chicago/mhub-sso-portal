@@ -40,6 +40,7 @@ export const handleCreateServiceProvider = async (c: Context) => {
     acsUrl: createServiceProviderBody.acsUrl,
     loginUrl: createServiceProviderBody.loginUrl,
     signTarget: createServiceProviderBody.signTarget,
+    autoRedirect: createServiceProviderBody.autoRedirect === 'true',
     logo: "",
   };
   const logo = body["logo"];
@@ -79,6 +80,7 @@ export const handleUpdateServiceProvider = async (c: Context) => {
     acsUrl: updateServiceProviderBody.acsUrl,
     loginUrl: updateServiceProviderBody.loginUrl,
     signTarget: updateServiceProviderBody.signTarget,
+    autoRedirect: updateServiceProviderBody.autoRedirect ? updateServiceProviderBody.autoRedirect === 'true' : undefined,
     logo: undefined,
   };
   const logo = body["logo"];

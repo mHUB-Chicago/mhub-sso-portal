@@ -8,6 +8,7 @@ export interface ServiceProvider {
   entityId: string
   acsUrl: string
   loginUrl: string
+  autoRedirect: boolean
   signTarget: 'ASSERTION' | 'RESPONSE' | 'BOTH'
   createdAt: string
   updatedAt: string

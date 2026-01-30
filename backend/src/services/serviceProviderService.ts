@@ -8,6 +8,7 @@ export interface CreateServiceProviderInput {
   logo: string;
   loginUrl: string;
   signTarget?: SamlSignTarget;
+  autoRedirect?: boolean;
 }
 
 export interface UpdateServiceProviderInput {
@@ -19,6 +20,7 @@ export interface UpdateServiceProviderInput {
   logo?: string;
   loginUrl?: string;
   signTarget?: SamlSignTarget;
+  autoRedirect?: boolean;
 }
 
 export const createServiceProvider = (c: Context, input: CreateServiceProviderInput): Promise<ServiceProvider> => {
@@ -30,7 +32,8 @@ export const createServiceProvider = (c: Context, input: CreateServiceProviderIn
       acsUrl: input.acsUrl,
       loginUrl: input.loginUrl,
       logo: input.logo,
-      signTarget: input.signTarget, 
+      signTarget: input.signTarget,
+      autoRedirect: input.autoRedirect,
     },
   });
 }
@@ -54,6 +57,13 @@ export const getAllServiceProviders = (c: Context): Promise<ServiceProvider[]> =
   return prisma.serviceProvider.findMany();
 }
 
+export const getAllActiveServiceProviders = (c: Context): Promise<ServiceProvider[]> => {
+  const prisma: PrismaClient = c.get("db");
+  return prisma.serviceProvider.findMany({
+    where: { active: true },
+  });
+}
+
 export const updateServiceProvider = (c: Context, input: UpdateServiceProviderInput): Promise<ServiceProvider> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.serviceProvider.update({
@@ -66,6 +76,7 @@ export const updateServiceProvider = (c: Context, input: UpdateServiceProviderIn
       logo: input.logo,
       loginUrl: input.loginUrl,
       signTarget: input.signTarget,
+      autoRedirect: input.autoRedirect,
     },
   });
 }

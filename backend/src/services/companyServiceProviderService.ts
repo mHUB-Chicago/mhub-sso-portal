@@ -1,6 +1,6 @@
 import { CompanyServiceProvider, PrismaClient, ServiceProvider, UserServiceProvider } from "@/database/models";
 import { Context } from "hono";
-import { getAllServiceProviders } from "./serviceProviderService";
+import { getAllActiveServiceProviders, getAllServiceProviders } from "./serviceProviderService";
 
 export interface CreateCompanyServiceProviderInput {
   companyId: string;
@@ -20,7 +20,7 @@ export interface RevokeCompanyServiceProviderInput {
 
 export const getAllowedServiceProvidersForCompany = async (c: Context, companyId: string): Promise<ServiceProvider[]> => {
   const prisma: PrismaClient = c.get("db");
-  const allServiceProviders: ServiceProvider[] = await getAllServiceProviders(c);
+  const allServiceProviders: ServiceProvider[] = await getAllActiveServiceProviders(c);
   const revokedCompanyServiceProviders: CompanyServiceProvider[] = await prisma.companyServiceProvider.findMany({
     where: {
       companyId,

@@ -48,6 +48,7 @@ CREATE TABLE "ServiceProvider" (
     "acsUrl" TEXT NOT NULL,
     "loginUrl" TEXT NOT NULL,
     "signTarget" TEXT NOT NULL DEFAULT 'ASSERTION',
+    "autoRedirect" BOOLEAN NOT NULL DEFAULT false,
     "active" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL

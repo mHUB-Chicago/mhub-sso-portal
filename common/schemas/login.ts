@@ -14,7 +14,8 @@ export const VerifyLoginRequestSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 export const VerifyLoginResponseSchema = SuccessResponseSchema(z.object({
-  user: UserSchema
+  user: UserSchema,
+  redirectUrl: z.string().nullable(),
 }));
 
 export const ForgotPasswordRequestSchema = z.object({

@@ -63,13 +63,17 @@ export function LoginPage() {
       }
 
       const user = result.data.user
+      const redirectUrl = result.data.redirectUrl
 
       // Update Redux auth state
       dispatch(loginSuccess({
+        user: {
         id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+        redirectUrl,
       }))
 
       // Check if user needs to reset password
@@ -85,6 +89,8 @@ export function LoginPage() {
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
         window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+      } else if (redirectUrl) {
+        window.location.assign(redirectUrl)
       } else {
         navigate('/dashboard')
       }

@@ -63,13 +63,17 @@ export function ForgotPasswordPage() {
       }
 
       const user = result.data.user
+      const redirectUrl = result.data.redirectUrl
 
       // Update Redux auth state
       dispatch(loginSuccess({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+        redirectUrl,
       }))
 
       // User is now logged in - redirect to change password
