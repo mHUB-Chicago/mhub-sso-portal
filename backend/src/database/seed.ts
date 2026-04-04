@@ -85,7 +85,7 @@ export const runSeed = async (c: Context) => {
     active: true,
   });
 
-  const testUser = await createUser(c, {
+  const testUser1 = await createUser(c, {
     name: "Xavier John",
     email: "axsmodern@gmail.com",
     password: "Example123!",
@@ -103,7 +103,7 @@ export const runSeed = async (c: Context) => {
     mustResetPassword: false,
     emailVerified: true,
     peopleVineId: "100003", // No PeopleVine ID for seed user
-    role: Role.ADMIN,
+    role: Role.USER,
     companyId: testCompany.id
   });
 
@@ -114,7 +114,7 @@ export const runSeed = async (c: Context) => {
     mustResetPassword: false,
     emailVerified: true,
     peopleVineId: "100004", // No PeopleVine ID for seed user
-    role: Role.ADMIN,
+    role: Role.USER,
     companyId: testCompany.id
   });
 
@@ -124,6 +124,8 @@ export const runSeed = async (c: Context) => {
   //   jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
   //   payload: {},
   // });
+
+  
 };
 
 export default app;
