@@ -9,7 +9,8 @@
     {
       "binding": "DB",
       "database_name": "mhub-sso-portal",
-      "database_id": "45184088-9093-4aa3-b142-0590acad4c9a"
+      // "database_id": "45184088-9093-4aa3-b142-0590acad4c9a", // axsmodern
+      "database_id": "64276139-5ee2-46f8-bb70-7e407d609cc4" // mhub-chicago
     }
   ],
   "queues": {
