@@ -66,7 +66,10 @@ export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
   const prisma: PrismaClient = c.get("db");
   return prisma.company.update({
     where: { id: input.id },
-    data: { name: input.name },
+    data: {
+      name: input.name,
+      active: input.active,
+    },
   });
 }
 

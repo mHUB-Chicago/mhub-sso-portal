@@ -17,11 +17,15 @@ export interface UpdateSamlAuthRequestInput {
   completedAt?: Date;
 }
 
-export const getSamlAuthRequestById = (c: Context, id: string): Promise<SamlAuthRequest | null> => {
+export const getSamlAuthRequestById = async (c: Context, id: string): Promise<SamlAuthRequest | null> => {
   const prisma: PrismaClient = c.get("db");
-  return prisma.samlAuthRequest.findUnique({
+  const request = await prisma.samlAuthRequest.findUnique({
     where: { id },
   });
+  if (!request || request.expiresAt < new Date() || request.completedAt !== null) {
+    return null;
+  }
+  return request;
 }
 
 export const createSamlAuthRequest = (c: Context, input: CreateSamlAuthRequestInput): Promise<SamlAuthRequest> => {

@@ -1,12 +1,12 @@
 import { Context } from "hono";
 import { AppType, QueryInput } from "..";
 import { SamlContinueRequestSchema, SamlRequestSchema } from "@common/schemas/saml";
-import { createSamlAuthRequest, getSamlAuthRequestById } from "@/services/samlAuthRequestService";
+import { createSamlAuthRequest, getSamlAuthRequestById, updateSamlAuthRequest } from "@/services/samlAuthRequestService";
 import { SamlBinding } from "@/database/models";
 import { buildIdpMetadataXml, decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
 import { getServiceProviderByEntityId, getServiceProviderById } from "@/services/serviceProviderService";
 import { getSessionId, verifySession } from "@/middleware/auth";
-import { getAllowedServiceProvidersForUser, getUserServiceProvider } from "@/services/userServiceProviderService";
+import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 
 export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<typeof SamlRequestSchema>>) => {
   const { SAMLRequest: samlRequest, RelayState: relayState } = c.req.valid("query");
@@ -17,18 +17,29 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
   if (!serviceProvider) {
     return c.json({ message: "Unknown Service Provider" }, 400);
   }
+  if (!serviceProvider.active) {
+    return c.json({ message: "Service Provider is not active" }, 403);
+  }
   if (parsedRequest.assertionConsumerServiceURL !== serviceProvider.acsUrl) {
     return c.json({ message: "Invalid ACS URL" }, 400);
   }
 
-  const samlAuthRequest = await createSamlAuthRequest(c, {
-    serviceProviderId: serviceProvider.id,
-    inResponseTo: parsedRequest.id,
-    acsUrl: parsedRequest.assertionConsumerServiceURL,
-    requestBinding: SamlBinding.HTTP_REDIRECT,
-    responseBinding: SamlBinding.HTTP_POST,
-    expiresAt: new Date(Date.now() + 5 * 60 * 1000), // Expires in 5 minutes
-  });
+  let samlAuthRequest;
+  try {
+    samlAuthRequest = await createSamlAuthRequest(c, {
+      serviceProviderId: serviceProvider.id,
+      inResponseTo: parsedRequest.id,
+      acsUrl: parsedRequest.assertionConsumerServiceURL,
+      requestBinding: SamlBinding.HTTP_REDIRECT,
+      responseBinding: SamlBinding.HTTP_POST,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000), // Expires in 5 minutes
+    });
+  } catch (err: any) {
+    if (err?.message?.includes('UNIQUE constraint failed')) {
+      return c.json({ message: "Duplicate SAML request" }, 400);
+    }
+    throw err;
+  }
   const currentUser = await verifySession(c);
   const sessionId = getSessionId(c);
   if (currentUser && sessionId) {
@@ -50,6 +61,7 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
         privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
       }
     });
+    await updateSamlAuthRequest(c, { id: samlAuthRequest.id, completedAt: new Date() });
     return c.html(html);
   } else {
     // Redirect to frontend login with SAML Auth Request ID
@@ -76,6 +88,9 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
   if (!serviceProvider) {
     return c.json({ message: "Unknown Service Provider" }, 400);
   }
+  if (!serviceProvider.active) {
+    return c.json({ message: "Service Provider is not active" }, 403);
+  }
   const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
   const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
   if (!isAllowed) {
@@ -94,6 +109,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
       privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
     }
   });
+  await updateSamlAuthRequest(c, { id: samlAuthRequest.id, completedAt: new Date() });
   return c.html(html);
 }
 

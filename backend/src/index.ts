@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { openAPIRouteHandler } from "hono-openapi";
 import { z, ZodType } from "zod";
 import { PrismaClient, User } from "@prisma/client";
 import { authMiddleware } from "@/middleware/auth";
@@ -11,10 +10,9 @@ import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
-import seedRoute from "@/database/seed";
+// import seedRoute from "@/database/seed";
 import { syncAll } from "@/services/peopleVineService";
 import webhookRoutes from "@/routes/webhook";
-import { swaggerUI } from "@hono/swagger-ui";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
@@ -52,19 +50,6 @@ app.use("*", async (c, next) => {
     return handleError(err, c);
   }
 });
-app.get(
-  "/openapi.json",
-  openAPIRouteHandler(app, {
-    documentation: {
-      info: {
-        title: "API",
-        version: "1.0.0",
-        description: "API Documentation",
-      },
-    },
-  })
-);
-app.get("/openapi", swaggerUI({ url: "/openapi.json" }));
 
 // Public routes
 app.use("/api/login/start", markPublic);
@@ -83,18 +68,9 @@ app.route("/webhook", webhookRoutes);
 app.use("/saml/*", corsMiddleware, databaseMiddleware);
 app.route("/saml", samlRoutes);
 
-app.route("/__internal/seed", seedRoute);
-
-app.get("/__internal/test-headers", async (c) => {
-  const res = await fetch('https://httpbin.org/headers');
-  const data = await res.json();
-  return c.json(data);
-});
-
-
+// app.route("/__internal/seed", seedRoute);
 
 app.post("/__internal/sync", databaseMiddleware, async (c) => {
-  if (c.env.SEED_ENABLED !== "true") return c.json({ success: false }, 403);
   const auth = c.req.header("authorization") ?? "";
   if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
   await syncAll(c);

@@ -197,11 +197,12 @@ const normalizeCustomers = (customers: PeopleVineCustomer[]): PeopleVineCustomer
   });
 }
 
-const getCustomersFromSubscriptions = async (c: Context): Promise<PeopleVineCustomer[]> => {
+const getCustomersFromSubscriptions = async (c: Context): Promise<{ customers: PeopleVineCustomer[]; hadErrors: boolean }> => {
   let subscriptions: any[] = [];
   let pageNumber = 1;
   const pageSize = 10;
   let consecutiveErrors = 0;
+  let hadErrors = false;
   do {
     let retrievedSubscriptions: any[];
     try {
@@ -218,6 +219,7 @@ const getCustomersFromSubscriptions = async (c: Context): Promise<PeopleVineCust
       consecutiveErrors = 0;
     } catch (err) {
       console.warn(`[subscriptions] skipping page ${pageNumber} due to error: ${err}`);
+      hadErrors = true;
       pageNumber++;
       consecutiveErrors++;
       if (consecutiveErrors >= 3) break;
@@ -229,16 +231,17 @@ const getCustomersFromSubscriptions = async (c: Context): Promise<PeopleVineCust
       break;
     }
   } while (true);
-  let companies = subscriptions.map((sub: any) => sub?.customer || null)
+  let companies = subscriptions.map((sub: any) => sub?.customer || null).filter(Boolean)
   companies = Array.from(new Map(companies.map(company => [`${company.id}${company.company_name}`, company])).values());
-  return normalizeCustomers(companies);
+  return { customers: normalizeCustomers(companies), hadErrors };
 };
 
-const getCustomers = async (c: Context): Promise<PeopleVineCustomer[]> => {
+const getCustomers = async (c: Context): Promise<{ customers: PeopleVineCustomer[]; hadErrors: boolean }> => {
   let customers: PeopleVineCustomer[] = [];
   let pageNumber = 1;
   const pageSize = 100;
   let consecutiveErrors = 0;
+  let hadErrors = false;
   do {
     let retrievedCustomers: PeopleVineCustomer[];
     try {
@@ -255,6 +258,7 @@ const getCustomers = async (c: Context): Promise<PeopleVineCustomer[]> => {
       consecutiveErrors = 0;
     } catch (err) {
       console.warn(`[customers] skipping page ${pageNumber} due to error: ${err}`);
+      hadErrors = true;
       pageNumber++;
       consecutiveErrors++;
       if (consecutiveErrors >= 3) break;
@@ -267,7 +271,7 @@ const getCustomers = async (c: Context): Promise<PeopleVineCustomer[]> => {
       break;
     }
   } while (true);
-  return normalizeCustomers(customers);
+  return { customers: normalizeCustomers(customers), hadErrors };
 };
 
 const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
@@ -293,7 +297,7 @@ export const syncAll = async (c: Context): Promise<void> => {
 
   console.log('Retrieving PeopleVine data');
   // Fetch customers from PeopleVine which have active subscriptions
-  const peopleVineCustomersFromSubscriptions: PeopleVineCustomer[] = await getCustomersFromSubscriptions(c);
+  const { customers: peopleVineCustomersFromSubscriptions, hadErrors: subscriptionFetchHadErrors } = await getCustomersFromSubscriptions(c);
   // Create a map of PeopleVine companies by their PeopleVine ID for easy lookup
   let companyProfilesMap: Map<string, PeopleVineCustomer> = new Map();
   for (const company of peopleVineCustomersFromSubscriptions) {
@@ -345,11 +349,14 @@ export const syncAll = async (c: Context): Promise<void> => {
   dbCompanies = await prisma.company.findMany();
   const companiesByNameMap: Map<string, Company> = new Map();
   for (const company of dbCompanies) {
+    if (companiesByNameMap.has(company.name)) {
+      console.warn(`[sync] Duplicate company name detected: "${company.name}" — IDs ${companiesByNameMap.get(company.name)!.id} and ${company.id}. User assignments for this name may be incorrect.`);
+    }
     companiesByNameMap.set(company.name, company);
   }
 
   // Fetch all customers from PeopleVine
-  const allPeopleVineCustomers: PeopleVineCustomer[] = await getCustomers(c);
+  const { customers: allPeopleVineCustomers, hadErrors: customerFetchHadErrors } = await getCustomers(c);
 
   // Normalize and map customers by their PeopleVine ID
   const allCustomersMap: Map<string, PeopleVineCustomer> = new Map();
@@ -418,12 +425,18 @@ export const syncAll = async (c: Context): Promise<void> => {
   // Step 3: Deactivate any companies or users that no longer exist in PeopleVine
   //
 
+  if (subscriptionFetchHadErrors || customerFetchHadErrors) {
+    console.warn('[sync] Skipping deactivation step — PeopleVine API returned errors during fetch. Re-run sync when the API is stable to avoid false deactivations.');
+    console.log('PeopleVine synchronization complete (deactivation skipped due to fetch errors).');
+    return;
+  }
+
   console.log('deactivating removed companies and users');
   dbCompanies = await prisma.company.findMany();
 
   const activePeopleVineIdsForCompanies = new Set<string>(companyProfilesMap.keys());
   const activePeopleVineIdsForUsers = new Set<string>(allCustomersMap.keys());
-  
+
   // Deactivate companies not in PeopleVine
   await Promise.all(dbCompanies.map(async (dbCompany) => {
     if (dbCompany.peopleVineId && !activePeopleVineIdsForCompanies.has(dbCompany.peopleVineId)) {
@@ -459,8 +472,8 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
   console.log('Retrieved customer:', customer);
 
   // Fetch customers from PeopleVine which have active subscriptions
-  const peopleVineCustomersFromSubscriptions: PeopleVineCustomer[] = await getCustomersFromSubscriptions(c);
-  
+  const { customers: peopleVineCustomersFromSubscriptions } = await getCustomersFromSubscriptions(c);
+
   // Create a map of PeopleVine companies by their PeopleVine ID for easy lookup
   let companyProfilesMap: Map<string, PeopleVineCustomer> = new Map();
   for (const company of peopleVineCustomersFromSubscriptions) {

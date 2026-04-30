@@ -9,6 +9,9 @@ export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: Exec
       headers: {
         'Authorization': `Bearer ${env.SEED_TOKEN}`,
       },
-    }).then(res => res.json()).then((data: any) => console.log('Sync result:', data))
+    })
+      .then(res => res.json())
+      .then((data: any) => console.log('Sync result:', data))
+      .catch((err: any) => console.error('Scheduled sync failed:', err))
   );
 };

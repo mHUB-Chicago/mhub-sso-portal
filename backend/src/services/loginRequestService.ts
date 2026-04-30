@@ -101,6 +101,8 @@ export const createLoginRequest = async (c: Context, createLoginRequestInput: Cr
   return loginRequest;
 };
 
+const MAX_LOGIN_ATTEMPTS = 5;
+
 export const verifyLoginRequest = async (c: Context, verifyLoginRequestInput: VerifyLoginRequestInput): Promise<LoginRequest> => {
   const prisma: PrismaClient = c.get("db");
   const { requestId, password } = verifyLoginRequestInput;
@@ -110,11 +112,13 @@ export const verifyLoginRequest = async (c: Context, verifyLoginRequestInput: Ve
     throw new Error("Invalid request ID");
   }
   if (loginRequest.expiresAt < new Date()) {
-    await incrementLoginAttempts(c, loginRequest.id);
     throw new Error("Login request has expired");
   }
   if (loginRequest.otpVerifiedAt || loginRequest.passwordVerifiedAt) {
     throw new Error("Login request already verified");
+  }
+  if (loginRequest.attemptsCount >= MAX_LOGIN_ATTEMPTS) {
+    throw new Error("Too many attempts. Please request a new login.");
   }
   const user = loginRequest.user;
   const hashedPassword = await hashPassword(password);

@@ -17,7 +17,7 @@ export const getActiveSessionById = async (c: Context, sessionId: string): Promi
     include: { user: true },
   });
 
-  if (!session || session.revokedAt || session.expiresAt < new Date()) {
+  if (!session || session.revokedAt || session.expiresAt < new Date() || !session.user.active) {
     return null;
   }
   return session.user;

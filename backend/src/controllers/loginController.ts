@@ -25,7 +25,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     });
     return c.json(response);
   } catch (error) {
-    console.log(error); // For debugging purposes
+    console.error("handleStartLogin error:", error);
 
     // Still return a response with a fake request_id to avoid user enumeration
     const randomUUID = crypto.randomUUID();
@@ -59,7 +59,7 @@ export const handleForgotPassword = async (c: Context<AppType, string, JsonInput
     });
     return c.json(response);
   } catch (error) {
-    console.log(error); // For debugging purposes
+    console.error("handleForgotPassword error:", error);
 
     // Still return a response with a fake request_id to avoid user enumeration
     const randomUUID = crypto.randomUUID();
@@ -95,13 +95,13 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     });
     return c.json(response);
   } catch (error) {
-    console.log(error);
+    console.error("handleVerifyLogin error:", error);
     const response = FailedResponseSchema.parse({
       success: false,
       message: "Unauthorized",
     });
     return c.json(response, 401);
-  }  
+  }
 };
 
 export const handleChangePassword = async (c: Context<AppType, string, JsonInput<typeof ChangePasswordRequestSchema>>) => {
@@ -118,7 +118,7 @@ export const handleChangePassword = async (c: Context<AppType, string, JsonInput
     });
     return c.json(response);
   } catch (error) {
-    console.log(error);
+    console.error("handleChangePassword error:", error);
     const response = FailedResponseSchema.parse({
       success: false,
       message: "Failed to change password",

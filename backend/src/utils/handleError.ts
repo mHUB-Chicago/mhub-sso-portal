@@ -12,8 +12,8 @@ const formatZodIssues = (issues: any) => {
 };
 
 export const handleError = (error: any, c: Context) => {
-  console.log("Error occurred:", error);
-  let message: string = "An unknown error occurred";
+  console.error("Error occurred:", error);
+  let message: string = "An internal error occurred";
   let status: ContentfulStatusCode = 500;
   if (error instanceof HTTPException) {
     message = error.message;
@@ -22,9 +22,22 @@ export const handleError = (error: any, c: Context) => {
     message = formatZodIssues(error.issues);
     status = 400;
   } else if (error instanceof Error) {
-    message = error?.message || message;
-  } else if (typeof error === "string") {
-    message = error;
+    // Expose the message only for expected application errors (4xx range).
+    // For unexpected 500s, keep the generic message so internals don't leak.
+    const clientSafeErrors = [
+      "User not found",
+      "Invalid request ID",
+      "Login request has expired",
+      "Login request already verified",
+      "Too many attempts. Please request a new login.",
+      "Invalid password",
+      "User not authenticated",
+      "Failed to change password",
+      "Unauthorized",
+    ];
+    if (clientSafeErrors.includes(error.message)) {
+      message = error.message;
+    }
   }
   const response = FailedResponseSchema.parse({
     success: false,
