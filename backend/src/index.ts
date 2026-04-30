@@ -73,8 +73,8 @@ app.route("/saml", samlRoutes);
 app.post("/__internal/sync", databaseMiddleware, async (c) => {
   const auth = c.req.header("authorization") ?? "";
   if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
-  await syncAll(c);
-  return c.json({ success: true });
+  c.executionCtx.waitUntil(syncAll(c));
+  return c.json({ success: true, message: "Sync started in background" });
 });
 
 export default {
