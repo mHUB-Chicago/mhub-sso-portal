@@ -10,7 +10,7 @@ import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
-// import seedRoute from "@/database/seed";
+import seedRoute from "@/database/seed";
 import { syncAll } from "@/services/peopleVineService";
 import webhookRoutes from "@/routes/webhook";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
@@ -68,7 +68,7 @@ app.route("/webhook", webhookRoutes);
 app.use("/saml/*", corsMiddleware, databaseMiddleware);
 app.route("/saml", samlRoutes);
 
-// app.route("/__internal/seed", seedRoute);
+app.route("/__internal/seed", seedRoute);
 
 app.post("/__internal/sync", databaseMiddleware, async (c) => {
   const auth = c.req.header("authorization") ?? "";
