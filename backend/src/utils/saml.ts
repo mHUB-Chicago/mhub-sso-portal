@@ -89,7 +89,7 @@ export const decodeSamlRequestParam = (samlRequest: string): string => {
 
 export type IssueSamlResponseInput = {
   serviceProvider: ServiceProvider,
-  samlRequest: SamlAuthRequest;
+  samlRequest: SamlAuthRequest | null;
   user: User,
   sessionId: string,
   relayState?: string | null;
@@ -141,7 +141,8 @@ function addMinutes(date: Date, minutes: number): Date {
 function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const { user, serviceProvider, samlRequest } = input;
   const now = new Date();
-  const notOnOrAfter = addMinutes(now, 60).toISOString();
+  const isIdpInitiated = samlRequest === null;
+  const notOnOrAfter = addMinutes(now, isIdpInitiated ? 5 : 60).toISOString();
   const notBefore = now.toISOString();
 
   const responseId = `_${crypto.randomUUID()}`;
@@ -154,12 +155,19 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const nameIdValue = user.email;
   const email = user.email;
 
+  const responseInResponseToAttr = samlRequest
+    ? `InResponseTo="${escapeHtmlAttr(samlRequest.inResponseTo)}"`
+    : "";
+  const subjectInResponseToAttr = samlRequest
+    ? `InResponseTo="${escapeHtmlAttr(samlRequest.inResponseTo)}"`
+    : "";
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <samlp:Response
   xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
   xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
   ID="${responseId}"
-  InResponseTo="${samlRequest.inResponseTo}"
+  ${responseInResponseToAttr}
   Version="2.0"
   IssueInstant="${now.toISOString()}"
   Destination="${escapeHtmlAttr(destination)}"
@@ -174,7 +182,7 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
       <saml:NameID Format="${nameIdFormat}">${nameIdValue}</saml:NameID>
       <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
         <saml:SubjectConfirmationData
-          InResponseTo="${samlRequest.inResponseTo}"
+          ${subjectInResponseToAttr}
           NotOnOrAfter="${notOnOrAfter}"
           Recipient="${escapeHtmlAttr(destination)}"/>
       </saml:SubjectConfirmation>
@@ -183,7 +191,8 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
     <saml:Conditions NotBefore="${notBefore}" NotOnOrAfter="${notOnOrAfter}">
       <saml:AudienceRestriction>
         <saml:Audience>${input.serviceProvider.entityId}</saml:Audience>
-      </saml:AudienceRestriction>
+      </saml:AudienceRestriction>${isIdpInitiated ? `
+      <saml:OneTimeUse/>` : ""}
     </saml:Conditions>
 
     <saml:AuthnStatement AuthnInstant="${now.toISOString()}" SessionIndex="${sessionIndex}">

@@ -36,9 +36,11 @@ export const createSession = async (c: Context, userId: string): Promise<string>
     },
   });
   const createdSessionId = createdSession.sessionId;
+  const isLocal = (c.env.DOMAIN as string) === "localhost";
   setCookie(c, "sid", createdSessionId, {
     httpOnly: true,
-    secure: true,
+    // secure: true, // original - use for production
+    secure: !isLocal, // local dev fix: false on localhost, true in production
     sameSite: "Lax",
     path: "/",
     domain: c.env.DOMAIN as string

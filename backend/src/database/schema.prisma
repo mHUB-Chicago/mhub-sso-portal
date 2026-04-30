@@ -44,6 +44,7 @@ model Company {
 model User {
   id                   String                @id @default(uuid())
   peopleVineId         String?               @unique
+  active               Boolean               @default(true)
   name                 String
   email                String                @unique
   passwordHashed       String?

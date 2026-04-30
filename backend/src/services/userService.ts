@@ -55,8 +55,8 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
 
 export const getUserByEmail = (c: Context, email: string): Promise<User | null> => {
   const prisma: PrismaClient = c.get("db");
-  return prisma.user.findUnique({
-    where: { email },
+  return prisma.user.findFirst({
+    where: { email, active: true },
   });
 }
 
@@ -127,17 +127,19 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
   });
 }
 
-export const deleteUser = async (c: Context, id: string): Promise<void> => {
+export const deactivateUser = async (c: Context, id: string): Promise<void> => {
   const prisma: PrismaClient = c.get("db");
-  await prisma.user.delete({
+  await prisma.user.update({
     where: { id },
+    data: { active: false },
   });
 }
 
-export const deleteUsersByCompanyId = async (c: Context, companyId: string) => {
+export const deactivateUsersByCompanyId = async (c: Context, companyId: string) => {
   const prisma: PrismaClient = c.get("db");
-  const { count } = await prisma.user.deleteMany({
+  const { count } = await prisma.user.updateMany({
     where: { companyId },
+    data: { active: false },
   });
-  console.log(`Deleted ${count} users for company ID: ${companyId}`);
+  console.log(`Deactivated ${count} users for company ID: ${companyId}`);
 }

@@ -1,15 +1,14 @@
 import { AppType } from "..";
-import { JobType } from "./queueConsumer";
 
 export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: ExecutionContext) => {
-  // For now, this only runs at midnight
   console.log(`Scheduled job triggered: ${event.cron}`);
-  // console.log(`Enqueuing SYNC_PEOPLEVINE_EVERYTHING job`);
-  // await env.QUEUE.send({
-  //   jobId: `${crypto.randomUUID()}-${Date.now()}`,
-  //   jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
-  //   payload: {},
-  // });
-  // console.log('Deleting old login flows/sessions');
-  // TODO: Implement deletion of old login flows/sessions
+  console.log(`Triggering PeopleVine sync via HTTP`);
+  ctx.waitUntil(
+    fetch(`${env.BACKEND_URL}/__internal/sync`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.SEED_TOKEN}`,
+      },
+    }).then(res => res.json()).then((data: any) => console.log('Sync result:', data))
+  );
 };

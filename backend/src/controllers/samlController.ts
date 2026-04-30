@@ -107,3 +107,44 @@ export const handleSamlMetadata = async (c: Context<AppType>) => {
     "Content-Type": "application/xml",
   });
 };
+
+export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
+  const serviceProviderId = c.req.param("serviceProviderId");
+  if (!serviceProviderId) {
+    return c.json({ message: "Missing service provider ID" }, 400);
+  }
+
+  const currentUser = await verifySession(c);
+  const sessionId = getSessionId(c);
+  if (!currentUser || !sessionId) {
+    const redirectUrl = new URL(`${c.env.FRONTEND_URL}/login`);
+    return c.redirect(redirectUrl.toString());
+  }
+
+  const serviceProvider = await getServiceProviderById(c, serviceProviderId);
+  if (!serviceProvider) {
+    return c.json({ message: "Unknown Service Provider" }, 400);
+  }
+  if (!serviceProvider.active) {
+    return c.json({ message: "Service Provider is not active" }, 403);
+  }
+
+  const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
+  const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
+  if (!isAllowed) {
+    return c.json({ message: "Access to Service Provider not authorized" }, 403);
+  }
+
+  const { html } = await issueSamlResponse({
+    serviceProvider,
+    samlRequest: null,
+    user: currentUser,
+    sessionId,
+    idp: {
+      entityId: c.env.SAML_ENTITY_ID as string,
+      certPem: c.env.SAML_PUBLIC_CERT as string,
+      privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
+    },
+  });
+  return c.html(html);
+};

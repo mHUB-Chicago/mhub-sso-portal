@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import { Company, PeopleVineToken, PeopleVineTokenType, PrismaClient, Role, User } from '@prisma/client';
 import { createCompany, deactivateCompany, updateCompany } from './companyService';
-import { createUser, deleteUser, updateUser } from './userService';
+import { createUser, deactivateUser, updateUser } from './userService';
 
 const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 
@@ -99,7 +99,9 @@ const getUserToken = async (c: Context): Promise<PeopleVineToken> => {
 const getUserCompanyToken = async (c: Context): Promise<PeopleVineToken> => {
   const storedToken = await getStoredToken(c, PeopleVineTokenType.USER_COMPANY);
   // Check if token is still valid (skew by 1 minute)
-  if (storedToken && storedToken.expiresAt > new Date(Date.now() + 60000)) {
+  const expiresAtMs = storedToken ? new Date(storedToken.expiresAt).getTime() : 0;
+  const isValid = expiresAtMs > Date.now() + 60000;
+  if (storedToken && isValid) {
     return storedToken;
   }
   const companyId = parseInt(c.env.PEOPLEVINE_COMPANY_ID as string);
@@ -151,15 +153,20 @@ const apiRequest = async (c: Context, options: RequestOptions): Promise<any> => 
   const authTokenRecord: PeopleVineToken = await getAuthToken(c, options.tokenType);
   const authToken: string = authTokenRecord.accessToken;
   const baseUrl = PEOPLEVINE_API_BASE_URL;
-  const response = await fetch(`${baseUrl}${endpoint}${queryString}`, {
+  const fullUrl = `${baseUrl}${endpoint}${queryString}`;
+  console.log(`[PeopleVine] ${method} ${fullUrl}`);
+  const fetchInit: RequestInit = {
     method,
     headers: {
       'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(headers || {}),
     },
-    body: body ? JSON.stringify(body) : null,
-  });
+  };
+  if (body) {
+    fetchInit.body = JSON.stringify(body);
+  }
+  const response = await fetch(fullUrl, fetchInit);
   if (!response.ok) {
     const resText = await response.text();
     const status = response.status;
@@ -193,21 +200,32 @@ const normalizeCustomers = (customers: PeopleVineCustomer[]): PeopleVineCustomer
 const getCustomersFromSubscriptions = async (c: Context): Promise<PeopleVineCustomer[]> => {
   let subscriptions: any[] = [];
   let pageNumber = 1;
-  const pageSize = 100;
+  const pageSize = 10;
+  let consecutiveErrors = 0;
   do {
-    const retrievedSubscriptions: any[] = await apiRequest(c, {
-      tokenType: PeopleVineTokenType.USER_COMPANY,
-      endpoint: '/subscriptions',
-      method: 'GET',
-      queryParams: {
-        Status: 'active',
-        Page_Size: pageSize.toString(),
-        Page_Number: pageNumber.toString(),
-      },
-    });
+    let retrievedSubscriptions: any[];
+    try {
+      retrievedSubscriptions = await apiRequest(c, {
+        tokenType: PeopleVineTokenType.USER_COMPANY,
+        endpoint: '/subscriptions',
+        method: 'GET',
+        queryParams: {
+          status: 'active',
+          page_size: pageSize.toString(),
+          page_number: pageNumber.toString(),
+        },
+      });
+      consecutiveErrors = 0;
+    } catch (err) {
+      console.warn(`[subscriptions] skipping page ${pageNumber} due to error: ${err}`);
+      pageNumber++;
+      consecutiveErrors++;
+      if (consecutiveErrors >= 3) break;
+      continue;
+    }
     subscriptions = subscriptions.concat(retrievedSubscriptions);
     pageNumber++;
-    if (retrievedSubscriptions.length === 0 || retrievedSubscriptions.length < 100) {
+    if (retrievedSubscriptions.length === 0 || retrievedSubscriptions.length < pageSize) {
       break;
     }
   } while (true);
@@ -220,21 +238,32 @@ const getCustomers = async (c: Context): Promise<PeopleVineCustomer[]> => {
   let customers: PeopleVineCustomer[] = [];
   let pageNumber = 1;
   const pageSize = 100;
+  let consecutiveErrors = 0;
   do {
-    const retrievedCustomers: PeopleVineCustomer[] = await apiRequest(c, {
-      tokenType: PeopleVineTokenType.USER_COMPANY,
-      endpoint: '/customers',
-      method: 'GET',
-      queryParams: {
-        status: 'active',
-        page_size: pageSize.toString(),
-        page_number: pageNumber.toString(),
-      },
-    });
+    let retrievedCustomers: PeopleVineCustomer[];
+    try {
+      retrievedCustomers = await apiRequest(c, {
+        tokenType: PeopleVineTokenType.USER_COMPANY,
+        endpoint: '/customers',
+        method: 'GET',
+        queryParams: {
+          status: 'active',
+          page_size: pageSize.toString(),
+          page_number: pageNumber.toString(),
+        },
+      });
+      consecutiveErrors = 0;
+    } catch (err) {
+      console.warn(`[customers] skipping page ${pageNumber} due to error: ${err}`);
+      pageNumber++;
+      consecutiveErrors++;
+      if (consecutiveErrors >= 3) break;
+      continue;
+    }
     customers = customers.concat(retrievedCustomers);
     console.log(`Fetched ${retrievedCustomers.length} customers from page ${pageNumber}`);
     pageNumber++;
-    if (retrievedCustomers.length === 0 || retrievedCustomers.length < 100) {
+    if (retrievedCustomers.length === 0 || retrievedCustomers.length < pageSize) {
       break;
     }
   } while (true);
@@ -408,7 +437,7 @@ export const syncAll = async (c: Context): Promise<void> => {
   await Promise.all(existingUsers.map(async (user) => {
     if (user.peopleVineId && !activePeopleVineIdsForUsers.has(user.peopleVineId)) {
       // console.log(`Deactivating user ${user.name} (${user.email}) as they no longer exist in PeopleVine.`);
-      return deleteUser(c, user.id);
+      return deactivateUser(c, user.id);
     }
   }));
 

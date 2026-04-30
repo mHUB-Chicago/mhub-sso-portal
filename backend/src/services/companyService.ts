@@ -1,6 +1,6 @@
 import { Company, PrismaClient } from "@/database/models";
 import { Context } from "hono";
-import { deleteUsersByCompanyId } from "./userService";
+import { deactivateUsersByCompanyId } from "./userService";
 import { getAllServiceProviders } from "./serviceProviderService";
 import { createCompanyServiceProvider } from "./companyServiceProviderService";
 
@@ -76,7 +76,7 @@ export const deactivateCompany = async (c: Context, id: string) => {
     where: { id },
     data: { active: false },
   });
-  await deleteUsersByCompanyId(c, deactivatedCompany.id);
+  await deactivateUsersByCompanyId(c, deactivatedCompany.id);
   return deactivatedCompany;
 }
 

@@ -68,14 +68,18 @@ export const runSeed = async (c: Context) => {
     signTarget: SamlSignTarget.ASSERTION,
   });
 
-  // TODO: Add DigiFabster service provider once support team gets back to us
-  // const digifabsterServiceProvider = await createServiceProvider(c, {
-  //   name: "DigiFabster",
-  //   entityId: "",
-  //   acsUrl: "",
-  //   logo: "",
-  //   signTarget: SamlSignTarget.ASSERTION,
-  // });
+  const digifabsterServiceProvider = await createServiceProvider(c, {
+    name: "DigiFabster",
+    entityId: "https://digifabster.com/v2/sso/mHUB/metadata/",
+    acsUrl: "https://digifabster.com/v2/sso/mHUB/callback/",
+    loginUrl: "",
+    logo: "https://www.digifabster.com/favicon.ico",
+    signTarget: SamlSignTarget.ASSERTION,
+  });
+  await prisma.serviceProvider.update({
+    where: { id: digifabsterServiceProvider.id },
+    data: { loginUrl: `${c.env.BACKEND_URL}/saml/sso/${digifabsterServiceProvider.id}` },
+  });
 
   // Create company
   const testCompany = await createCompany(c, {
@@ -127,5 +131,42 @@ export const runSeed = async (c: Context) => {
 
   
 };
+
+app.post(
+  "/digifabster",
+  databaseMiddleware,
+  async (c) => {
+    if (c.env.SEED_ENABLED !== "true") {
+      return c.json({ success: false }, 403);
+    }
+    const auth = c.req.header("authorization") ?? "";
+    if (auth !== `Bearer ${c.env.SEED_TOKEN}`) {
+      return c.json({ success: false }, 401);
+    }
+    const prisma: PrismaClient = c.get("db");
+    const existing = await prisma.serviceProvider.findUnique({
+      where: { entityId: "https://digifabster.com/v2/sso/mHUB/metadata/" },
+    });
+    if (existing) {
+      return c.json({ success: true, message: "DigiFabster already exists", id: existing.id });
+    }
+    const sp = await prisma.serviceProvider.create({
+      data: {
+        name: "DigiFabster",
+        entityId: "https://digifabster.com/v2/sso/mHUB/metadata/",
+        acsUrl: "https://digifabster.com/v2/sso/mHUB/callback/",
+        loginUrl: "",
+        logo: "https://www.digifabster.com/favicon.ico",
+        signTarget: SamlSignTarget.ASSERTION,
+        active: true,
+      },
+    });
+    await prisma.serviceProvider.update({
+      where: { id: sp.id },
+      data: { loginUrl: `${c.env.BACKEND_URL}/saml/sso/${sp.id}` },
+    });
+    return c.json({ success: true, message: "DigiFabster created", id: sp.id });
+  }
+);
 
 export default app;

@@ -3,7 +3,7 @@ import z from "zod";
 import { AppType } from "@/index";
 import { validate } from "@/middleware/validate";
 import { describeRoute } from "@/utils/describeRoute";
-import { handleSamlContinueRequest, handleSamlMetadata, handleSamlRequest } from "@/controllers/samlController";
+import { handleIdpInitiatedSso, handleSamlContinueRequest, handleSamlMetadata, handleSamlRequest } from "@/controllers/samlController";
 import { SamlContinueRequestSchema, SamlRequestSchema } from "@common/schemas/saml";
 
 const app = new Hono<AppType>();
@@ -35,6 +35,15 @@ app.get(
     successMessage: "SAML metadata retrieved successfully",
   }),
   handleSamlMetadata
+);
+
+app.get(
+  "/sso/:serviceProviderId",
+  describeRoute({
+    summary: "IdP-initiated SSO for a Service Provider",
+    successMessage: "SAML response issued successfully",
+  }),
+  handleIdpInitiatedSso
 );
 
 export default app;

@@ -12,6 +12,7 @@ import companyRoutes from "@/routes/company";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
 import seedRoute from "@/database/seed";
+import { syncAll } from "@/services/peopleVineService";
 import webhookRoutes from "@/routes/webhook";
 import { swaggerUI } from "@hono/swagger-ui";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
@@ -83,6 +84,22 @@ app.use("/saml/*", corsMiddleware, databaseMiddleware);
 app.route("/saml", samlRoutes);
 
 app.route("/__internal/seed", seedRoute);
+
+app.get("/__internal/test-headers", async (c) => {
+  const res = await fetch('https://httpbin.org/headers');
+  const data = await res.json();
+  return c.json(data);
+});
+
+
+
+app.post("/__internal/sync", databaseMiddleware, async (c) => {
+  if (c.env.SEED_ENABLED !== "true") return c.json({ success: false }, 403);
+  const auth = c.req.header("authorization") ?? "";
+  if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
+  await syncAll(c);
+  return c.json({ success: true });
+});
 
 export default {
   fetch: app.fetch,
