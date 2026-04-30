@@ -41,7 +41,8 @@ export const createSession = async (c: Context, userId: string): Promise<string>
     httpOnly: true,
     // secure: true, // original - use for production
     secure: !isLocal, // local dev fix: false on localhost, true in production
-    sameSite: "Lax",
+    // sameSite: "Lax", // use when frontend and backend are on same parent domain
+    sameSite: "None", // temporary: allows cross-origin cookies between pages.dev and workers.dev
     path: "/",
     domain: c.env.DOMAIN as string
   });
