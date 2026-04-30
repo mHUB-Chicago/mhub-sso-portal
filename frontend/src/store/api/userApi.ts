@@ -41,6 +41,8 @@ interface GetUsersRequest {
   limit?: number
   offset?: number
   role?: 'USER' | 'ADMIN'
+  search?: string
+  companyId?: string
 }
 
 interface GetUsersResponse {
@@ -100,9 +102,15 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId }) => ({
         url: '/user',
-        params: { limit, offset, ...(role && { role }) },
+        params: {
+          limit,
+          offset,
+          ...(role && { role }),
+          ...(search && { search }),
+          ...(companyId && { companyId }),
+        },
       }),
       providesTags: ['Users'],
     }),

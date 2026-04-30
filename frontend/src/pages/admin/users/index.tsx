@@ -11,10 +11,15 @@ const PAGE_SIZE = 10
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(0)
+  const [search, setSearch] = useState("")
+  const [companyId, setCompanyId] = useState<string | undefined>(undefined)
+
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
-    role: 'USER'
+    role: 'USER',
+    search: search || undefined,
+    companyId,
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 100, offset: 0 })
 
@@ -33,10 +38,22 @@ export function AdminUsersPage() {
     }))
   }, [usersData, companyMap])
 
-  // Build dynamic filters based on data
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    setPage(0)
+  }
+
+  const handleFilterChange = (columnId: string, value: string | undefined) => {
+    if (columnId === "companyName") {
+      setCompanyId(value)
+      setPage(0)
+    }
+  }
+
+  // Build dynamic filters based on data — use company ID as value for server-side filtering
   const filters: FilterConfig[] = useMemo(() => {
     const companyOptions = companiesData?.data?.companies?.map(c => ({
-      value: c.name,
+      value: c.id,
       label: c.name
     })) || []
 
@@ -121,6 +138,8 @@ export function AdminUsersPage() {
           totalRows={usersData?.data?.total ?? 0}
           currentPage={page}
           onPageChange={setPage}
+          onSearchChange={handleSearchChange}
+          onFilterChange={handleFilterChange}
         />
       </div>
     </div>

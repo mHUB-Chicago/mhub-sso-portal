@@ -54,6 +54,8 @@ interface DataTableProps<TData, TValue> {
   totalRows?: number
   currentPage?: number
   onPageChange?: (page: number) => void
+  onSearchChange?: (value: string) => void
+  onFilterChange?: (columnId: string, value: string | undefined) => void
 }
 
 export function DataTable<TData, TValue>({
@@ -66,6 +68,8 @@ export function DataTable<TData, TValue>({
   totalRows = 0,
   currentPage = 0,
   onPageChange,
+  onSearchChange,
+  onFilterChange,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -101,16 +105,28 @@ export function DataTable<TData, TValue>({
   })
 
   const handleFilterChange = (columnId: string, value: string) => {
-    if (value === "all") {
-      table.getColumn(columnId)?.setFilterValue(undefined)
+    const resolved = value === "all" ? undefined : value
+    if (serverSide && onFilterChange) {
+      onFilterChange(columnId, resolved)
     } else {
-      table.getColumn(columnId)?.setFilterValue(value)
+      table.getColumn(columnId)?.setFilterValue(resolved)
+    }
+  }
+
+  const handleSearchChange = (value: string) => {
+    setGlobalFilter(value)
+    if (serverSide && onSearchChange) {
+      onSearchChange(value)
     }
   }
 
   const handleResetFilters = () => {
     setColumnFilters([])
     setGlobalFilter("")
+    if (serverSide) {
+      onSearchChange?.("")
+      filters.forEach(f => onFilterChange?.(f.columnId, undefined))
+    }
   }
 
   return (
@@ -119,7 +135,7 @@ export function DataTable<TData, TValue>({
         <Input
           placeholder={searchPlaceholder}
           value={globalFilter ?? ""}
-          onChange={(event) => setGlobalFilter(event.target.value)}
+          onChange={(event) => handleSearchChange(event.target.value)}
           className="max-w-sm"
         />
         {filters.length > 0 && (

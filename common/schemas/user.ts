@@ -31,6 +31,8 @@ export const GetUsersRequestSchema = z.object({
   limit: z.coerce.number().min(1).max(100).default(20),
   offset: z.coerce.number().min(0).default(0),
   role: z.enum(['USER', 'ADMIN']).optional(),
+  search: z.string().optional(),
+  companyId: z.string().optional(),
 });
 
 export const GetUsersResponseSchema = SuccessResponseSchema(z.object({

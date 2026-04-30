@@ -4,6 +4,7 @@ import type { Company, ServiceProvider } from './userApi'
 interface GetCompaniesRequest {
   limit?: number
   offset?: number
+  search?: string
 }
 
 interface GetCompaniesResponse {
@@ -61,9 +62,9 @@ export const companyApi = createApi({
   tagTypes: ['Company', 'Companies', 'Users'],
   endpoints: (builder) => ({
     getCompanies: builder.query<GetCompaniesResponse, GetCompaniesRequest>({
-      query: ({ limit = 100, offset = 0 }) => ({
+      query: ({ limit = 100, offset = 0, search }) => ({
         url: '/company',
-        params: { limit, offset },
+        params: { limit, offset, ...(search && { search }) },
       }),
       providesTags: ['Companies'],
     }),

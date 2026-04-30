@@ -10,12 +10,20 @@ const PAGE_SIZE = 10
 
 export function AdminCompaniesPage() {
   const [page, setPage] = useState(0)
+  const [search, setSearch] = useState("")
+
   const { data: companiesData, isLoading, error: companiesError } = useGetCompaniesQuery({
     limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE
+    offset: page * PAGE_SIZE,
+    search: search || undefined,
   })
 
   const companies = companiesData?.data?.companies ?? []
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value)
+    setPage(0)
+  }
 
   if (isLoading) {
     return (
@@ -85,6 +93,7 @@ export function AdminCompaniesPage() {
           totalRows={companiesData?.data?.total ?? 0}
           currentPage={page}
           onPageChange={setPage}
+          onSearchChange={handleSearchChange}
         />
       </div>
     </div>

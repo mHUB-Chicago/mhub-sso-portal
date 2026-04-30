@@ -8,6 +8,8 @@ export interface GetPaginatedUsersInput {
   role?: Role;
   limit: number;
   offset: number;
+  search?: string;
+  companyId?: string;
 }
 
 export interface GetPaginatedUsersResult {
@@ -40,7 +42,16 @@ export interface UpdateUserInput {
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
   const prisma: PrismaClient = c.get("db");
-  const whereClause = input.role ? { role: input.role } : {};
+  const whereClause: any = {
+    ...(input.role && { role: input.role }),
+    ...(input.companyId && { companyId: input.companyId }),
+    ...(input.search && {
+      OR: [
+        { name: { contains: input.search } },
+        { email: { contains: input.search } },
+      ],
+    }),
+  };
   const [users, total] = await Promise.all([
     prisma.user.findMany({
       where: whereClause,

@@ -7,6 +7,7 @@ import { createCompanyServiceProvider } from "./companyServiceProviderService";
 export interface GetPaginatedCompaniesInput {
   limit: number;
   offset: number;
+  search?: string;
 }
 
 export interface GetPaginatedCompaniesResult {
@@ -30,13 +31,20 @@ export interface UpdateCompanyInput {
 
 export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompaniesInput): Promise<GetPaginatedCompaniesResult> => {
   const prisma: PrismaClient = c.get("db");
+  const whereClause: any = input.search ? {
+    OR: [
+      { name: { contains: input.search } },
+      { email: { contains: input.search } },
+    ],
+  } : {};
   const [companies, total] = await Promise.all([
     prisma.company.findMany({
+      where: whereClause,
       skip: input.offset,
       take: input.limit,
       orderBy: { createdAt: "desc" },
     }),
-    prisma.company.count(),
+    prisma.company.count({ where: whereClause }),
   ]);
   return { companies, total };
 }
