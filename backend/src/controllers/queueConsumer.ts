@@ -31,8 +31,20 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           const { sessionId, type } = payload ?? {};
           if (type === 'CONTINUE') {
             // Sync continue: skip companies, go straight to users from last checkpoint
-            const { hadErrors } = await syncPhaseUsers(context, sessionId);
-            if (!hadErrors) {
+            const lastSession = await (context.get('db') as any).syncSession.findFirst({
+              where: { type: 'ALL', status: { in: ['failed', 'completed'] } },
+              orderBy: { startedAt: 'desc' },
+            }).catch(() => null);
+            const meta = lastSession ? JSON.parse(lastSession.metadata ?? '{}') : {};
+            const resumePage = typeof meta.lastCustomerPage === 'number' ? meta.lastCustomerPage + 1 : 1;
+            const { hadErrors, hasMore, lastPage } = await syncPhaseUsers(context, sessionId, resumePage);
+            if (hasMore) {
+              await env.QUEUE.send({
+                jobId: crypto.randomUUID(),
+                jobType: JobType.SYNC_PHASE_USERS,
+                payload: { sessionId, startPage: lastPage + 1 },
+              });
+            } else if (!hadErrors) {
               await env.QUEUE.send({
                 jobId: crypto.randomUUID(),
                 jobType: JobType.SYNC_PHASE_DEACTIVATE,
@@ -51,9 +63,16 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           }
 
         } else if (jobType === JobType.SYNC_PHASE_USERS) {
-          const { sessionId } = payload ?? {};
-          const { hadErrors } = await syncPhaseUsers(context, sessionId);
-          if (!hadErrors) {
+          const { sessionId, startPage = 1 } = payload ?? {};
+          const { hadErrors, hasMore, lastPage } = await syncPhaseUsers(context, sessionId, startPage);
+          if (hasMore) {
+            // More pages — enqueue next batch with fresh subrequest budget
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_PHASE_USERS,
+              payload: { sessionId, startPage: lastPage + 1 },
+            });
+          } else if (!hadErrors) {
             await env.QUEUE.send({
               jobId: crypto.randomUUID(),
               jobType: JobType.SYNC_PHASE_DEACTIVATE,

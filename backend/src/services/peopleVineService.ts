@@ -281,15 +281,22 @@ const getCustomersFromSubscriptions = async (c: Context): Promise<{ customers: P
 const getCustomers = async (
   c: Context,
   startPage = 1,
+  maxPages?: number,
   onPageFetched?: (page: number) => Promise<void>,
-): Promise<{ customers: PeopleVineCustomer[]; hadErrors: boolean; lastPage: number }> => {
+): Promise<{ customers: PeopleVineCustomer[]; hadErrors: boolean; lastPage: number; hasMore: boolean }> => {
   let customers: PeopleVineCustomer[] = [];
   let pageNumber = startPage;
   const pageSize = 100;
   let consecutiveErrors = 0;
   let hadErrors = false;
   let lastPage = startPage;
+  let hasMore = false;
+  let pagesProcessed = 0;
   do {
+    if (maxPages && pagesProcessed >= maxPages) {
+      hasMore = true;
+      break;
+    }
     let retrievedCustomers: PeopleVineCustomer[];
     try {
       retrievedCustomers = await apiRequest(c, {
@@ -313,12 +320,13 @@ const getCustomers = async (
     }
     customers = customers.concat(retrievedCustomers);
     lastPage = pageNumber;
+    pagesProcessed++;
     console.log(`Fetched ${retrievedCustomers.length} customers from page ${pageNumber}`);
     if (onPageFetched) await onPageFetched(pageNumber);
     pageNumber++;
     if (retrievedCustomers.length === 0 || retrievedCustomers.length < pageSize) break;
   } while (true);
-  return { customers: normalizeCustomers(customers), hadErrors, lastPage };
+  return { customers: normalizeCustomers(customers), hadErrors, lastPage, hasMore };
 };
 
 const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
@@ -574,11 +582,17 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
   return { hadErrors };
 };
 
-export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage = 1): Promise<{ hadErrors: boolean }> => {
+const BATCH_PAGES = 40;
+
+export const syncPhaseUsers = async (
+  c: Context,
+  sessionId?: string,
+  startPage = 1,
+): Promise<{ hadErrors: boolean; hasMore: boolean; lastPage: number }> => {
   const prisma: PrismaClient = c.get('db');
   const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
 
-  await flush(35, 'Fetching customers');
+  await flush(35, `Fetching customers (page ${startPage}+)`);
   log('info', 'Loading companies from database');
 
   const dbCompanies = await prisma.company.findMany();
@@ -590,44 +604,79 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
     companiesByNameMap.set(co.name, co);
   }
 
-  log('info', `Retrieving customers from PeopleVine (starting page ${startPage})`);
-  const { customers: allCustomers, hadErrors } = await getCustomers(
-    c, startPage, (page) => saveMeta({ lastCustomerPage: page }),
+  log('info', `Retrieving customers from PeopleVine (pages ${startPage}–${startPage + BATCH_PAGES - 1})`);
+  const { customers: batchCustomers, hadErrors, lastPage, hasMore } = await getCustomers(
+    c, startPage, BATCH_PAGES, (page) => saveMeta({ lastCustomerPage: page }),
   );
-  const allCustomersMap = new Map<string, PeopleVineCustomer>();
-  for (const cu of allCustomers) allCustomersMap.set(cu.id.toString(), cu);
+  const batchCustomersMap = new Map<string, PeopleVineCustomer>();
+  for (const cu of batchCustomers) batchCustomersMap.set(cu.id.toString(), cu);
 
-  let existingUsers = await prisma.user.findMany();
-  const existingUsersMap = new Map<string, User>();
-  for (const u of existingUsers) { if (u.peopleVineId) existingUsersMap.set(u.peopleVineId, u); }
+  // Load all existing users by both peopleVineId and email for safe upsert
+  const existingUsers = await prisma.user.findMany();
+  const byPvId = new Map<string, User>();
+  const byEmail = new Map<string, User>();
+  for (const u of existingUsers) {
+    if (u.peopleVineId) byPvId.set(u.peopleVineId, u);
+    byEmail.set(u.email, u);
+  }
 
   await flush(70, 'Syncing users');
   log('info', 'Syncing users');
 
-  await Promise.all(Array.from(allCustomersMap.values()).map(async (customer) => {
+  await Promise.all(Array.from(batchCustomersMap.values()).map(async (customer) => {
     const pvId = customer.id.toString();
-    const existingUser = existingUsersMap.get(pvId);
     const company = companiesByNameMap.get(customer.company_name);
     if (!company) return;
 
-    if (existingUser && company.id !== existingUser.companyId) {
-      return updateUser(c, { id: existingUser.id, name: customer.full_name, email: customer.email, companyId: company.id });
-    }
-    if (existingUser && company.id === existingUser.companyId) {
-      if (existingUser.name !== customer.full_name || existingUser.email !== customer.email.toLowerCase()) {
-        log('info', `Updating user ${customer.full_name} (${customer.email}) details.`);
-        return updateUser(c, { id: existingUser.id, name: customer.full_name, email: customer.email });
+    const existingByPvId = byPvId.get(pvId);
+    const existingByEmail = byEmail.get(customer.email.toLowerCase());
+    const existingUser = existingByPvId ?? existingByEmail;
+
+    if (existingUser) {
+      const needsUpdate =
+        existingUser.name !== customer.full_name ||
+        existingUser.email !== customer.email.toLowerCase() ||
+        existingUser.companyId !== company.id ||
+        (existingByEmail && !existingByEmail.peopleVineId);
+      if (needsUpdate) {
+        log('info', `Updating user ${customer.full_name} (${customer.email}).`);
+        return updateUser(c, {
+          id: existingUser.id,
+          name: customer.full_name,
+          email: customer.email,
+          companyId: company.id,
+          peopleVineId: pvId,
+        });
       }
       return;
     }
-    return createUser(c, { name: customer.full_name, email: customer.email, peopleVineId: pvId, role: Role.USER, companyId: company.id });
+
+    return createUser(c, {
+      name: customer.full_name,
+      email: customer.email,
+      peopleVineId: pvId,
+      role: Role.USER,
+      companyId: company.id,
+    });
   }));
 
-  await saveMeta({ usersDone: true, activePVUserIds: Array.from(allCustomersMap.keys()), userHadErrors: hadErrors });
-  await flush(90, 'Users synced — queuing deactivation');
-  log('info', 'Users sync complete. Deactivation queued.');
+  // Accumulate active PV user IDs across batches in session metadata
+  if (sessionId) {
+    const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+    const meta = session ? JSON.parse(session.metadata ?? '{}') : {};
+    const existing: string[] = meta.activePVUserIds ?? [];
+    await saveMeta({
+      activePVUserIds: [...existing, ...Array.from(batchCustomersMap.keys())],
+      usersDone: !hasMore,
+      userHadErrors: hadErrors,
+    });
+  }
 
-  return { hadErrors };
+  const status = hasMore ? 'running' : 'completed';
+  await flush(hasMore ? 75 : 90, hasMore ? `Users batch done — fetching next pages` : 'Users synced', status);
+  log('info', hasMore ? `Batch done (pages ${startPage}–${lastPage}). Queuing next batch from page ${lastPage + 1}.` : 'Users sync complete.');
+
+  return { hadErrors, hasMore, lastPage };
 };
 
 export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promise<void> => {
