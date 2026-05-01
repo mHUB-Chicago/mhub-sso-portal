@@ -26,8 +26,11 @@ export const authMiddleware = async (c: Context, next: () => Promise<any>) => {
 };
 
 export const getSessionId = (c: Context): string | null => {
-  const sessionId = getCookie(c, COOKIE_NAME);
-  return sessionId || null;
+  const cookie = getCookie(c, COOKIE_NAME);
+  if (cookie) return cookie;
+  const auth = c.req.header("Authorization") ?? "";
+  if (auth.startsWith("Bearer ")) return auth.slice(7) || null;
+  return null;
 }
 
 export const verifySession = async (c: Context): Promise<User | null> => {

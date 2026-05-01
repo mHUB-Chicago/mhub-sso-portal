@@ -672,8 +672,7 @@ export const syncPhaseUsers = async (
     });
   }
 
-  const status = hasMore ? 'running' : 'completed';
-  await flush(hasMore ? 75 : 90, hasMore ? `Users batch done — fetching next pages` : 'Users synced', status);
+  await flush(hasMore ? 75 : 90, hasMore ? `Users batch done — fetching next pages` : 'Users synced', 'running');
   log('info', hasMore ? `Batch done (pages ${startPage}–${lastPage}). Queuing next batch from page ${lastPage + 1}.` : 'Users sync complete.');
 
   return { hadErrors, hasMore, lastPage };
@@ -699,7 +698,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   const activePVCompanyIds: string[] = meta.activePVCompanyIds ?? [];
   const activePVUserIds: string[] = meta.activePVUserIds ?? [];
 
-  if (activePVCompanyIds.length === 0 || activePVUserIds.length === 0) {
+  if (activePVCompanyIds.length === 0 && activePVUserIds.length === 0) {
     log('warn', '[sync] No active PV IDs in session metadata, skipping deactivation.');
     await flush(100, 'Complete', 'completed');
     if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
@@ -707,18 +706,22 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   }
 
   log('info', 'Deactivating removed companies and users');
-  const activePVCompanySet = new Set(activePVCompanyIds);
-  const activePVUserSet = new Set(activePVUserIds);
 
-  const dbCompanies = await prisma.company.findMany();
-  await Promise.all(dbCompanies.map(async (co) => {
-    if (co.peopleVineId && !activePVCompanySet.has(co.peopleVineId)) return deactivateCompany(c, co.id);
-  }));
+  if (activePVCompanyIds.length > 0) {
+    const activePVCompanySet = new Set(activePVCompanyIds);
+    const dbCompanies = await prisma.company.findMany();
+    await Promise.all(dbCompanies.map(async (co) => {
+      if (co.peopleVineId && !activePVCompanySet.has(co.peopleVineId)) return deactivateCompany(c, co.id);
+    }));
+  }
 
-  const existingUsers = await prisma.user.findMany();
-  await Promise.all(existingUsers.map(async (u) => {
-    if (u.peopleVineId && !activePVUserSet.has(u.peopleVineId)) return deactivateUser(c, u.id);
-  }));
+  if (activePVUserIds.length > 0) {
+    const activePVUserSet = new Set(activePVUserIds);
+    const existingUsers = await prisma.user.findMany();
+    await Promise.all(existingUsers.map(async (u) => {
+      if (u.peopleVineId && !activePVUserSet.has(u.peopleVineId)) return deactivateUser(c, u.id);
+    }));
+  }
 
   log('info', 'PeopleVine synchronization complete.');
   await flush(100, 'Complete', 'completed');
@@ -848,17 +851,20 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
   }
 
   const isCompanyProfile = companyProfilesMap.has(customer.id.toString());
-  const existingCompany = await prisma.company.findFirst({
-    where: { peopleVineId: customer.id.toString() },
-  });
+  const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: customer.id.toString() } });
+  const existingCompanyByEmail = await prisma.company.findFirst({ where: { email: customer.email.toLowerCase() } });
+  const existingCompany = existingCompanyByPvId ?? existingCompanyByEmail;
 
   if (isCompanyProfile) {
     console.log(`Syncing ${existingCompany ? "existing" : "new"} company for ${customer.company_name}.`);
     if (existingCompany) {
-      await updateCompany(c, {
-        id: existingCompany.id,
-        name: customer.company_name,
-        active: true,
+      await prisma.company.update({
+        where: { id: existingCompany.id },
+        data: {
+          name: customer.company_name,
+          active: true,
+          ...(!existingCompany.peopleVineId ? { peopleVineId: customer.id.toString() } : {}),
+        },
       });
     } else {
       await createCompany(c, {
@@ -877,18 +883,25 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
     console.log(`No associated company found for user ${customer.full_name} (${customer.email}), skipping user creation.`);
     return;
   }
-  const associatedUser = await prisma.user.findFirst({
-    where: { peopleVineId: customer.id.toString() },
-  });
+
+  const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
+  const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
+  const associatedUser = userByPvId ?? userByEmail;
 
   if (associatedUser) {
-    if (associatedUser.name !== customer.full_name || associatedUser.email !== customer.email.toLowerCase() || associatedUser.companyId !== associatedCompany.id) {
+    const needsUpdate =
+      associatedUser.name !== customer.full_name ||
+      associatedUser.email !== customer.email.toLowerCase() ||
+      associatedUser.companyId !== associatedCompany.id ||
+      (userByEmail && !userByEmail.peopleVineId);
+    if (needsUpdate) {
       console.log(`Updating user ${customer.full_name} (${customer.email}) details.`);
       await updateUser(c, {
         id: associatedUser.id,
         name: customer.full_name,
         email: customer.email,
-        companyId: associatedCompany.id
+        companyId: associatedCompany.id,
+        peopleVineId: customer.id.toString(),
       });
     }
   } else {
@@ -898,7 +911,7 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
       email: customer.email,
       peopleVineId: customer.id.toString(),
       role: Role.USER,
-      companyId: associatedCompany.id
+      companyId: associatedCompany.id,
     });
   }
   console.log(`Sync for customer with PeopleVine ID ${peopleVineId} complete.`);

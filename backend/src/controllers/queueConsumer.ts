@@ -44,7 +44,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
                 jobType: JobType.SYNC_PHASE_USERS,
                 payload: { sessionId, startPage: lastPage + 1 },
               });
-            } else if (!hadErrors) {
+            } else {
               await env.QUEUE.send({
                 jobId: crypto.randomUUID(),
                 jobType: JobType.SYNC_PHASE_DEACTIVATE,
@@ -72,7 +72,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
               jobType: JobType.SYNC_PHASE_USERS,
               payload: { sessionId, startPage: lastPage + 1 },
             });
-          } else if (!hadErrors) {
+          } else {
             await env.QUEUE.send({
               jobId: crypto.randomUUID(),
               jobType: JobType.SYNC_PHASE_DEACTIVATE,

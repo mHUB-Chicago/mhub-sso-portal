@@ -64,16 +64,18 @@ export function LoginPage() {
 
       const user = result.data.user
       const redirectUrl = result.data.redirectUrl
+      const sessionId = result.data.sessionId
 
       // Update Redux auth state
       dispatch(loginSuccess({
         user: {
-        id: user.id,
+          id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
         },
         redirectUrl,
+        sessionId,
       }))
 
       // Check if user needs to reset password

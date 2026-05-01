@@ -82,7 +82,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     if (!user) {
       throw new Error("User not found");
     }
-    await createSession(c, loginRequest.userId);
+    const sessionId = await createSession(c, loginRequest.userId);
     const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);
     const autoRedirectableSp = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
     const response = VerifyLoginResponseSchema.parse({
@@ -91,6 +91,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       data: {
         user,
         redirectUrl: autoRedirectableSp ? autoRedirectableSp.loginUrl : null,
+        sessionId,
       },
     });
     return c.json(response);

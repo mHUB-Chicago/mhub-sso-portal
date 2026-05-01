@@ -20,6 +20,7 @@ interface LoginSuccessPayload {
     role: 'ADMIN' | 'USER'
   }
   redirectUrl: string | null
+  sessionId?: string
 }
 
 const getInitialState = (): AuthState => {
@@ -64,6 +65,10 @@ const authSlice = createSlice({
       state.user = action.payload.user
       state.redirectUrl = action.payload.redirectUrl
       state.loading = false
+      if (action.payload.sessionId) {
+        localStorage.setItem('authToken', action.payload.sessionId)
+      }
+      localStorage.setItem('user', JSON.stringify(action.payload.user))
     },
     loginFailure: (state) => {
       state.isAuthenticated = false
@@ -74,6 +79,8 @@ const authSlice = createSlice({
       state.isAuthenticated = false
       state.user = null
       state.loading = false
+      localStorage.removeItem('authToken')
+      localStorage.removeItem('user')
     }
   }
 })

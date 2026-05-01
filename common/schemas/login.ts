@@ -16,6 +16,7 @@ export const VerifyLoginRequestSchema = z.object({
 export const VerifyLoginResponseSchema = SuccessResponseSchema(z.object({
   user: UserSchema,
   redirectUrl: z.string().nullable(),
+  sessionId: z.string().optional(),
 }));
 
 export const ForgotPasswordRequestSchema = z.object({
