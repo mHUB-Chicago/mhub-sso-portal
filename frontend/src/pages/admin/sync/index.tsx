@@ -189,7 +189,7 @@ export function AdminSyncPage() {
             session={session}
             type="ALL"
             label="Start Sync All"
-            description="Fetches all subscriptions, companies, and users from PeopleVine from scratch. Deactivates any records no longer in PeopleVine."
+            description="Fetches all subscriptions, companies, and users from PeopleVine."
             onStart={handleStart}
             isStarting={isStarting}
           />
