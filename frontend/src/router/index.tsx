@@ -20,6 +20,7 @@ import { AdminEditAdminPage } from '@/pages/admin/admins/edit'
 import { IDPManagementPage } from '@/pages/admin/idp'
 import { IDPEditPage } from '@/pages/admin/idp/edit'
 import { IDPAddPage } from '@/pages/admin/idp/add'
+import { AdminSyncPage } from '@/pages/admin/sync'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminRoute } from '@/components/AdminRoute'
 
@@ -127,6 +128,10 @@ export const router = createBrowserRouter([
       {
         path: 'idp/:id/edit',
         element: <IDPEditPage />
+      },
+      {
+        path: 'sync',
+        element: <AdminSyncPage />
       },
       {
         path: 'settings',

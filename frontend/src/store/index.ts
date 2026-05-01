@@ -5,6 +5,7 @@ import { authApi } from './api/authApi'
 import { userApi } from './api/userApi'
 import { companyApi } from './api/companyApi'
 import { serviceProviderApi } from './api/serviceProviderApi'
+import { syncApi } from './api/syncApi'
 
 export const store = configureStore({
   reducer: {
@@ -13,9 +14,10 @@ export const store = configureStore({
     [userApi.reducerPath]: userApi.reducer,
     [companyApi.reducerPath]: companyApi.reducer,
     [serviceProviderApi.reducerPath]: serviceProviderApi.reducer,
+    [syncApi.reducerPath]: syncApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(authApi.middleware, userApi.middleware, companyApi.middleware, serviceProviderApi.middleware),
+    getDefaultMiddleware().concat(authApi.middleware, userApi.middleware, companyApi.middleware, serviceProviderApi.middleware, syncApi.middleware),
 })
 
 export type RootState = ReturnType<typeof store.getState>

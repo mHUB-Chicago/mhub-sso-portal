@@ -11,7 +11,6 @@ import companyRoutes from "@/routes/company";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
 import seedRoute from "@/database/seed";
-import { syncAll } from "@/services/peopleVineService";
 import webhookRoutes from "@/routes/webhook";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
@@ -70,11 +69,44 @@ app.route("/saml", samlRoutes);
 
 app.route("/__internal/seed", seedRoute);
 
-app.post("/__internal/sync", databaseMiddleware, async (c) => {
+app.get("/api/sync/status", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.findFirst({ orderBy: { startedAt: 'desc' } });
+  return c.json({ success: true, data: session ? { ...session, logs: JSON.parse(session.logs) } : null });
+});
+
+app.post("/api/sync/start", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { type } = await c.req.json<{ type: 'ALL' | 'CONTINUE' }>();
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.create({
+    data: {
+      type,
+      status: 'pending',
+      step: 'Queued',
+      logs: JSON.stringify([{ time: new Date().toISOString(), level: 'info', message: 'Sync queued' }]),
+    },
+  });
+  await c.env.QUEUE.send({
+    jobId: session.id,
+    jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+    payload: { sessionId: session.id, type },
+  });
+  return c.json({ success: true, data: { sessionId: session.id } });
+});
+
+app.post("/__internal/sync", async (c) => {
   const auth = c.req.header("authorization") ?? "";
   if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
-  c.executionCtx.waitUntil(syncAll(c));
-  return c.json({ success: true, message: "Sync started in background" });
+  await c.env.QUEUE.send({
+    jobId: crypto.randomUUID(),
+    jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+    payload: {},
+  });
+  return c.json({ success: true, message: "Sync queued" });
 });
 
 export default {

@@ -22,6 +22,48 @@ export interface PeopleVineCustomer {
   // other fields are available but omitted for brevity and type safety
 }
 
+export interface LogEntry {
+  time: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+const makeSessionFlusher = (prisma: PrismaClient, sessionId: string | undefined) => {
+  const logs: LogEntry[] = [];
+  let meta: Record<string, unknown> = {};
+
+  const log = (level: LogEntry['level'], message: string) => {
+    if (level === 'error') console.error(message);
+    else if (level === 'warn') console.warn(message);
+    else console.log(message);
+    if (sessionId) logs.push({ time: new Date().toISOString(), level, message });
+  };
+
+  const flush = async (progress: number, step: string, status = 'running') => {
+    if (!sessionId) return;
+    try {
+      await prisma.syncSession.update({
+        where: { id: sessionId },
+        data: { progress, step, status, logs: JSON.stringify(logs), metadata: JSON.stringify(meta) },
+      });
+    } catch (e) {
+      console.error('Failed to update sync session:', e);
+    }
+  };
+
+  const saveMeta = async (patch: Record<string, unknown>) => {
+    if (!sessionId) return;
+    meta = { ...meta, ...patch };
+    try {
+      await prisma.syncSession.update({ where: { id: sessionId }, data: { metadata: JSON.stringify(meta) } });
+    } catch (e) {
+      console.error('Failed to save sync metadata:', e);
+    }
+  };
+
+  return { log, flush, saveMeta };
+};
+
 const setToken = async (c: Context, tokenType: PeopleVineTokenType, accessToken: string, refreshToken: string, expiresAt: Date): Promise<PeopleVineToken> => {
   const prisma: PrismaClient = c.get('db');
   const existingToken = await prisma.peopleVineToken.findFirst({
@@ -236,12 +278,17 @@ const getCustomersFromSubscriptions = async (c: Context): Promise<{ customers: P
   return { customers: normalizeCustomers(companies), hadErrors };
 };
 
-const getCustomers = async (c: Context): Promise<{ customers: PeopleVineCustomer[]; hadErrors: boolean }> => {
+const getCustomers = async (
+  c: Context,
+  startPage = 1,
+  onPageFetched?: (page: number) => Promise<void>,
+): Promise<{ customers: PeopleVineCustomer[]; hadErrors: boolean; lastPage: number }> => {
   let customers: PeopleVineCustomer[] = [];
-  let pageNumber = 1;
+  let pageNumber = startPage;
   const pageSize = 100;
   let consecutiveErrors = 0;
   let hadErrors = false;
+  let lastPage = startPage;
   do {
     let retrievedCustomers: PeopleVineCustomer[];
     try {
@@ -265,13 +312,13 @@ const getCustomers = async (c: Context): Promise<{ customers: PeopleVineCustomer
       continue;
     }
     customers = customers.concat(retrievedCustomers);
+    lastPage = pageNumber;
     console.log(`Fetched ${retrievedCustomers.length} customers from page ${pageNumber}`);
+    if (onPageFetched) await onPageFetched(pageNumber);
     pageNumber++;
-    if (retrievedCustomers.length === 0 || retrievedCustomers.length < pageSize) {
-      break;
-    }
+    if (retrievedCustomers.length === 0 || retrievedCustomers.length < pageSize) break;
   } while (true);
-  return { customers: normalizeCustomers(customers), hadErrors };
+  return { customers: normalizeCustomers(customers), hadErrors, lastPage };
 };
 
 const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
@@ -287,15 +334,18 @@ const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVine
   return normalizedCustomers[0];
 };
 
-export const syncAll = async (c: Context): Promise<void> => {
-  // Get companies from active subscriptions
+export const syncAll = async (c: Context, sessionId?: string): Promise<void> => {
   const prisma: PrismaClient = c.get('db');
-  
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
+
+  try {
+  await flush(5, 'Starting sync');
+
   //
   // Step 1: Sync companies based on PeopleVine customers
   //
 
-  console.log('Retrieving PeopleVine data');
+  log('info', 'Retrieving PeopleVine data');
   // Fetch customers from PeopleVine which have active subscriptions
   const { customers: peopleVineCustomersFromSubscriptions, hadErrors: subscriptionFetchHadErrors } = await getCustomersFromSubscriptions(c);
   // Create a map of PeopleVine companies by their PeopleVine ID for easy lookup
@@ -315,7 +365,8 @@ export const syncAll = async (c: Context): Promise<void> => {
     }
   }
 
-  console.log('Syncing companies');
+  await flush(20, 'Syncing companies');
+  log('info', 'Syncing companies');
 
   // Process each PeopleVine company and create or update companies accordingly
   await Promise.all(companyProfilesMap.values().map(async (customer) => {
@@ -323,14 +374,14 @@ export const syncAll = async (c: Context): Promise<void> => {
     const existingCompany = dbCompaniesMap.get(peopleVineId);
 
     if (existingCompany) {
-      console.log(`Updating company for ${customer.company_name}.`);
+      log('info', `Updating company for ${customer.company_name}.`);
       return updateCompany(c, {
         id: existingCompany.id,
         name: customer.company_name,
         active: true,
       });
     } else {
-      console.log(`Creating company for ${customer.company_name}.`);
+      log('info', `Creating company for ${customer.company_name}.`);
       return createCompany(c, {
         name: customer.company_name,
         peopleVineId: customer.id.toString(),
@@ -344,19 +395,23 @@ export const syncAll = async (c: Context): Promise<void> => {
   // Step 2: Sync users based on PeopleVine customers
   //
 
-  console.log('Retrieving users');
+  await saveMeta({ companiesDone: true, lastCustomerPage: 0 });
+  await flush(40, 'Fetching users');
+  log('info', 'Retrieving users');
   // Fetch companies again to get updated list with newly created ones
   dbCompanies = await prisma.company.findMany();
   const companiesByNameMap: Map<string, Company> = new Map();
   for (const company of dbCompanies) {
     if (companiesByNameMap.has(company.name)) {
-      console.warn(`[sync] Duplicate company name detected: "${company.name}" — IDs ${companiesByNameMap.get(company.name)!.id} and ${company.id}. User assignments for this name may be incorrect.`);
+      log('warn', `[sync] Duplicate company name detected: "${company.name}" — IDs ${companiesByNameMap.get(company.name)!.id} and ${company.id}. User assignments for this name may be incorrect.`);
     }
     companiesByNameMap.set(company.name, company);
   }
 
-  // Fetch all customers from PeopleVine
-  const { customers: allPeopleVineCustomers, hadErrors: customerFetchHadErrors } = await getCustomers(c);
+  // Fetch all customers from PeopleVine, saving checkpoint after each page
+  const { customers: allPeopleVineCustomers, hadErrors: customerFetchHadErrors } = await getCustomers(
+    c, 1, (page) => saveMeta({ lastCustomerPage: page }),
+  );
 
   // Normalize and map customers by their PeopleVine ID
   const allCustomersMap: Map<string, PeopleVineCustomer> = new Map();
@@ -375,7 +430,8 @@ export const syncAll = async (c: Context): Promise<void> => {
     }
   }
 
-  console.log('Syncing users');
+  await flush(65, 'Syncing users');
+  log('info', 'Syncing users');
   // Process each customer and create or update users accordingly
   await Promise.all(allCustomersMap.values().map(async (customer) => {
     const peopleVineId = customer.id.toString();
@@ -400,7 +456,7 @@ export const syncAll = async (c: Context): Promise<void> => {
     if (existingUser && associatedCompanyByName.id === existingUser.companyId) {
       // console.log(`User ${customer.full_name} (${customer.email}) already exists with correct company association.`);
       if (existingUser.name !== customer.full_name || existingUser.email !== customer.email.toLowerCase()) {
-        console.log(`Updating user ${customer.full_name} (${customer.email}) details.`);
+        log('info', `Updating user ${customer.full_name} (${customer.email}) details.`);
         return updateUser(c, {
           id: existingUser.id,
           name: customer.full_name,
@@ -426,12 +482,15 @@ export const syncAll = async (c: Context): Promise<void> => {
   //
 
   if (subscriptionFetchHadErrors || customerFetchHadErrors) {
-    console.warn('[sync] Skipping deactivation step — PeopleVine API returned errors during fetch. Re-run sync when the API is stable to avoid false deactivations.');
-    console.log('PeopleVine synchronization complete (deactivation skipped due to fetch errors).');
+    log('warn', '[sync] Skipping deactivation step — PeopleVine API returned errors during fetch.');
+    log('info', 'PeopleVine synchronization complete (deactivation skipped due to fetch errors).');
+    await flush(100, 'Complete', 'completed');
+    if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
     return;
   }
 
-  console.log('deactivating removed companies and users');
+  await flush(90, 'Deactivating removed records');
+  log('info', 'deactivating removed companies and users');
   dbCompanies = await prisma.company.findMany();
 
   const activePeopleVineIdsForCompanies = new Set<string>(companyProfilesMap.keys());
@@ -454,7 +513,121 @@ export const syncAll = async (c: Context): Promise<void> => {
     }
   }));
 
-  console.log('PeopleVine synchronization complete.');
+  log('info', 'PeopleVine synchronization complete.');
+  await flush(100, 'Complete', 'completed');
+  if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[sync] Fatal error: ${msg}`);
+    if (sessionId) {
+      try {
+        const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+        const existingLogs: LogEntry[] = session ? JSON.parse(session.logs) : [];
+        existingLogs.push({ time: new Date().toISOString(), level: 'error', message: `Sync failed: ${msg}` });
+        await prisma.syncSession.update({ where: { id: sessionId }, data: { status: 'failed', step: 'Failed', logs: JSON.stringify(existingLogs), completedAt: new Date() } });
+      } catch {}
+    }
+    throw err;
+  }
+}
+
+export const syncContinue = async (c: Context, sessionId?: string): Promise<void> => {
+  const prisma: PrismaClient = c.get('db');
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
+
+  try {
+    await flush(5, 'Starting continue sync');
+
+    // Find last ALL session to read checkpoint
+    const lastSession = await prisma.syncSession.findFirst({
+      where: { type: 'ALL', status: { in: ['failed', 'completed'] } },
+      orderBy: { startedAt: 'desc' },
+    });
+    const lastMeta: Record<string, unknown> = lastSession ? JSON.parse(lastSession.metadata ?? '{}') : {};
+    const resumeFromPage = typeof lastMeta.lastCustomerPage === 'number' ? lastMeta.lastCustomerPage + 1 : 1;
+
+    if (resumeFromPage > 1) {
+      log('info', `Resuming from customer page ${resumeFromPage} (last checkpoint: page ${resumeFromPage - 1})`);
+    } else {
+      log('info', 'No checkpoint found — fetching all customers from page 1');
+    }
+
+    // Skip subscription/company fetch — use existing DB companies
+    log('info', 'Loading companies from database');
+    const dbCompanies = await prisma.company.findMany();
+    const companiesByNameMap = new Map<string, Company>();
+    for (const co of dbCompanies) {
+      if (companiesByNameMap.has(co.name)) {
+        log('warn', `[sync] Duplicate company name: "${co.name}" — using latest.`);
+      }
+      companiesByNameMap.set(co.name, co);
+    }
+
+    await flush(15, 'Fetching customers');
+    log('info', 'Retrieving customers from PeopleVine');
+    const { customers: allCustomers, hadErrors: customerHadErrors } = await getCustomers(
+      c, resumeFromPage, (page) => saveMeta({ lastCustomerPage: page }),
+    );
+    const allCustomersMap = new Map<string, PeopleVineCustomer>();
+    for (const cu of allCustomers) allCustomersMap.set(cu.id.toString(), cu);
+
+    await flush(55, 'Syncing users');
+    let existingUsers = await prisma.user.findMany();
+    const existingUsersMap = new Map<string, User>();
+    for (const u of existingUsers) { if (u.peopleVineId) existingUsersMap.set(u.peopleVineId, u); }
+
+    log('info', 'Syncing users');
+    await Promise.all(Array.from(allCustomersMap.values()).map(async (customer) => {
+      const pvId = customer.id.toString();
+      const existingUser = existingUsersMap.get(pvId);
+      const company = companiesByNameMap.get(customer.company_name);
+      if (!company) return;
+
+      if (existingUser && company.id !== existingUser.companyId) {
+        return updateUser(c, { id: existingUser.id, name: customer.full_name, email: customer.email, companyId: company.id });
+      }
+      if (existingUser && company.id === existingUser.companyId) {
+        if (existingUser.name !== customer.full_name || existingUser.email !== customer.email.toLowerCase()) {
+          log('info', `Updating user ${customer.full_name} (${customer.email}) details.`);
+          return updateUser(c, { id: existingUser.id, name: customer.full_name, email: customer.email });
+        }
+        return;
+      }
+      return createUser(c, { name: customer.full_name, email: customer.email, peopleVineId: pvId, role: Role.USER, companyId: company.id });
+    }));
+
+    if (customerHadErrors) {
+      log('warn', '[sync] Skipping user deactivation — customer fetch had errors.');
+      log('info', 'Continue sync complete (deactivation skipped).');
+      await flush(100, 'Complete', 'completed');
+      if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
+      return;
+    }
+
+    await flush(90, 'Deactivating removed users');
+    log('info', 'Deactivating removed users');
+    existingUsers = await prisma.user.findMany();
+    const activePVUserIds = new Set<string>(allCustomersMap.keys());
+    await Promise.all(existingUsers.map(async (u) => {
+      if (u.peopleVineId && !activePVUserIds.has(u.peopleVineId)) return deactivateUser(c, u.id);
+    }));
+
+    log('info', 'PeopleVine continue sync complete.');
+    await flush(100, 'Complete', 'completed');
+    if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[sync-continue] Fatal error: ${msg}`);
+    if (sessionId) {
+      try {
+        const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+        const existingLogs: LogEntry[] = session ? JSON.parse(session.logs) : [];
+        existingLogs.push({ time: new Date().toISOString(), level: 'error', message: `Sync failed: ${msg}` });
+        await prisma.syncSession.update({ where: { id: sessionId }, data: { status: 'failed', step: 'Failed', logs: JSON.stringify(existingLogs), completedAt: new Date() } });
+      } catch {}
+    }
+    throw err;
+  }
 }
 
 export const syncOne = async (c: Context, peopleVineId: number): Promise<void> => {

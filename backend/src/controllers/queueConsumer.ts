@@ -1,4 +1,4 @@
-import { syncAll as syncAllPeopleVine, syncOne as syncOnePeopleVine } from "@/services/peopleVineService";
+import { syncAll as syncAllPeopleVine, syncContinue as syncContinuePeopleVine, syncOne as syncOnePeopleVine } from "@/services/peopleVineService";
 import { createMockContext } from "@/utils/createMockContext";
 
 
@@ -23,7 +23,12 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
 
       try {
         if (jobType === JobType.SYNC_PEOPLEVINE_EVERYTHING) {
-          await syncAllPeopleVine(context);
+          const { sessionId, type } = payload ?? {};
+          if (type === 'CONTINUE') {
+            await syncContinuePeopleVine(context, sessionId);
+          } else {
+            await syncAllPeopleVine(context, sessionId);
+          }
         } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
           await syncOnePeopleVine(context, payload.peopleVineId);
         } else {
