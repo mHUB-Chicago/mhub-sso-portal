@@ -157,3 +157,16 @@ model PeopleVineToken {
   expiresAt    DateTime
   updatedAt    DateTime            @updatedAt
 }
+
+model SyncSession {
+  id          String    @id @default(uuid())
+  type        String
+  status      String    @default("pending")
+  step        String    @default("")
+  progress    Int       @default(0)
+  logs        String    @default("[]")
+  metadata    String    @default("{}")
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  updatedAt   DateTime  @updatedAt
+}
