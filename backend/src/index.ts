@@ -101,12 +101,14 @@ app.post("/api/sync/start", async (c) => {
 app.post("/__internal/sync", async (c) => {
   const auth = c.req.header("authorization") ?? "";
   if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
+  let type = 'ALL';
+  try { const body = await c.req.json(); type = body?.type === 'CONTINUE' ? 'CONTINUE' : 'ALL'; } catch {}
   await c.env.QUEUE.send({
     jobId: crypto.randomUUID(),
     jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
-    payload: {},
+    payload: { type },
   });
-  return c.json({ success: true, message: "Sync queued" });
+  return c.json({ success: true, message: `Sync ${type === 'CONTINUE' ? 'continue' : 'all'} queued` });
 });
 
 export default {
