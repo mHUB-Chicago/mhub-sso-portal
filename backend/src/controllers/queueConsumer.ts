@@ -3,6 +3,7 @@ import {
   syncPhaseUsers,
   syncPhaseDeactivate,
   syncFiltered,
+  syncFilteredMembers,
   syncOne as syncOnePeopleVine,
   checkCancelled,
   SyncCancelledError,
@@ -22,6 +23,7 @@ export const enum JobType {
   SYNC_PHASE_USERS = "SYNC_PHASE_USERS",
   SYNC_PHASE_DEACTIVATE = "SYNC_PHASE_DEACTIVATE",
   SYNC_FILTERED = "SYNC_FILTERED",
+  SYNC_FILTERED_MEMBERS = "SYNC_FILTERED_MEMBERS",
 }
 
 export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionContext) => {
@@ -106,6 +108,25 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
           const meta = session?.metadata ? JSON.parse(session.metadata) : {};
           await syncFiltered(context, meta.companies ?? [], meta.members ?? [], sessionId);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          await env.QUEUE.send({
+            jobId: crypto.randomUUID(),
+            jobType: JobType.SYNC_FILTERED_MEMBERS,
+            payload: { sessionId, startOffset: 0 },
+          });
+
+        } else if (jobType === JobType.SYNC_FILTERED_MEMBERS) {
+          const { sessionId, startOffset = 0 } = payload ?? {};
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          const { hasMore, nextOffset } = await syncFilteredMembers(context, sessionId, startOffset);
+          if (hasMore) {
+            await checkCancelled(context.get('db') as PrismaClient, sessionId);
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_FILTERED_MEMBERS,
+              payload: { sessionId, startOffset: nextOffset },
+            });
+          }
 
         } else {
           console.log(`Unknown job type: ${jobType}`);

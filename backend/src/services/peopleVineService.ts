@@ -975,9 +975,9 @@ export const syncFiltered = async (
   companies: CompanyImport[],
   members: MemberImport[],
   sessionId?: string,
-): Promise<{ companiesCreated: number; usersCreated: number; usersSkipped: number; errors: string[] }> => {
+): Promise<{ companiesCreated: number; errors: string[] }> => {
   const prisma: PrismaClient = c.get('db');
-  const { log, flush } = makeSessionFlusher(prisma, sessionId);
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
 
   try {
     log('info', `Starting filtered import: ${companies.length} companies, ${members.length} members`);
@@ -986,8 +986,6 @@ export const syncFiltered = async (
     const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
     const errors: string[] = [];
     let companiesCreated = 0;
-    let usersCreated = 0;
-    let usersSkipped = 0;
 
     // ── Phase 1a: Create all companies from import file (no PV API needed) ──
     const existingDbCos = await prisma.company.findMany({ select: { id: true, name: true, peopleVineId: true } });
@@ -1067,65 +1065,14 @@ export const syncFiltered = async (
       }
     }
 
-    log('info', `Companies complete. Proceeding to ${members.length} members`);
-    await checkCancelled(prisma, sessionId);
-    await flush(50, 'Creating members');
+    log('info', `Companies complete. Queuing ${members.length} members for batch import.`);
+    await saveMeta({ totalUsersCreated: 0, totalUsersSkipped: 0 });
+    await flush(50, 'Companies complete — queuing member import');
 
-    // ── Phase 2: Members directly from import data ──
-    const dbCos = await prisma.company.findMany({ select: { id: true, name: true, membershipType: true } });
-    const dbCoByNormName = new Map(dbCos.map(co => [normalize(co.name), co]));
-
-    let membersDone = 0;
-    for (const m of members) {
-      await checkCancelled(prisma, sessionId);
-
-      const companyKey = normalize(m.companyName);
-      const dbCompany = dbCoByNormName.get(companyKey);
-      if (!dbCompany) { usersSkipped++; membersDone++; continue; }
-
-      const email = m.email?.toLowerCase();
-      if (!email) { usersSkipped++; membersDone++; continue; }
-
-      const fullName = [m.firstName, m.lastName].filter(Boolean).join(' ') || email.split('@')[0];
-
-      try {
-        await createUser(c, {
-          name: fullName,
-          email,
-          username: m.username ?? null,
-          peopleVineId: m.customerNo,
-          role: Role.USER,
-          companyId: dbCompany.id,
-          active: true,
-          membershipType: dbCompany.membershipType,
-          profilePhoto: null,
-        });
-        usersCreated++;
-      } catch (e) {
-        if (isUniqueConstraintError(e)) {
-          usersSkipped++;
-        } else {
-          errors.push(`User "${email}": ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-
-      membersDone++;
-      if (membersDone % 200 === 0) {
-        log('info', `Members progress: ${membersDone}/${members.length}`);
-        await flush(50 + Math.round((membersDone / members.length) * 45), 'Creating members');
-      }
-    }
-
-    log('info', `Import complete: ${companiesCreated} companies, ${usersCreated} users created, ${usersSkipped} skipped`);
-    if (errors.length > 0) log('warn', `${errors.length} errors during import`);
-
-    await flush(100, 'Complete', 'completed');
-    if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
-
-    return { companiesCreated, usersCreated, usersSkipped, errors };
+    return { companiesCreated, errors };
   } catch (err) {
     if (err instanceof SyncCancelledError) {
-      return { companiesCreated: 0, usersCreated: 0, usersSkipped: 0, errors: [] };
+      return { companiesCreated: 0, errors: [] };
     }
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[syncFiltered] Fatal error: ${msg}`);
@@ -1139,4 +1086,82 @@ export const syncFiltered = async (
     }
     throw err;
   }
+}
+
+const FILTERED_MEMBER_BATCH = 300;
+
+export const syncFilteredMembers = async (
+  c: Context,
+  sessionId: string,
+  startOffset: number,
+): Promise<{ hasMore: boolean; nextOffset: number }> => {
+  const prisma: PrismaClient = c.get('db');
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
+
+  await checkCancelled(prisma, sessionId);
+
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  const meta: Record<string, any> = session?.metadata ? JSON.parse(session.metadata) : {};
+  const members: MemberImport[] = meta.members ?? [];
+  const total = members.length;
+
+  const batch = members.slice(startOffset, startOffset + FILTERED_MEMBER_BATCH);
+  const nextOffset = startOffset + FILTERED_MEMBER_BATCH;
+  const hasMore = nextOffset < total;
+
+  const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const dbCos = await prisma.company.findMany({ select: { id: true, name: true, membershipType: true } });
+  const dbCoByNormName = new Map(dbCos.map(co => [normalize(co.name), co]));
+
+  let usersCreated = 0;
+  let usersSkipped = 0;
+
+  for (const m of batch) {
+    await checkCancelled(prisma, sessionId);
+
+    const companyKey = normalize(m.companyName);
+    const dbCompany = dbCoByNormName.get(companyKey);
+    if (!dbCompany) { usersSkipped++; continue; }
+
+    const email = m.email?.toLowerCase();
+    if (!email) { usersSkipped++; continue; }
+
+    const fullName = [m.firstName, m.lastName].filter(Boolean).join(' ') || email.split('@')[0];
+
+    try {
+      await createUser(c, {
+        name: fullName,
+        email,
+        username: m.username ?? null,
+        peopleVineId: m.customerNo,
+        role: Role.USER,
+        companyId: dbCompany.id,
+        active: true,
+        membershipType: dbCompany.membershipType,
+        profilePhoto: null,
+      });
+      usersCreated++;
+    } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        usersSkipped++;
+      }
+    }
+  }
+
+  const runningCreated = (meta.totalUsersCreated ?? 0) + usersCreated;
+  const runningSkipped = (meta.totalUsersSkipped ?? 0) + usersSkipped;
+  await saveMeta({ totalUsersCreated: runningCreated, totalUsersSkipped: runningSkipped });
+
+  const doneCount = Math.min(nextOffset, total);
+  log('info', `Members progress: ${doneCount}/${total}`);
+
+  if (hasMore) {
+    await flush(50 + Math.round((doneCount / total) * 45), 'Creating members');
+  } else {
+    log('info', `Import complete: ${runningCreated} users created, ${runningSkipped} skipped`);
+    await flush(100, 'Complete', 'completed');
+    await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
+  }
+
+  return { hasMore, nextOffset };
 }
