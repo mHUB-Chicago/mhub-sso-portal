@@ -40,7 +40,7 @@ export const handlePeopleVineWebhook = async (c: Context) => {
   await c.env.QUEUE.send({
     jobId: `${crypto.randomUUID()}-${Date.now()}`,
     jobType: JobType.SYNC_PEOPLEVINE_CUSTOMER,
-    payload: { peopleVineId },
+    payload: { peopleVineId, webhookLogId: logId },
   });
   return c.json({ message: "PeopleVine webhook received" }, 200);
 }

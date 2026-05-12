@@ -8,7 +8,7 @@ import { useGetWebhookLogsQuery } from "@/store/api/webhookApi"
 const PAGE_SIZE = 50
 
 const statusVariant = (status: string): "default" | "outline" | "destructive" => {
-  if (status === "queued") return "default"
+  if (status === "processed") return "default"
   if (status === "invalid") return "destructive"
   return "outline"
 }

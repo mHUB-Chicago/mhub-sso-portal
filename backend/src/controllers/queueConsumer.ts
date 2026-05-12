@@ -92,15 +92,22 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
 
         } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
           const prisma = context.get('db') as PrismaClient;
+          const { peopleVineId, webhookLogId } = payload;
           const activeBulkSession = await prisma.syncSession.findFirst({
             where: { status: { in: ['running', 'pending'] }, type: { in: ['ALL', 'CONTINUE', 'FILTERED'] } },
           });
           if (activeBulkSession) {
-            console.log(`Skipping webhook for customer ${payload.peopleVineId} — bulk sync in progress (${activeBulkSession.type}:${activeBulkSession.id})`);
+            console.log(`Skipping webhook for customer ${peopleVineId} — bulk sync in progress (${activeBulkSession.type}:${activeBulkSession.id})`);
+            if (webhookLogId) {
+              await prisma.webhookLog.update({ where: { id: webhookLogId }, data: { status: 'skipped' } }).catch(() => {});
+            }
             await msg.ack();
             return;
           }
-          await syncOnePeopleVine(context, payload.peopleVineId);
+          await syncOnePeopleVine(context, peopleVineId);
+          if (webhookLogId) {
+            await prisma.webhookLog.update({ where: { id: webhookLogId }, data: { status: 'processed' } }).catch(() => {});
+          }
 
         } else if (jobType === JobType.SYNC_FILTERED) {
           const { sessionId } = payload ?? {};
