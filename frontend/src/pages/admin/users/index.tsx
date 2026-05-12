@@ -13,7 +13,6 @@ import { toast } from "sonner"
 const PAGE_SIZE = 10
 
 const USER_HEADERS = ["Full Name", "Email", "Company Name", "Membership Type", "Active", "Email Verified", "Phone", "Address", "City", "State", "Zip Code", "Card Status"]
-const USER_EXAMPLE = "Jane Smith,jane@example.com,Acme Corp,Associate,true,false,,,,,,"
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(0)
