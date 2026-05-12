@@ -6,6 +6,7 @@ import { userApi } from './api/userApi'
 import { companyApi } from './api/companyApi'
 import { serviceProviderApi } from './api/serviceProviderApi'
 import { syncApi } from './api/syncApi'
+import { webhookApi } from './api/webhookApi'
 
 export const store = configureStore({
   reducer: {
@@ -15,9 +16,10 @@ export const store = configureStore({
     [companyApi.reducerPath]: companyApi.reducer,
     [serviceProviderApi.reducerPath]: serviceProviderApi.reducer,
     [syncApi.reducerPath]: syncApi.reducer,
+    [webhookApi.reducerPath]: webhookApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(authApi.middleware, userApi.middleware, companyApi.middleware, serviceProviderApi.middleware, syncApi.middleware),
+    getDefaultMiddleware().concat(authApi.middleware, userApi.middleware, companyApi.middleware, serviceProviderApi.middleware, syncApi.middleware, webhookApi.middleware),
 })
 
 export type RootState = ReturnType<typeof store.getState>

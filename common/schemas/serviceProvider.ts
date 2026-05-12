@@ -11,8 +11,8 @@ export const ServiceProviderSchema = z.object({
   loginUrl: z.string(), // This is used for the speedbump to link users to the correct place after clicking the app
   signTarget: z.enum(['ASSERTION', 'RESPONSE', 'BOTH']), // This is usually just always ASSERTION, but some service providers use other ones. ASSERTION should be default value in form.
   autoRedirect: z.boolean(), // Whether to automatically redirect to the SP without showing the speedbump page
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date(),
+  createdAt: z.coerce.date().transform(d => d.toISOString()),
+  updatedAt: z.coerce.date().transform(d => d.toISOString()),
 });
 
 export const GetServiceProvidersResponseSchema = SuccessResponseSchema(z.object({

@@ -1,7 +1,8 @@
 import { Context } from "hono";
 import { AppType, JsonInput } from "..";
 import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
-import { getUserByEmail, getUserById, updateUser } from "@/services/userService";
+import { getUserByEmail, getUserByUsername, getUserById, updateUser } from "@/services/userService";
+import { hasPortalAccess } from "@/services/peopleVineService";
 import { createSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
@@ -10,11 +11,17 @@ import { getAllowedServiceProvidersForUser } from "@/services/userServiceProvide
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
     const { email } = c.req.valid("json");
-    const user = await getUserByEmail(c, email);
+    const user = await getUserByEmail(c, email) ?? await getUserByUsername(c, email);
     if (!user) {
       throw new Error("User not found");
     }
-    const loginRequest = await createLoginRequest(c, { email });
+    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.membershipType))) {
+      throw new Error("No portal access");
+    }
+    if (user.email.endsWith('@noemail.mhub')) {
+      return c.json({ success: false, message: "Your account is not fully set up. Please contact mHUB to complete your registration." }, 400);
+    }
+    const loginRequest = await createLoginRequest(c, { email: user.email });
     // Here you would normally create a login flow/session and send back necessary info
     const response = StartLoginResponseSchema.parse({
       success: true,
@@ -44,12 +51,12 @@ export const handleForgotPassword = async (c: Context<AppType, string, JsonInput
   // Very similar to handleStartLogin, but ensures mustResetPassword is true
   try {
     const { email } = c.req.valid("json");
-    const user = await getUserByEmail(c, email);
+    const user = await getUserByEmail(c, email) ?? await getUserByUsername(c, email);
     if (!user) {
       throw new Error("User not found");
     }
     await updateUser(c, { id: user.id, mustResetPassword: true });
-    const loginRequest = await createLoginRequest(c, { email });
+    const loginRequest = await createLoginRequest(c, { email: user.email });
     const response = ForgotPasswordResponseSchema.parse({
       success: true,
       message: "Success",
@@ -81,6 +88,9 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     const user = await getUserById(c, loginRequest.userId);
     if (!user) {
       throw new Error("User not found");
+    }
+    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.membershipType))) {
+      throw new Error("No portal access");
     }
     const sessionId = await createSession(c, loginRequest.userId);
     const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);

@@ -86,11 +86,21 @@ export const companyApi = createApi({
         'Users',
       ],
     }),
+
+    importCompanies: builder.mutation<
+      { success: boolean; data: { created: number; updated: number; skipped: number; errors: string[] } },
+      { name: string; email: string; membershipType?: string; active?: boolean }[]
+    >({
+      query: (body) => ({ url: '/company/import', method: 'POST', body }),
+      invalidatesTags: ['Companies'],
+    }),
   }),
 })
 
 export const {
   useGetCompaniesQuery,
+  useLazyGetCompaniesQuery,
   useGetCompanyByIdQuery,
   useUpdateCompanyMutation,
+  useImportCompaniesMutation,
 } = companyApi

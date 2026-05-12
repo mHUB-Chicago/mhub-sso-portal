@@ -3,7 +3,7 @@ import { SuccessResponseSchema } from "./response";
 import { UserSchema } from "./user";
 
 export const StartLoginRequestSchema = z.object({
-  email: z.email("Invalid email address"),
+  email: z.string().min(1, "Email or username is required"),
 });
 export const StartLoginResponseSchema = SuccessResponseSchema(z.object({
   request_id: z.string()
@@ -20,7 +20,7 @@ export const VerifyLoginResponseSchema = SuccessResponseSchema(z.object({
 }));
 
 export const ForgotPasswordRequestSchema = z.object({
-  email: z.email("Invalid email address"),
+  email: z.string().min(1, "Email or username is required"),
 });
 export const ForgotPasswordResponseSchema = SuccessResponseSchema(z.object({
   request_id: z.string()

@@ -17,9 +17,11 @@ export interface GetPaginatedCompaniesResult {
 
 export interface CreateCompanyInput {
   name: string;
-  peopleVineId: string;
+  peopleVineId: string | null;
   active: boolean;
   email: string;
+  membershipType?: string | null;
+  isPersonal?: boolean;
 }
 
 export interface UpdateCompanyInput {
@@ -27,6 +29,9 @@ export interface UpdateCompanyInput {
   name?: string;
   active?: boolean;
   email?: string;
+  membershipType?: string | null;
+  isPersonal?: boolean;
+  peopleVineId?: string;
 }
 
 export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompaniesInput): Promise<GetPaginatedCompaniesResult> => {
@@ -57,6 +62,8 @@ export const createCompany = async (c: Context, input: CreateCompanyInput) => {
       peopleVineId: input.peopleVineId,
       active: input.active,
       email: input.email,
+      membershipType: input.membershipType ?? null,
+      isPersonal: input.isPersonal ?? false,
     },
   });
   const serviceProviders = await getAllServiceProviders(c);
@@ -77,6 +84,9 @@ export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
     data: {
       name: input.name,
       active: input.active,
+      membershipType: input.membershipType,
+      isPersonal: input.isPersonal,
+      ...(input.peopleVineId ? { peopleVineId: input.peopleVineId } : {}),
     },
   });
 }

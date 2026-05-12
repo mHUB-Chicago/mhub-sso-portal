@@ -8,8 +8,17 @@ export interface User {
   name: string
   peopleVineId: string | null
   role: 'USER' | 'ADMIN'
+  active: boolean
   emailVerified: boolean
   mustResetPassword: boolean
+  membershipType: string | null
+  profilePhoto: string | null
+  phone: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  zipCode: string | null
+  cardStatus: string | null
   createdAt: string
   updatedAt: string
 }
@@ -19,6 +28,9 @@ export interface Company {
   peopleVineId: string | null
   name: string
   email: string
+  active: boolean
+  membershipType: string | null
+  isPersonal: boolean
   createdAt: string
   updatedAt: string
 }
@@ -131,11 +143,21 @@ export const userApi = createApi({
         'Users',
       ],
     }),
+
+    importUsers: builder.mutation<
+      { success: boolean; data: { created: number; updated: number; skipped: number; errors: string[] } },
+      { name: string; email: string; companyName?: string; membershipType?: string; active?: boolean; emailVerified?: boolean }[]
+    >({
+      query: (body) => ({ url: '/user/import', method: 'POST', body }),
+      invalidatesTags: ['Users'],
+    }),
   }),
 })
 
 export const {
   useGetUsersQuery,
+  useLazyGetUsersQuery,
   useGetUserByIdQuery,
   useUpdateUserMutation,
+  useImportUsersMutation,
 } = userApi

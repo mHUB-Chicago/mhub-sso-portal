@@ -3,7 +3,7 @@
 import { type ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MoreHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
 import {
@@ -21,58 +21,7 @@ export type UserWithCompany = User & {
   companyName?: string
 }
 
-export const userColumns: ColumnDef<UserWithCompany>[] = [
-  {
-    accessorKey: "name",
-    header: "Full Name",
-    cell: ({ row }) => {
-      const user = row.original
-      const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
-
-      return (
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-          </Avatar>
-          <div>
-            <div className="font-medium">{user.name}</div>
-            <div className="text-sm text-muted-foreground">{user.email}</div>
-          </div>
-        </div>
-      )
-    },
-  },
-  {
-    accessorKey: "companyName",
-    header: "Company",
-    cell: ({ row }) => {
-      return <span>{row.original.companyName || '-'}</span>
-    },
-  },
-  {
-    accessorKey: "email",
-    header: "Email",
-  },
-  {
-    accessorKey: "emailVerified",
-    header: "Status",
-    cell: ({ row }) => {
-      const verified = row.getValue("emailVerified") as boolean
-      return (
-        <Badge variant={verified ? "default" : "outline"}>
-          {verified ? "Verified" : "Pending"}
-        </Badge>
-      )
-    },
-  },
-  {
-    accessorKey: "updatedAt",
-    header: "Modified On",
-    cell: ({ row }) => {
-      const date = new Date(row.getValue("updatedAt") as string)
-      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
-    },
-  },
+export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<UserWithCompany>[] => [
   {
     id: "actions",
     header: "Actions",
@@ -97,7 +46,86 @@ export const userColumns: ColumnDef<UserWithCompany>[] = [
       )
     },
   },
+  {
+    accessorKey: "name",
+    header: "Full Name",
+    cell: ({ row }) => {
+      const user = row.original
+      const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
+
+      return (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={user.profilePhoto ?? undefined} alt={user.name} className="object-cover" />
+            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+          </Avatar>
+          <div>
+            <div className="font-medium">{user.name}</div>
+            <div className="text-sm text-muted-foreground">{user.email}</div>
+          </div>
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "companyName",
+    header: "Company",
+    cell: ({ row }) => {
+      return <span>{row.original.companyName || '-'}</span>
+    },
+  },
+  {
+    accessorKey: "membershipType",
+    header: "Membership",
+    cell: ({ row }) => {
+      const val = row.original.membershipType
+      return <span className="text-sm">{val ?? <span className="text-muted-foreground">—</span>}</span>
+    },
+  },
+  {
+    id: "portalAccess",
+    header: "Portal Access",
+    cell: ({ row }) => {
+      const membershipType = row.original.membershipType
+      const hasAccess = !!membershipType && portalAccessTypes.has(membershipType)
+      return (
+        <Badge variant={hasAccess ? "default" : "outline"} className={hasAccess ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100" : "text-gray-400"}>
+          {hasAccess ? "Yes" : "No"}
+        </Badge>
+      )
+    },
+  },
+  {
+    accessorKey: "active",
+    header: "Active",
+    cell: ({ row }) => {
+      const active = row.original.active
+      return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
+    },
+  },
+  {
+    accessorKey: "emailVerified",
+    header: "Verified",
+    cell: ({ row }) => {
+      const verified = row.getValue("emailVerified") as boolean
+      return (
+        <Badge variant={verified ? "default" : "outline"}>
+          {verified ? "Verified" : "Pending"}
+        </Badge>
+      )
+    },
+  },
+  {
+    accessorKey: "updatedAt",
+    header: "Modified On",
+    cell: ({ row }) => {
+      const date = new Date(row.getValue("updatedAt") as string)
+      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
+    },
+  },
 ]
+
+export const userColumns = createUserColumns(new Set())
 
 export const adminColumns: ColumnDef<UserWithCompany>[] = [
   {
@@ -110,6 +138,7 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
       return (
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
+            <AvatarImage src={user.profilePhoto ?? undefined} alt={user.name} className="object-cover" />
             <AvatarFallback className="text-xs">{initials}</AvatarFallback>
           </Avatar>
           <div>
@@ -179,35 +208,6 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
 
 export const companyColumns: ColumnDef<Company>[] = [
   {
-    accessorKey: "name",
-    header: "Company Name",
-    cell: ({ row }) => {
-      const company = row.original
-      const initials = company.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-
-      return (
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-          </Avatar>
-          <div className="font-medium">{company.name}</div>
-        </div>
-      )
-    },
-  },
-  {
-    accessorKey: "email",
-    header: "Email",
-  },
-  {
-    accessorKey: "createdAt",
-    header: "Created",
-    cell: ({ row }) => {
-      const date = new Date(row.getValue("createdAt") as string)
-      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
-    },
-  },
-  {
     id: "actions",
     header: "Actions",
     cell: ({ row }) => {
@@ -229,6 +229,47 @@ export const companyColumns: ColumnDef<Company>[] = [
           </DropdownMenuContent>
         </DropdownMenu>
       )
+    },
+  },
+  {
+    accessorKey: "name",
+    header: "Company Name",
+    cell: ({ row }) => {
+      const company = row.original
+      const initials = company.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+
+      return (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+          </Avatar>
+          <div className="font-medium">{company.name}</div>
+        </div>
+      )
+    },
+  },
+  {
+    accessorKey: "membershipType",
+    header: "Membership Type",
+    cell: ({ row }) => {
+      const value = row.getValue("membershipType") as string | null
+      return <span className="text-sm">{value ?? <span className="text-muted-foreground">—</span>}</span>
+    },
+  },
+  {
+    accessorKey: "active",
+    header: "Active",
+    cell: ({ row }) => {
+      const active = row.getValue("active") as boolean
+      return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
+    },
+  },
+  {
+    accessorKey: "createdAt",
+    header: "Created",
+    cell: ({ row }) => {
+      const date = new Date(row.getValue("createdAt") as string)
+      return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
     },
   },
 ]

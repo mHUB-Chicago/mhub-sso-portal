@@ -15,6 +15,8 @@ import webhookRoutes from "@/routes/webhook";
 import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
+import { Role } from "@prisma/client";
+
 
 type Bindings = {
   DB: D1Database;
@@ -98,6 +100,176 @@ app.post("/api/sync/start", async (c) => {
   return c.json({ success: true, data: { sessionId: session.id } });
 });
 
+app.post("/api/sync/cancel", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.findFirst({
+    where: { status: { in: ['pending', 'running'] } },
+    orderBy: { startedAt: 'desc' },
+  });
+  if (!session) return c.json({ success: false, error: 'No active sync to cancel' }, 404);
+  const existingLogs = JSON.parse(session.logs ?? '[]');
+  existingLogs.push({ time: new Date().toISOString(), level: 'warn', message: 'Sync forcefully cancelled by admin.' });
+  await prisma.syncSession.update({
+    where: { id: session.id },
+    data: { status: 'cancelled', step: 'Cancelled', completedAt: new Date(), logs: JSON.stringify(existingLogs) },
+  });
+  return c.json({ success: true });
+});
+
+app.get("/api/webhook/logs", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
+  const offset = Number(c.req.query('offset') ?? 0);
+  const [logs, total] = await Promise.all([
+    prisma.webhookLog.findMany({ orderBy: { receivedAt: 'desc' }, take: limit, skip: offset }),
+    prisma.webhookLog.count(),
+  ]);
+  return c.json({ success: true, data: { logs, total, limit, offset } });
+});
+
+app.get("/api/sync/fresh/stats", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db') as PrismaClient;
+  const adminUsers = await prisma.user.findMany({ where: { role: Role.ADMIN }, select: { companyId: true } });
+  const adminCompanyIds = adminUsers.map(u => u.companyId).filter(Boolean) as string[];
+  const [companies, users] = await Promise.all([
+    prisma.company.count({ where: adminCompanyIds.length > 0 ? { id: { notIn: adminCompanyIds } } : {} }),
+    prisma.user.count({ where: { role: Role.USER } }),
+  ]);
+  return c.json({ success: true, data: { companies, users } });
+});
+
+app.post("/api/sync/fresh", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db') as PrismaClient;
+
+  const adminUsers = await prisma.user.findMany({ where: { role: Role.ADMIN }, select: { companyId: true } });
+  const adminCompanyIds = adminUsers.map(u => u.companyId).filter(Boolean) as string[];
+
+  const [deletedUsers, deletedCompanies] = await Promise.all([
+    prisma.user.deleteMany({ where: { role: Role.USER } }),
+    prisma.company.deleteMany({
+      where: adminCompanyIds.length > 0 ? { id: { notIn: adminCompanyIds } } : {},
+    }),
+  ]);
+
+  return c.json({ success: true, data: { usersDeleted: deletedUsers.count, companiesDeleted: deletedCompanies.count } });
+});
+
+app.post("/api/sync/import-filtered", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { companies, members } = await c.req.json<{
+    companies: { subscriptionNo: string; companyName: string; membershipType: string | null }[];
+    members: { customerNo: string; email: string; firstName: string; lastName: string; companyName: string; username: string | null }[];
+  }>();
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.create({
+    data: {
+      type: 'FILTERED',
+      status: 'pending',
+      step: 'Queued',
+      logs: JSON.stringify([{ time: new Date().toISOString(), level: 'info', message: 'Filtered import queued' }]),
+      metadata: JSON.stringify({ companies, members }),
+    },
+  });
+  await c.env.QUEUE.send({
+    jobId: session.id,
+    jobType: JobType.SYNC_FILTERED,
+    payload: { sessionId: session.id },
+  });
+  return c.json({ success: true, data: { sessionId: session.id } });
+});
+
+app.get("/api/sync/history", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
+  const offset = Number(c.req.query('offset') ?? 0);
+  const [sessions, total] = await Promise.all([
+    prisma.syncSession.findMany({ orderBy: { startedAt: 'desc' }, take: limit, skip: offset }),
+    prisma.syncSession.count(),
+  ]);
+  return c.json({
+    success: true,
+    data: {
+      sessions: sessions.map(s => ({ ...s, logs: JSON.parse(s.logs) })),
+      total,
+      limit,
+      offset,
+    },
+  });
+});
+
+app.get("/api/config/membership-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const types = await prisma.companyMembershipType.findMany({ orderBy: { name: 'asc' } });
+  return c.json({ success: true, data: types.map(t => t.name) });
+});
+
+app.post("/api/config/membership-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
+  const prisma = c.get('db');
+  await prisma.companyMembershipType.upsert({
+    where: { name: name.trim() },
+    create: { name: name.trim() },
+    update: {},
+  });
+  return c.json({ success: true });
+});
+
+app.delete("/api/config/membership-types/:name", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const name = decodeURIComponent(c.req.param('name'));
+  const prisma = c.get('db');
+  await prisma.companyMembershipType.delete({ where: { name } }).catch(() => {});
+  return c.json({ success: true });
+});
+
+app.get("/api/config/portal-access-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const types = await prisma.portalAccessType.findMany({ orderBy: { name: 'asc' } });
+  return c.json({ success: true, data: types.map(t => t.name) });
+});
+
+app.post("/api/config/portal-access-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
+  const prisma = c.get('db');
+  await prisma.portalAccessType.upsert({
+    where: { name: name.trim() },
+    create: { name: name.trim() },
+    update: {},
+  });
+  return c.json({ success: true });
+});
+
+app.delete("/api/config/portal-access-types/:name", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const name = decodeURIComponent(c.req.param('name'));
+  const prisma = c.get('db');
+  await prisma.portalAccessType.delete({ where: { name } }).catch(() => {});
+  return c.json({ success: true });
+});
+
 app.post("/__internal/sync", async (c) => {
   const auth = c.req.header("authorization") ?? "";
   if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
@@ -110,6 +282,7 @@ app.post("/__internal/sync", async (c) => {
   });
   return c.json({ success: true, message: `Sync ${type === 'CONTINUE' ? 'continue' : 'all'} queued` });
 });
+
 
 export default {
   fetch: app.fetch,

@@ -2,8 +2,12 @@ import {
   syncPhaseCompanies,
   syncPhaseUsers,
   syncPhaseDeactivate,
+  syncFiltered,
   syncOne as syncOnePeopleVine,
+  checkCancelled,
+  SyncCancelledError,
 } from "@/services/peopleVineService";
+import { PrismaClient } from "@/database/models";
 import { createMockContext } from "@/utils/createMockContext";
 
 export interface Message {
@@ -17,6 +21,7 @@ export const enum JobType {
   SYNC_PEOPLEVINE_CUSTOMER = "SYNC_PEOPLEVINE_CUSTOMER",
   SYNC_PHASE_USERS = "SYNC_PHASE_USERS",
   SYNC_PHASE_DEACTIVATE = "SYNC_PHASE_DEACTIVATE",
+  SYNC_FILTERED = "SYNC_FILTERED",
 }
 
 export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionContext) => {
@@ -30,7 +35,6 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
         if (jobType === JobType.SYNC_PEOPLEVINE_EVERYTHING) {
           const { sessionId, type } = payload ?? {};
           if (type === 'CONTINUE') {
-            // Sync continue: skip companies, go straight to users from last checkpoint
             const lastSession = await (context.get('db') as any).syncSession.findFirst({
               where: { type: 'ALL', status: { in: ['failed', 'completed'] } },
               orderBy: { startedAt: 'desc' },
@@ -38,6 +42,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
             const meta = lastSession ? JSON.parse(lastSession.metadata ?? '{}') : {};
             const resumePage = typeof meta.lastCustomerPage === 'number' ? meta.lastCustomerPage + 1 : 1;
             const { hadErrors, hasMore, lastPage } = await syncPhaseUsers(context, sessionId, resumePage);
+            await checkCancelled(context.get('db') as PrismaClient, sessionId);
             if (hasMore) {
               await env.QUEUE.send({
                 jobId: crypto.randomUUID(),
@@ -52,9 +57,8 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
               });
             }
           } else {
-            // Full sync phase 1: companies
             await syncPhaseCompanies(context, sessionId);
-            // Enqueue phase 2: users (separate invocation = fresh subrequest budget)
+            await checkCancelled(context.get('db') as PrismaClient, sessionId);
             await env.QUEUE.send({
               jobId: crypto.randomUUID(),
               jobType: JobType.SYNC_PHASE_USERS,
@@ -65,8 +69,8 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
         } else if (jobType === JobType.SYNC_PHASE_USERS) {
           const { sessionId, startPage = 1 } = payload ?? {};
           const { hadErrors, hasMore, lastPage } = await syncPhaseUsers(context, sessionId, startPage);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
           if (hasMore) {
-            // More pages — enqueue next batch with fresh subrequest budget
             await env.QUEUE.send({
               jobId: crypto.randomUUID(),
               jobType: JobType.SYNC_PHASE_USERS,
@@ -87,12 +91,24 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
         } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
           await syncOnePeopleVine(context, payload.peopleVineId);
 
+        } else if (jobType === JobType.SYNC_FILTERED) {
+          const { sessionId } = payload ?? {};
+          const prisma = context.get('db') as PrismaClient;
+          const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+          const meta = session?.metadata ? JSON.parse(session.metadata) : {};
+          await syncFiltered(context, meta.companies ?? [], meta.members ?? [], sessionId);
+
         } else {
           console.log(`Unknown job type: ${jobType}`);
         }
 
         await msg.ack();
       } catch (err) {
+        if (err instanceof SyncCancelledError) {
+          console.log(`Job ${jobId} (${jobType}) cancelled — acknowledging without retry.`);
+          await msg.ack();
+          return;
+        }
         console.error(`Job ${jobId} (${jobType}) failed, will retry:`, err);
         await msg.retry();
       }

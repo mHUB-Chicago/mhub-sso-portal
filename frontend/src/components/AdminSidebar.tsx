@@ -7,6 +7,7 @@ import {
   KeyRound,
   LayoutDashboard,
   RefreshCw,
+  Webhook,
   X
 } from 'lucide-react'
 
@@ -124,22 +125,40 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
             IDP Management
           </Link>
           {syncEnabled && (
-            <Link
-              to="/admin/sync"
-              onClick={handleLinkClick}
-              className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
-                location.pathname.startsWith('/admin/sync')
-                  ? 'bg-brand text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <RefreshCw className={`h-5 w-5 ${
-                location.pathname.startsWith('/admin/sync')
-                  ? 'text-white'
-                  : 'text-gray-500'
-              }`} />
-              Sync
-            </Link>
+            <>
+              <Link
+                to="/admin/sync"
+                onClick={handleLinkClick}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+                  location.pathname === '/admin/sync'
+                    ? 'bg-brand text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <RefreshCw className={`h-5 w-5 ${
+                  location.pathname === '/admin/sync'
+                    ? 'text-white'
+                    : 'text-gray-500'
+                }`} />
+                Sync
+              </Link>
+              <Link
+                to="/admin/webhook-logs"
+                onClick={handleLinkClick}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+                  location.pathname.startsWith('/admin/webhook-logs')
+                    ? 'bg-brand text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Webhook className={`h-5 w-5 ${
+                  location.pathname.startsWith('/admin/webhook-logs')
+                    ? 'text-white'
+                    : 'text-gray-500'
+                }`} />
+                Webhook Logs
+              </Link>
+            </>
           )}
         </nav>
       </div>

@@ -1,18 +1,25 @@
 import { Button } from "@/components/ui/button"
 import { DataTable, type FilterConfig } from "@/components/data-table/data-table"
-import { userColumns, type UserWithCompany } from "@/components/data-table/columns"
-import { Download, Settings, Loader2 } from "lucide-react"
+import { createUserColumns, type UserWithCompany } from "@/components/data-table/columns"
+import { Download, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
-import { useGetUsersQuery } from "@/store/api/userApi"
+import { useGetUsersQuery, useLazyGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
+import { useGetPortalAccessTypesQuery } from "@/store/api/syncApi"
 import { useMemo, useState } from "react"
+import { toCsv, downloadCsv } from "@/utils/csv"
+import { toast } from "sonner"
 
 const PAGE_SIZE = 10
+
+const USER_HEADERS = ["Full Name", "Email", "Company Name", "Membership Type", "Active", "Email Verified", "Phone", "Address", "City", "State", "Zip Code", "Card Status"]
+const USER_EXAMPLE = "Jane Smith,jane@example.com,Acme Corp,Associate,true,false,,,,,,"
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState("")
   const [companyId, setCompanyId] = useState<string | undefined>(undefined)
+  const [exporting, setExporting] = useState(false)
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
     limit: PAGE_SIZE,
@@ -21,15 +28,23 @@ export function AdminUsersPage() {
     search: search || undefined,
     companyId,
   })
-  const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 100, offset: 0 })
+  const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
+  const { data: portalAccessData } = useGetPortalAccessTypesQuery()
 
-  // Create a map of company IDs to names
+  const [fetchAllUsers] = useLazyGetUsersQuery()
+
+  const portalAccessTypes = useMemo(
+    () => new Set<string>(portalAccessData?.data ?? []),
+    [portalAccessData]
+  )
+
+  const userColumns = useMemo(() => createUserColumns(portalAccessTypes), [portalAccessTypes])
+
   const companyMap = useMemo(() => {
     if (!companiesData?.data?.companies) return new Map<string, string>()
     return new Map(companiesData.data.companies.map(c => [c.id, c.name]))
   }, [companiesData])
 
-  // Enrich users with company names
   const usersWithCompany: UserWithCompany[] = useMemo(() => {
     if (!usersData?.data?.users) return []
     return usersData.data.users.map(user => ({
@@ -50,22 +65,40 @@ export function AdminUsersPage() {
     }
   }
 
-  // Build dynamic filters based on data — use company ID as value for server-side filtering
   const filters: FilterConfig[] = useMemo(() => {
     const companyOptions = companiesData?.data?.companies?.map(c => ({
       value: c.id,
       label: c.name
     })) || []
-
-    return [
-      {
-        columnId: "companyName",
-        placeholder: "Company",
-        options: companyOptions,
-        width: "w-48"
-      }
-    ]
+    return [{ columnId: "companyName", placeholder: "Company", options: companyOptions, width: "w-48" }]
   }, [companiesData])
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const result = await fetchAllUsers({ limit: 10000, offset: 0, role: 'USER' }).unwrap()
+      const rows = result.data.users.map(u => [
+        u.name,
+        u.email,
+        companyMap.get(u.companyId) || '',
+        u.membershipType ?? '',
+        u.active ? 'true' : 'false',
+        u.emailVerified ? 'true' : 'false',
+        u.phone ?? '',
+        u.address ?? '',
+        u.city ?? '',
+        u.state ?? '',
+        u.zipCode ?? '',
+        u.cardStatus ?? '',
+      ])
+      downloadCsv(`users-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(USER_HEADERS, rows))
+      toast.success(`Exported ${rows.length} users`)
+    } catch {
+      toast.error("Export failed")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const isLoading = usersLoading || companiesLoading
 
@@ -82,9 +115,7 @@ export function AdminUsersPage() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <p className="text-red-500 mb-2">Failed to load users</p>
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            Retry
-          </Button>
+          <Button variant="outline" onClick={() => window.location.reload()}>Retry</Button>
         </div>
       </div>
     )
@@ -92,7 +123,6 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <nav className="text-sm text-gray-500 mb-2">
           <Link to="/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
@@ -102,21 +132,15 @@ export function AdminUsersPage() {
         <h1 className="text-2xl font-bold">User Summary</h1>
       </div>
 
-      {/* Action Bar */}
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="px-4 py-2 h-10">
-            <Download className="h-4 w-4 mr-2" />
+          <Button variant="outline" className="px-4 py-2 h-10" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
             Export
-          </Button>
-          <Button variant="outline" className="px-4 py-2 h-10">
-            <Settings className="h-4 w-4 mr-2" />
-            View Options
           </Button>
         </div>
       </div>
 
-      {/* User Accounts Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
@@ -127,7 +151,6 @@ export function AdminUsersPage() {
           </h2>
         </div>
 
-        {/* Data Table */}
         <DataTable
           columns={userColumns}
           data={usersWithCompany}
@@ -142,6 +165,7 @@ export function AdminUsersPage() {
           onFilterChange={handleFilterChange}
         />
       </div>
+
     </div>
   )
 }

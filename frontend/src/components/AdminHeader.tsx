@@ -44,7 +44,7 @@ export function AdminHeader({ onMenuClick }: AdminHeaderProps) {
 
   const handleLogout = () => {
     dispatch(logout())
-    navigate('/admin/login')
+    navigate('/login')
   }
 
   return (

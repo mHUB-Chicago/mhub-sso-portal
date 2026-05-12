@@ -6,14 +6,23 @@ import { ServiceProviderSchema } from "./serviceProvider";
 export const UserSchema = z.object({
   id: z.string(),
   companyId: z.string(),
-  email: z.email(),
+  email: z.string(),
   name: z.string(),
   peopleVineId: z.string().nullable(),
   role: z.enum(['USER', 'ADMIN']),
+  active: z.boolean(),
   emailVerified: z.boolean(),
   mustResetPassword: z.boolean(),
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date(),
+  membershipType: z.string().nullable(),
+  profilePhoto: z.string().nullable(),
+  phone: z.string().nullable(),
+  address: z.string().nullable(),
+  city: z.string().nullable(),
+  state: z.string().nullable(),
+  zipCode: z.string().nullable(),
+  cardStatus: z.string().nullable(),
+  createdAt: z.coerce.date().transform(d => d.toISOString()),
+  updatedAt: z.coerce.date().transform(d => d.toISOString()),
 });
 
 export const AppSchema = z.object({
@@ -28,7 +37,7 @@ export const GetMyUserResponseSchema = SuccessResponseSchema(z.object({
 }));
 
 export const GetUsersRequestSchema = z.object({
-  limit: z.coerce.number().min(1).max(100).default(20),
+  limit: z.coerce.number().min(1).max(10000).default(20),
   offset: z.coerce.number().min(0).default(0),
   role: z.enum(['USER', 'ADMIN']).optional(),
   search: z.string().optional(),

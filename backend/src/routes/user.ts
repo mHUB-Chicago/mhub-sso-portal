@@ -5,7 +5,8 @@ import { GetMyUserResponseSchema, GetUserResponseSchema, GetUsersRequestSchema, 
 import { handleGetMyUser, handleGetUserById, handleGetUsers, handleUpdateUser } from "@/controllers/userController";
 import { validate } from "@/middleware/validate";
 import { roleMiddleware } from "@/middleware/role";
-import { Role } from "@/database/models";
+import { Role, PrismaClient } from "@/database/models";
+import { createUser, updateUser } from "@/services/userService";
 
 const app = new Hono<AppType>();
 
@@ -68,6 +69,64 @@ app.put(
   }),
   validate(UpdateUserRequestSchema),
   handleUpdateUser
+);
+
+app.post(
+  "/import",
+  roleMiddleware([Role.ADMIN]),
+  async (c) => {
+    const prisma: PrismaClient = c.get("db");
+    const rows: { name: string; email: string; companyName?: string; membershipType?: string; active?: boolean; emailVerified?: boolean }[] = await c.req.json();
+
+    let created = 0, updated = 0, skipped = 0;
+    const errors: string[] = [];
+
+    for (const row of rows) {
+      if (!row.name?.trim() || !row.email?.trim()) { skipped++; continue; }
+      const email = row.email.toLowerCase().trim();
+      const name = row.name.trim();
+      try {
+        // Find company by name if provided
+        let companyId: string | undefined;
+        if (row.companyName?.trim()) {
+          const company = await prisma.company.findFirst({ where: { name: row.companyName.trim() } });
+          companyId = company?.id;
+        }
+        if (!companyId) { skipped++; continue; }
+
+        const existing = await prisma.user.findFirst({ where: { email } });
+        if (existing) {
+          await updateUser(c, {
+            id: existing.id,
+            name,
+            email,
+            companyId,
+            membershipType: row.membershipType ?? existing.membershipType,
+            active: row.active ?? existing.active,
+            emailVerified: row.emailVerified ?? existing.emailVerified,
+          });
+          updated++;
+        } else {
+          await createUser(c, {
+            name,
+            email,
+            peopleVineId: crypto.randomUUID(),
+            role: Role.USER,
+            companyId,
+            membershipType: row.membershipType ?? null,
+            active: row.active ?? true,
+            emailVerified: row.emailVerified ?? false,
+            mustResetPassword: true,
+          });
+          created++;
+        }
+      } catch (e) {
+        errors.push(`${email}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    return c.json({ success: true, data: { created, updated, skipped, errors } });
+  }
 );
 
 export default app;

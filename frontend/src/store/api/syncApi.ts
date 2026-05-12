@@ -8,8 +8,8 @@ export interface SyncLogEntry {
 
 export interface SyncSession {
   id: string
-  type: 'ALL' | 'CONTINUE'
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  type: 'ALL' | 'CONTINUE' | 'FILTERED'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   step: string
   progress: number
   logs: SyncLogEntry[]
@@ -42,7 +42,7 @@ export const syncApi = createApi({
       return headers
     },
   }),
-  tagTypes: ['SyncStatus'],
+  tagTypes: ['SyncStatus', 'MembershipTypes', 'PortalAccessTypes'],
   endpoints: (builder) => ({
     getSyncStatus: builder.query<SyncStatusResponse, void>({
       query: () => '/sync/status',
@@ -52,7 +52,57 @@ export const syncApi = createApi({
       query: (body) => ({ url: '/sync/start', method: 'POST', body }),
       invalidatesTags: ['SyncStatus'],
     }),
+    cancelSync: builder.mutation<{ success: boolean }, void>({
+      query: () => ({ url: '/sync/cancel', method: 'POST' }),
+      invalidatesTags: ['SyncStatus'],
+    }),
+    getFreshStats: builder.query<{ success: boolean; data: { companies: number; users: number } }, void>({
+      query: () => '/sync/fresh/stats',
+    }),
+    freshSync: builder.mutation<{
+      success: boolean
+      data: { usersDeleted: number; companiesDeleted: number }
+    }, Record<string, never>>({
+      query: () => ({ url: '/sync/fresh', method: 'POST', body: {} }),
+    }),
+    importFiltered: builder.mutation<{ success: boolean; data: { sessionId: string } }, {
+      companies: { subscriptionNo: string; companyName: string; membershipType: string | null }[]
+      members: { customerNo: string; email: string; firstName: string; lastName: string; companyName: string; username: string | null }[]
+    }>({
+      query: (body) => ({ url: '/sync/import-filtered', method: 'POST', body }),
+      invalidatesTags: ['SyncStatus'],
+    }),
+    getSyncHistory: builder.query<{
+      success: boolean
+      data: { sessions: SyncSession[]; total: number; limit: number; offset: number }
+    }, { limit?: number; offset?: number }>({
+      query: ({ limit = 50, offset = 0 } = {}) => `/sync/history?limit=${limit}&offset=${offset}`,
+    }),
+    getMembershipTypes: builder.query<{ success: boolean; data: string[] }, void>({
+      query: () => '/config/membership-types',
+      providesTags: ['MembershipTypes'],
+    }),
+    addMembershipType: builder.mutation<{ success: boolean }, { name: string }>({
+      query: (body) => ({ url: '/config/membership-types', method: 'POST', body }),
+      invalidatesTags: ['MembershipTypes'],
+    }),
+    removeMembershipType: builder.mutation<{ success: boolean }, string>({
+      query: (name) => ({ url: `/config/membership-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
+      invalidatesTags: ['MembershipTypes'],
+    }),
+    getPortalAccessTypes: builder.query<{ success: boolean; data: string[] }, void>({
+      query: () => '/config/portal-access-types',
+      providesTags: ['PortalAccessTypes'],
+    }),
+    addPortalAccessType: builder.mutation<{ success: boolean }, { name: string }>({
+      query: (body) => ({ url: '/config/portal-access-types', method: 'POST', body }),
+      invalidatesTags: ['PortalAccessTypes'],
+    }),
+    removePortalAccessType: builder.mutation<{ success: boolean }, string>({
+      query: (name) => ({ url: `/config/portal-access-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
+      invalidatesTags: ['PortalAccessTypes'],
+    }),
   }),
 })
 
-export const { useGetSyncStatusQuery, useStartSyncMutation } = syncApi
+export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi

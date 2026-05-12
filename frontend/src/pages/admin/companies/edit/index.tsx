@@ -130,6 +130,16 @@ export function AdminEditCompanyPage() {
             <Label className="text-gray-500">Created</Label>
             <p className="font-medium">{new Date(company.createdAt).toLocaleDateString()}</p>
           </div>
+
+          <div className="space-y-2">
+            <Label className="text-gray-500">Membership Type</Label>
+            <p className="font-medium">{company.membershipType ?? 'N/A'}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-gray-500">Account Type</Label>
+            <Badge variant="outline">{company.isPersonal ? 'Personal' : 'Organization'}</Badge>
+          </div>
         </div>
 
         {/* Service Provider Access */}

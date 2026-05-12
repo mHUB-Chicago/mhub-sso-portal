@@ -139,11 +139,6 @@ export function AdminEditUserPage() {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-gray-500">Company Email</Label>
-            <p className="font-medium">{company.email}</p>
-          </div>
-
-          <div className="space-y-2">
             <Label className="text-gray-500">PeopleVine ID</Label>
             {user.peopleVineId ? (
               <a
@@ -163,6 +158,23 @@ export function AdminEditUserPage() {
           <div className="space-y-2">
             <Label className="text-gray-500">Member Since</Label>
             <p className="font-medium">{new Date(user.createdAt).toLocaleDateString()}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-gray-500">Phone</Label>
+            <p className="font-medium">{user.phone ?? <span className="text-gray-400">—</span>}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-gray-500">Card Status</Label>
+            <p className="font-medium">{user.cardStatus ?? <span className="text-gray-400">—</span>}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-gray-500">Address</Label>
+            <p className="font-medium">
+              {[user.address, user.city, user.state, user.zipCode].filter(Boolean).join(', ') || <span className="text-gray-400">—</span>}
+            </p>
           </div>
         </div>
 

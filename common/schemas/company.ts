@@ -7,12 +7,15 @@ export const CompanySchema = z.object({
   peopleVineId: z.string().nullable(),
   name: z.string(),
   email: z.string(),
-  createdAt: z.coerce.date(),
-  updatedAt: z.coerce.date()
+  active: z.boolean(),
+  membershipType: z.string().nullable(),
+  isPersonal: z.boolean(),
+  createdAt: z.coerce.date().transform(d => d.toISOString()),
+  updatedAt: z.coerce.date().transform(d => d.toISOString())
 });
 
 export const GetCompaniesRequestSchema = z.object({
-  limit: z.coerce.number().min(1).max(100).default(20),
+  limit: z.coerce.number().min(1).max(10000).default(20),
   offset: z.coerce.number().min(0).default(0),
   active: z.boolean().optional(),
   search: z.string().optional(),

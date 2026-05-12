@@ -124,7 +124,7 @@ export function LoginPage() {
           <form onSubmit={emailForm.handleSubmit(handleEmailSubmit)} className="space-y-6">
             <div>
               <Label htmlFor="email" className="text-sm font-medium text-gray-700">
-                Email
+                Email or Username
               </Label>
               <div className="mt-1 relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -132,16 +132,12 @@ export function LoginPage() {
                 </div>
                 <Input
                   id="email"
-                  type="email"
-                  placeholder="john.doe@example.com"
+                  type="text"
+                  placeholder="john.doe@example.com or username"
                   className="w-full pl-10 pr-3 py-4 border-gray-300 h-12"
                   disabled={isStartingLogin}
                   {...emailForm.register('email', {
-                    required: 'Email is required',
-                    pattern: {
-                      value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                      message: 'Please enter a valid email address'
-                    }
+                    required: 'Email or username is required',
                   })}
                 />
               </div>

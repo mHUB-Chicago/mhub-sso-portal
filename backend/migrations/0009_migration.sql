@@ -1,0 +1,36 @@
+CREATE TABLE "CompanyMembershipType" (
+  "name" TEXT NOT NULL PRIMARY KEY,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO "CompanyMembershipType" ("name") VALUES
+  ('Accelerator Shared Workspace'),
+  ('Co-Working Student Rate'),
+  ('Convertible Garage - Large'),
+  ('Convertible Garage - Small'),
+  ('Enterprise Membership'),
+  ('Garage - Large'),
+  ('Garage - Medium'),
+  ('Garage - Small'),
+  ('Office - Large'),
+  ('Office - Medium'),
+  ('Office - Partner'),
+  ('Office - Small'),
+  ('Partner Office - Large'),
+  ('Partner Office - Medium'),
+  ('Partner Office - Small'),
+  ('Punch Card Membership'),
+  ('Reserved Desk'),
+  ('Shared Workspace'),
+  ('Shared Workspace – Intern'),
+  ('Shop - Full-Time'),
+  ('Social Membership'),
+  ('Wet Lab'),
+  ('Associate Membership - Corporate'),
+  ('Associate Membership - Startup/SME'),
+  ('Associate Membership (10,000+)'),
+  ('Associate Membership (12-50)'),
+  ('Associate Membership (50 - 500)'),
+  ('Associate Membership (500 - 10,000)'),
+  ('Associate Membership (Sponsorship)'),
+  ('Associate Membership (University)');

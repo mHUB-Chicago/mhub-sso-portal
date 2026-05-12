@@ -35,6 +35,8 @@ model Company {
   active                  Boolean                  @default(true)
   name                    String
   email                   String                   @unique
+  membershipType          String?
+  isPersonal              Boolean                  @default(false)
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
   createdAt               DateTime                 @default(now())
@@ -47,6 +49,7 @@ model User {
   active               Boolean               @default(true)
   name                 String
   email                String                @unique
+  username             String?               @unique
   passwordHashed       String?
   role                 Role
   companyId            String
@@ -54,6 +57,14 @@ model User {
   emailVerified        Boolean               @default(false)
   mustResetPassword    Boolean               @default(false)
   lastLogin            DateTime?
+  membershipType       String?
+  profilePhoto         String?
+  phone                String?
+  address              String?
+  city                 String?
+  state                String?
+  zipCode              String?
+  cardStatus           String?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]
@@ -169,4 +180,24 @@ model SyncSession {
   startedAt   DateTime  @default(now())
   completedAt DateTime?
   updatedAt   DateTime  @updatedAt
+}
+
+model WebhookLog {
+  id         String   @id @default(uuid())
+  source     String   @default("peoplevine")
+  customerNo Int?
+  eventType  String?
+  payload    String?
+  status     String   @default("received")
+  receivedAt DateTime @default(now())
+}
+
+model CompanyMembershipType {
+  name      String   @id
+  createdAt DateTime @default(now())
+}
+
+model PortalAccessType {
+  name      String   @id
+  createdAt DateTime @default(now())
 }
