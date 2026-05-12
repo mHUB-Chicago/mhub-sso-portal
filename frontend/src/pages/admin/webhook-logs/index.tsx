@@ -70,6 +70,7 @@ export function AdminWebhookLogsPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Received At</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Customer #</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Event Type</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Payload</th>
             </tr>
@@ -87,6 +88,7 @@ export function AdminWebhookLogsPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-700">{log.source}</td>
                   <td className="px-4 py-3 text-gray-700">{log.customerNo ?? <span className="text-gray-400">—</span>}</td>
+                  <td className="px-4 py-3 text-gray-700">{log.eventType ?? <span className="text-gray-400">—</span>}</td>
                   <td className="px-4 py-3">
                     <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
                   </td>

@@ -89,6 +89,15 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           await syncPhaseDeactivate(context, sessionId);
 
         } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
+          const prisma = context.get('db') as PrismaClient;
+          const activeBulkSession = await prisma.syncSession.findFirst({
+            where: { status: { in: ['running', 'pending'] }, type: { in: ['ALL', 'CONTINUE', 'FILTERED'] } },
+          });
+          if (activeBulkSession) {
+            console.log(`Skipping webhook for customer ${payload.peopleVineId} — bulk sync in progress (${activeBulkSession.type}:${activeBulkSession.id})`);
+            await msg.ack();
+            return;
+          }
           await syncOnePeopleVine(context, payload.peopleVineId);
 
         } else if (jobType === JobType.SYNC_FILTERED) {

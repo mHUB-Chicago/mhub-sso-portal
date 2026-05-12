@@ -4,6 +4,7 @@ export interface WebhookLog {
   id: string
   source: string
   customerNo: number | null
+  eventType: string | null
   payload: string | null
   status: string
   receivedAt: string
