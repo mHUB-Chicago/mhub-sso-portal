@@ -10,6 +10,10 @@ export interface GetPaginatedUsersInput {
   offset: number;
   search?: string;
   companyId?: string;
+  membershipType?: string;
+  active?: 'true' | 'false';
+  emailVerified?: 'true' | 'false';
+  portalAccess?: 'true' | 'false';
 }
 
 export interface GetPaginatedUsersResult {
@@ -62,9 +66,22 @@ export interface UpdateUserInput {
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
   const prisma: PrismaClient = c.get("db");
+
+  let membershipTypeFilter: any = undefined;
+  if (input.membershipType) {
+    membershipTypeFilter = input.membershipType;
+  } else if (input.portalAccess !== undefined) {
+    const accessTypes = await prisma.portalAccessType.findMany({ select: { name: true } });
+    const names = accessTypes.map(t => t.name);
+    membershipTypeFilter = input.portalAccess === 'true' ? { in: names } : { notIn: names };
+  }
+
   const whereClause: any = {
     ...(input.role && { role: input.role }),
     ...(input.companyId && { companyId: input.companyId }),
+    ...(input.active !== undefined && { active: input.active === 'true' }),
+    ...(input.emailVerified !== undefined && { emailVerified: input.emailVerified === 'true' }),
+    ...(membershipTypeFilter !== undefined && { membershipType: membershipTypeFilter }),
     ...(input.search && {
       OR: [
         { name: { contains: input.search } },
@@ -72,6 +89,7 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
       ],
     }),
   };
+
   const [users, total] = await Promise.all([
     prisma.user.findMany({
       where: whereClause,

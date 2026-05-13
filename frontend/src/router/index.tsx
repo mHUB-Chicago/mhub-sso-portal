@@ -22,6 +22,7 @@ import { IDPEditPage } from '@/pages/admin/idp/edit'
 import { IDPAddPage } from '@/pages/admin/idp/add'
 import { AdminSyncPage } from '@/pages/admin/sync'
 import { AdminWebhookLogsPage } from '@/pages/admin/webhook-logs'
+import { AdminPortalAccessPage } from '@/pages/admin/portal-access'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminRoute } from '@/components/AdminRoute'
 
@@ -137,6 +138,10 @@ export const router = createBrowserRouter([
       {
         path: 'webhook-logs',
         element: <AdminWebhookLogsPage />
+      },
+      {
+        path: 'portal-access',
+        element: <AdminPortalAccessPage />
       },
       {
         path: 'settings',

@@ -30,6 +30,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Check, ChevronsUpDown } from "lucide-react"
 
 export interface FilterOption {
   value: string
@@ -41,6 +44,42 @@ export interface FilterConfig {
   placeholder: string
   options: FilterOption[]
   width?: string
+  type?: 'select' | 'combobox'
+}
+
+function ComboboxFilter({ filter, value, onChange }: { filter: FilterConfig; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = React.useState(false)
+  const selected = filter.options.find(o => o.value === value)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" className={`h-10 justify-between font-normal ${filter.width ?? "w-40"}`}>
+          <span className="truncate">{selected ? selected.label : `All ${filter.placeholder}`}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          <CommandInput placeholder={`Search ${filter.placeholder.toLowerCase()}…`} />
+          <CommandList>
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="all" onSelect={() => { onChange("all"); setOpen(false) }}>
+                <Check className={`mr-2 h-4 w-4 ${!selected ? "opacity-100" : "opacity-0"}`} />
+                All {filter.placeholder}
+              </CommandItem>
+              {filter.options.map(opt => (
+                <CommandItem key={opt.value} value={opt.label} onSelect={() => { onChange(opt.value); setOpen(false) }}>
+                  <Check className={`mr-2 h-4 w-4 ${value === opt.value ? "opacity-100" : "opacity-0"}`} />
+                  {opt.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 interface DataTableProps<TData, TValue> {
@@ -49,11 +88,11 @@ interface DataTableProps<TData, TValue> {
   searchPlaceholder?: string
   filters?: FilterConfig[]
   pageSize?: number
-  // Server-side pagination props
   serverSide?: boolean
   totalRows?: number
   currentPage?: number
   onPageChange?: (page: number) => void
+  onPageSizeChange?: (size: number) => void
   onSearchChange?: (value: string) => void
   onFilterChange?: (columnId: string, value: string | undefined) => void
 }
@@ -68,6 +107,7 @@ export function DataTable<TData, TValue>({
   totalRows = 0,
   currentPage = 0,
   onPageChange,
+  onPageSizeChange,
   onSearchChange,
   onFilterChange,
 }: DataTableProps<TData, TValue>) {
@@ -131,38 +171,49 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between py-4">
+      <div className="flex flex-wrap items-center gap-2 py-4">
         <Input
           placeholder={searchPlaceholder}
           value={globalFilter ?? ""}
           onChange={(event) => handleSearchChange(event.target.value)}
-          className="max-w-sm"
+          className="h-10 max-w-sm"
         />
-        {filters.length > 0 && (
-          <div className="flex items-center gap-2">
-            {filters.map((filter) => (
-              <Select
+        {filters.map((filter) => {
+          const value = (table.getColumn(filter.columnId)?.getFilterValue() as string) ?? "all"
+          if (filter.type === 'combobox') {
+            return (
+              <ComboboxFilter
                 key={filter.columnId}
-                onValueChange={(value) => handleFilterChange(filter.columnId, value)}
-                value={(table.getColumn(filter.columnId)?.getFilterValue() as string) ?? "all"}
-              >
-                <SelectTrigger className={filter.width ?? "w-40"}>
-                  <SelectValue placeholder={filter.placeholder} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All {filter.placeholder}</SelectItem>
-                  {filter.options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ))}
-            <Button variant="ghost" size="sm" onClick={handleResetFilters}>
-              Reset
-            </Button>
-          </div>
+                filter={filter}
+                value={value}
+                onChange={(v) => handleFilterChange(filter.columnId, v)}
+              />
+            )
+          }
+          return (
+            <Select
+              key={filter.columnId}
+              onValueChange={(value) => handleFilterChange(filter.columnId, value)}
+              value={value}
+            >
+              <SelectTrigger className={`h-10 ${filter.width ?? "w-40"}`}>
+                <SelectValue placeholder={filter.placeholder} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All {filter.placeholder}</SelectItem>
+                {filter.options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )
+        })}
+        {filters.length > 0 && (
+          <Button variant="ghost" size="sm" className="h-10" onClick={handleResetFilters}>
+            Reset
+          </Button>
         )}
       </div>
       <div className="overflow-hidden rounded-md border">
@@ -171,8 +222,9 @@ export function DataTable<TData, TValue>({
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
+                  const size = header.column.columnDef.size
                   return (
-                    <TableHead key={header.id}>
+                    <TableHead key={header.id} style={size ? { width: size, minWidth: size } : undefined}>
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -216,16 +268,31 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
       <div className="flex items-center justify-between space-x-2 py-4">
-        <div className="flex-1 text-sm text-muted-foreground">
-          {serverSide ? (
-            <>
-              Showing {currentPage * pageSize + 1}-{Math.min((currentPage + 1) * pageSize, totalRows)} of {totalRows} row(s).
-            </>
-          ) : (
-            <>
-              Showing {table.getRowModel().rows.length} of{" "}
-              {table.getFilteredRowModel().rows.length} row(s).
-            </>
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-muted-foreground">
+            {serverSide ? (
+              <>Showing {totalRows === 0 ? 0 : currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, totalRows)} of {totalRows}</>
+            ) : (
+              <>Showing {table.getRowModel().rows.length} of {table.getFilteredRowModel().rows.length}</>
+            )}
+          </div>
+          {onPageSizeChange && (
+            <Select
+              value={String(pageSize)}
+              onValueChange={(val) => {
+                onPageSizeChange(Number(val))
+                onPageChange?.(0)
+              }}
+            >
+              <SelectTrigger className="w-28 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 25, 50, 100].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n} / page</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
         <div className="flex items-center space-x-2">

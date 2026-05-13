@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
-import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
+import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
 
 const POLL_INTERVAL_MS = 1000
 
@@ -747,7 +747,6 @@ export function AdminSyncPage() {
               isCancelling={isCancelling}
             />
             <MembershipTypesManager />
-            <PortalAccessTypesManager />
           </div>
         )}
         {activeTab === 'CONTINUE' && (

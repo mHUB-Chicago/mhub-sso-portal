@@ -1,28 +1,33 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { DataTable } from "@/components/data-table/data-table"
+import { DataTable, type FilterConfig } from "@/components/data-table/data-table"
 import { companyColumns } from "@/components/data-table/columns"
 import { Download, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetCompaniesQuery, useLazyGetCompaniesQuery } from "@/store/api/companyApi"
+import { useGetMembershipTypesQuery } from "@/store/api/syncApi"
 import { toCsv, downloadCsv } from "@/utils/csv"
 import { toast } from "sonner"
-
-const PAGE_SIZE = 10
 
 const COMPANY_HEADERS = ["Company Name", "Membership Type", "Active"]
 
 export function AdminCompaniesPage() {
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
+  const [membershipType, setMembershipType] = useState<string | undefined>(undefined)
+  const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
   const [exporting, setExporting] = useState(false)
 
   const { data: companiesData, isLoading, error: companiesError } = useGetCompaniesQuery({
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: pageSize,
+    offset: page * pageSize,
     search: search || undefined,
+    membershipType,
+    active,
   })
 
+  const { data: membershipTypesData } = useGetMembershipTypesQuery()
   const [fetchAll] = useLazyGetCompaniesQuery()
 
   const companies = companiesData?.data?.companies ?? []
@@ -31,6 +36,25 @@ export function AdminCompaniesPage() {
     setSearch(value)
     setPage(0)
   }
+
+  const handleFilterChange = (columnId: string, value: string | undefined) => {
+    setPage(0)
+    if (columnId === "membershipType") setMembershipType(value)
+    else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size)
+    setPage(0)
+  }
+
+  const filters: FilterConfig[] = useMemo(() => {
+    const membershipOptions = (membershipTypesData?.data ?? []).map(t => ({ value: t, label: t }))
+    return [
+      { columnId: "membershipType", placeholder: "Membership", options: membershipOptions, width: "w-48", type: 'combobox' },
+      { columnId: "active",         placeholder: "Status",     options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }], width: "w-36" },
+    ]
+  }, [membershipTypesData])
 
   const handleExport = async () => {
     setExporting(true)
@@ -80,13 +104,6 @@ export function AdminCompaniesPage() {
         <h1 className="text-2xl font-bold">Company Summary</h1>
       </div>
 
-      <div className="flex items-center justify-end">
-        <Button variant="outline" className="px-4 py-2 h-10" onClick={handleExport} disabled={exporting}>
-          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          Export
-        </Button>
-      </div>
-
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
@@ -95,18 +112,25 @@ export function AdminCompaniesPage() {
               ({companiesData?.data?.total || 0} total)
             </span>
           </h2>
+          <Button variant="outline" className="px-4 py-2 h-10" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Export
+          </Button>
         </div>
 
         <DataTable
           columns={companyColumns}
           data={companies}
           searchPlaceholder="Search by company name, email..."
-          pageSize={PAGE_SIZE}
+          filters={filters}
+          pageSize={pageSize}
           serverSide
           totalRows={companiesData?.data?.total ?? 0}
           currentPage={page}
           onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
           onSearchChange={handleSearchChange}
+          onFilterChange={handleFilterChange}
         />
       </div>
     </div>

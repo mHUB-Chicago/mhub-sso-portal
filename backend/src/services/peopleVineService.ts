@@ -647,8 +647,10 @@ export const syncPhaseUsers = async (
     const pvId = customer.id.toString();
     let company = companiesByNameMap.get(customer.company_name);
 
-    // Suggestion 4: if no matching company exists but user has their own active subscription,
-    // find or create a personal company so they retain portal access
+    if (company && !company.active && activePVSubscriberIds.has(pvId)) {
+      company = undefined;
+    }
+
     if (!company) {
       if (!activePVSubscriberIds.has(pvId)) return;
       const companyName = customer.company_name || `${customer.full_name}'s Company`;

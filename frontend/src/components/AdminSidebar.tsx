@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   RefreshCw,
   Webhook,
+  Lock,
   X
 } from 'lucide-react'
 
@@ -157,6 +158,22 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
                     : 'text-gray-500'
                 }`} />
                 Webhook Logs
+              </Link>
+              <Link
+                to="/admin/portal-access"
+                onClick={handleLinkClick}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+                  location.pathname.startsWith('/admin/portal-access')
+                    ? 'bg-brand text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Lock className={`h-5 w-5 ${
+                  location.pathname.startsWith('/admin/portal-access')
+                    ? 'text-white'
+                    : 'text-gray-500'
+                }`} />
+                Portal Access
               </Link>
             </>
           )}

@@ -5,30 +5,38 @@ import { Download, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetUsersQuery, useLazyGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
-import { useGetPortalAccessTypesQuery } from "@/store/api/syncApi"
+import { useGetPortalAccessTypesQuery, useGetMembershipTypesQuery } from "@/store/api/syncApi"
 import { useMemo, useState } from "react"
 import { toCsv, downloadCsv } from "@/utils/csv"
 import { toast } from "sonner"
-
-const PAGE_SIZE = 10
 
 const USER_HEADERS = ["Full Name", "Email", "Company Name", "Membership Type", "Active", "Email Verified", "Phone", "Address", "City", "State", "Zip Code", "Card Status"]
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
   const [companyId, setCompanyId] = useState<string | undefined>(undefined)
+  const [membershipType, setMembershipType] = useState<string | undefined>(undefined)
+  const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
+  const [emailVerified, setEmailVerified] = useState<'true' | 'false' | undefined>(undefined)
+  const [portalAccess, setPortalAccess] = useState<'true' | 'false' | undefined>(undefined)
   const [exporting, setExporting] = useState(false)
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: pageSize,
+    offset: page * pageSize,
     role: 'USER',
     search: search || undefined,
     companyId,
+    membershipType,
+    active,
+    emailVerified,
+    portalAccess,
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
   const { data: portalAccessData } = useGetPortalAccessTypesQuery()
+  const { data: membershipTypesData } = useGetMembershipTypesQuery()
 
   const [fetchAllUsers] = useLazyGetUsersQuery()
 
@@ -58,19 +66,30 @@ export function AdminUsersPage() {
   }
 
   const handleFilterChange = (columnId: string, value: string | undefined) => {
-    if (columnId === "companyName") {
-      setCompanyId(value)
-      setPage(0)
-    }
+    setPage(0)
+    if (columnId === "companyName") setCompanyId(value)
+    else if (columnId === "membershipType") setMembershipType(value)
+    else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
+    else if (columnId === "emailVerified") setEmailVerified(value as 'true' | 'false' | undefined)
+    else if (columnId === "portalAccess") setPortalAccess(value as 'true' | 'false' | undefined)
+  }
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size)
+    setPage(0)
   }
 
   const filters: FilterConfig[] = useMemo(() => {
-    const companyOptions = companiesData?.data?.companies?.map(c => ({
-      value: c.id,
-      label: c.name
-    })) || []
-    return [{ columnId: "companyName", placeholder: "Company", options: companyOptions, width: "w-48" }]
-  }, [companiesData])
+    const companyOptions = companiesData?.data?.companies?.map(c => ({ value: c.id, label: c.name })) || []
+    const membershipOptions = (membershipTypesData?.data ?? []).map(t => ({ value: t, label: t }))
+    return [
+      { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
+      { columnId: "membershipType", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
+      { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
+      { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
+      { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
+    ]
+  }, [companiesData, membershipTypesData])
 
   const handleExport = async () => {
     setExporting(true)
@@ -131,15 +150,6 @@ export function AdminUsersPage() {
         <h1 className="text-2xl font-bold">User Summary</h1>
       </div>
 
-      <div className="flex items-center justify-end">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="px-4 py-2 h-10" onClick={handleExport} disabled={exporting}>
-            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-            Export
-          </Button>
-        </div>
-      </div>
-
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">
@@ -148,6 +158,10 @@ export function AdminUsersPage() {
               ({usersData?.data?.total || 0} total)
             </span>
           </h2>
+          <Button variant="outline" className="px-4 py-2 h-10" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Export
+          </Button>
         </div>
 
         <DataTable
@@ -155,16 +169,16 @@ export function AdminUsersPage() {
           data={usersWithCompany}
           searchPlaceholder="Search by name, email..."
           filters={filters}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           serverSide
           totalRows={usersData?.data?.total ?? 0}
           currentPage={page}
           onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
           onSearchChange={handleSearchChange}
           onFilterChange={handleFilterChange}
         />
       </div>
-
     </div>
   )
 }

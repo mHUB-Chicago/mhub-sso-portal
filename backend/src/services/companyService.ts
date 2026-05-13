@@ -8,6 +8,8 @@ export interface GetPaginatedCompaniesInput {
   limit: number;
   offset: number;
   search?: string;
+  membershipType?: string;
+  active?: 'true' | 'false';
 }
 
 export interface GetPaginatedCompaniesResult {
@@ -36,12 +38,16 @@ export interface UpdateCompanyInput {
 
 export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompaniesInput): Promise<GetPaginatedCompaniesResult> => {
   const prisma: PrismaClient = c.get("db");
-  const whereClause: any = input.search ? {
-    OR: [
-      { name: { contains: input.search } },
-      { email: { contains: input.search } },
-    ],
-  } : {};
+  const whereClause: any = {
+    ...(input.membershipType && { membershipType: input.membershipType }),
+    ...(input.active !== undefined && { active: input.active === 'true' }),
+    ...(input.search && {
+      OR: [
+        { name: { contains: input.search } },
+        { email: { contains: input.search } },
+      ],
+    }),
+  };
   const [companies, total] = await Promise.all([
     prisma.company.findMany({
       where: whereClause,

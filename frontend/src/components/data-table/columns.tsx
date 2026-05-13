@@ -1,50 +1,55 @@
 "use client"
 
+import { useState } from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { MoreHorizontal } from "lucide-react"
+import { Eye, Pencil } from "lucide-react"
 import { Link } from "react-router-dom"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import type { User, Company } from "@/store/api/userApi"
 import type { ServiceProvider } from "@/store/api/serviceProviderApi"
+import { UserViewModal } from "@/components/UserViewModal"
+import { CompanyViewModal } from "@/components/CompanyViewModal"
 
-// Extended user type with company name for display
 export type UserWithCompany = User & {
   companyName?: string
+}
+
+function UserActionsCell({ user }: { user: UserWithCompany }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex items-center gap-3">
+      <button onClick={() => setOpen(true)} className="text-muted-foreground hover:text-foreground">
+        <Eye className="h-4 w-4" />
+      </button>
+      <Link to={`/admin/users/${user.id}/edit`} className="text-muted-foreground hover:text-foreground">
+        <Pencil className="h-4 w-4" />
+      </Link>
+      <UserViewModal user={user} open={open} onClose={() => setOpen(false)} />
+    </div>
+  )
+}
+
+function CompanyActionsCell({ company }: { company: Company }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex items-center gap-3">
+      <button onClick={() => setOpen(true)} className="text-muted-foreground hover:text-foreground">
+        <Eye className="h-4 w-4" />
+      </button>
+      <Link to={`/admin/companies/${company.id}/edit`} className="text-muted-foreground hover:text-foreground">
+        <Pencil className="h-4 w-4" />
+      </Link>
+      <CompanyViewModal company={company} open={open} onClose={() => setOpen(false)} />
+    </div>
+  )
 }
 
 export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<UserWithCompany>[] => [
   {
     id: "actions",
     header: "Actions",
-    cell: ({ row }) => {
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to={`/admin/users/${row.original.id}/edit`}>
-                Edit user
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )
-    },
+    cell: ({ row }) => <UserActionsCell user={row.original} />,
   },
   {
     accessorKey: "name",
@@ -52,7 +57,6 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     cell: ({ row }) => {
       const user = row.original
       const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
-
       return (
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
@@ -70,9 +74,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   {
     accessorKey: "companyName",
     header: "Company",
-    cell: ({ row }) => {
-      return <span>{row.original.companyName || '-'}</span>
-    },
+    cell: ({ row }) => <span>{row.original.companyName || '-'}</span>,
   },
   {
     accessorKey: "membershipType",
@@ -108,11 +110,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     header: "Verified",
     cell: ({ row }) => {
       const verified = row.getValue("emailVerified") as boolean
-      return (
-        <Badge variant={verified ? "default" : "outline"}>
-          {verified ? "Verified" : "Pending"}
-        </Badge>
-      )
+      return <Badge variant={verified ? "default" : "outline"}>{verified ? "Verified" : "Pending"}</Badge>
     },
   },
   {
@@ -134,7 +132,6 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
     cell: ({ row }) => {
       const user = row.original
       const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
-
       return (
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
@@ -152,9 +149,7 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
   {
     accessorKey: "companyName",
     header: "Company",
-    cell: ({ row }) => {
-      return <span>{row.original.companyName || '-'}</span>
-    },
+    cell: ({ row }) => <span>{row.original.companyName || '-'}</span>,
   },
   {
     accessorKey: "email",
@@ -165,11 +160,7 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
     header: "Status",
     cell: ({ row }) => {
       const verified = row.getValue("emailVerified") as boolean
-      return (
-        <Badge variant={verified ? "default" : "outline"}>
-          {verified ? "Verified" : "Pending"}
-        </Badge>
-      )
+      return <Badge variant={verified ? "default" : "outline"}>{verified ? "Verified" : "Pending"}</Badge>
     },
   },
   {
@@ -183,26 +174,13 @@ export const adminColumns: ColumnDef<UserWithCompany>[] = [
   {
     id: "actions",
     header: "Actions",
-    cell: ({ row }) => {
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to={`/admin/admins/${row.original.id}/edit`}>
-                Edit admin
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )
-    },
+    cell: ({ row }) => (
+      <div className="flex items-center gap-3">
+        <Link to={`/admin/admins/${row.original.id}/edit`} className="text-muted-foreground hover:text-foreground">
+          <Pencil className="h-4 w-4" />
+        </Link>
+      </div>
+    ),
   },
 ]
 
@@ -210,34 +188,16 @@ export const companyColumns: ColumnDef<Company>[] = [
   {
     id: "actions",
     header: "Actions",
-    cell: ({ row }) => {
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to={`/admin/companies/${row.original.id}/edit`}>
-                Edit company
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )
-    },
+    size: 80,
+    cell: ({ row }) => <CompanyActionsCell company={row.original} />,
   },
   {
     accessorKey: "name",
     header: "Company Name",
+    size: 280,
     cell: ({ row }) => {
       const company = row.original
       const initials = company.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-
       return (
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8">
@@ -251,6 +211,7 @@ export const companyColumns: ColumnDef<Company>[] = [
   {
     accessorKey: "membershipType",
     header: "Membership Type",
+    size: 260,
     cell: ({ row }) => {
       const value = row.getValue("membershipType") as string | null
       return <span className="text-sm">{value ?? <span className="text-muted-foreground">—</span>}</span>
@@ -259,6 +220,7 @@ export const companyColumns: ColumnDef<Company>[] = [
   {
     accessorKey: "active",
     header: "Active",
+    size: 100,
     cell: ({ row }) => {
       const active = row.getValue("active") as boolean
       return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
@@ -267,6 +229,7 @@ export const companyColumns: ColumnDef<Company>[] = [
   {
     accessorKey: "createdAt",
     header: "Created",
+    size: 120,
     cell: ({ row }) => {
       const date = new Date(row.getValue("createdAt") as string)
       return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>
@@ -280,7 +243,6 @@ export const serviceProviderColumns: ColumnDef<ServiceProvider>[] = [
     header: "Application Name",
     cell: ({ row }) => {
       const sp = row.original
-
       return (
         <div className="flex items-center gap-3">
           {sp.logo ? (
@@ -300,11 +262,7 @@ export const serviceProviderColumns: ColumnDef<ServiceProvider>[] = [
     header: "Status",
     cell: ({ row }) => {
       const active = row.getValue("active") as boolean
-      return (
-        <Badge variant={active ? "default" : "outline"}>
-          {active ? "Active" : "Inactive"}
-        </Badge>
-      )
+      return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
     },
   },
   {
@@ -318,15 +276,10 @@ export const serviceProviderColumns: ColumnDef<ServiceProvider>[] = [
   {
     id: "actions",
     header: "Actions",
-    cell: ({ row }) => {
-      return (
-        <Link
-          to={`/admin/idp/${row.original.id}/edit`}
-          className="text-brand hover:underline text-sm font-medium"
-        >
-          View Settings
-        </Link>
-      )
-    },
+    cell: ({ row }) => (
+      <Link to={`/admin/idp/${row.original.id}/edit`} className="text-muted-foreground hover:text-foreground">
+        <Pencil className="h-4 w-4" />
+      </Link>
+    ),
   },
 ]

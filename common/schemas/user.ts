@@ -42,6 +42,10 @@ export const GetUsersRequestSchema = z.object({
   role: z.enum(['USER', 'ADMIN']).optional(),
   search: z.string().optional(),
   companyId: z.string().optional(),
+  membershipType: z.string().optional(),
+  active: z.enum(['true', 'false']).optional(),
+  emailVerified: z.enum(['true', 'false']).optional(),
+  portalAccess: z.enum(['true', 'false']).optional(),
 });
 
 export const GetUsersResponseSchema = SuccessResponseSchema(z.object({

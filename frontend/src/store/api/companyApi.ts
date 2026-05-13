@@ -5,6 +5,8 @@ interface GetCompaniesRequest {
   limit?: number
   offset?: number
   search?: string
+  membershipType?: string
+  active?: 'true' | 'false'
 }
 
 interface GetCompaniesResponse {
@@ -62,9 +64,15 @@ export const companyApi = createApi({
   tagTypes: ['Company', 'Companies', 'Users'],
   endpoints: (builder) => ({
     getCompanies: builder.query<GetCompaniesResponse, GetCompaniesRequest>({
-      query: ({ limit = 100, offset = 0, search }) => ({
+      query: ({ limit = 100, offset = 0, search, membershipType, active }) => ({
         url: '/company',
-        params: { limit, offset, ...(search && { search }) },
+        params: {
+          limit,
+          offset,
+          ...(search && { search }),
+          ...(membershipType && { membershipType }),
+          ...(active !== undefined && { active }),
+        },
       }),
       providesTags: ['Companies'],
     }),
