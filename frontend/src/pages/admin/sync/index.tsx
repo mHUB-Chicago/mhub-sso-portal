@@ -283,37 +283,6 @@ function MembershipTypesManager() {
   )
 }
 
-function PortalAccessTypesManager() {
-  const { data, isLoading } = useGetPortalAccessTypesQuery()
-  const [addType, { isLoading: isAdding }] = useAddPortalAccessTypeMutation()
-  const [removeType] = useRemovePortalAccessTypeMutation()
-  const types = data?.data ?? []
-
-  const handleAdd = async (name: string) => {
-    try { await addType({ name }).unwrap() }
-    catch { toast.error('Failed to add portal access type') }
-  }
-
-  const handleRemove = async (name: string) => {
-    try { await removeType(name).unwrap() }
-    catch { toast.error('Failed to remove portal access type') }
-  }
-
-  return (
-    <TypesManager
-      title="Portal Access Types"
-      description="Members with these membership types can log in to the SSO portal."
-      placeholder="Add portal access type…"
-      badgeClass="bg-blue-50 text-blue-700 border-blue-200"
-      types={types}
-      isLoading={isLoading}
-      isAdding={isAdding}
-      onAdd={handleAdd}
-      onRemove={handleRemove}
-    />
-  )
-}
-
 type ClearResult = { usersDeleted: number; companiesDeleted: number }
 type CompanyImport = { subscriptionNo: string; companyName: string; membershipType: string | null }
 type MemberImport = { customerNo: string; email: string; firstName: string; lastName: string; companyName: string; username: string | null }
