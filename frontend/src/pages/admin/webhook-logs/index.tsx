@@ -74,6 +74,14 @@ function DiffSection({ label, before, after }: { label: string; before: Record<s
     return (
       <div>
         <p className="text-muted-foreground font-medium mb-2">{label} — No changes</p>
+        <div className="border rounded-md divide-y">
+          {keys.map(k => (
+            <div key={k} className="flex items-start gap-4 px-3 py-2">
+              <span className="text-muted-foreground w-36 shrink-0">{DIFF_LABELS[k] ?? k}</span>
+              <span className="text-muted-foreground break-all">{String((after ?? before)![k] ?? "—")}</span>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

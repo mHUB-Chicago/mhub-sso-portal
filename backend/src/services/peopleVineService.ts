@@ -958,6 +958,20 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       associatedUser.zipCode !== (customer.zipCode ?? null) ||
       associatedUser.cardStatus !== (customer.cardStatus ?? null) ||
       (userByEmail && !userByEmail.peopleVineId);
+    const userAfterSnapshot = {
+      name: customer.full_name,
+      email: customer.email.toLowerCase(),
+      username: customer.username ? customer.username.trim().toLowerCase() : null,
+      active: pvActive,
+      membershipType: userMembershipType,
+      phone: customer.phone ?? null,
+      address: customer.address ?? null,
+      city: customer.city ?? null,
+      state: customer.state ?? null,
+      zipCode: customer.zipCode ?? null,
+      cardStatus: customer.cardStatus ?? null,
+      profilePhoto: customer.profilePhoto ?? null,
+    };
     if (needsUpdate) {
       console.log(`Updating user ${customer.full_name} (${customer.email}).`);
       diffRecord.user = {
@@ -966,6 +980,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           email: associatedUser.email,
           username: associatedUser.username,
           active: associatedUser.active,
+          membershipType: associatedUser.membershipType,
           phone: associatedUser.phone,
           address: associatedUser.address,
           city: associatedUser.city,
@@ -974,19 +989,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           cardStatus: associatedUser.cardStatus,
           profilePhoto: associatedUser.profilePhoto,
         },
-        after: {
-          name: customer.full_name,
-          email: customer.email.toLowerCase(),
-          username: customer.username ? customer.username.trim().toLowerCase() : null,
-          active: pvActive,
-          phone: customer.phone ?? null,
-          address: customer.address ?? null,
-          city: customer.city ?? null,
-          state: customer.state ?? null,
-          zipCode: customer.zipCode ?? null,
-          cardStatus: customer.cardStatus ?? null,
-          profilePhoto: customer.profilePhoto ?? null,
-        },
+        after: userAfterSnapshot,
       };
       await updateUser(c, {
         id: associatedUser.id,
@@ -1005,6 +1008,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         zipCode: customer.zipCode ?? null,
         cardStatus: customer.cardStatus ?? null,
       });
+    } else {
+      diffRecord.user = { before: userAfterSnapshot, after: userAfterSnapshot };
     }
   } else {
     if (!pvActive) {
