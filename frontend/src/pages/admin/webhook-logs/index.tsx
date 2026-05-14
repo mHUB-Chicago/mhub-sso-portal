@@ -4,9 +4,8 @@ import { Loader2, RefreshCw, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useGetWebhookLogsQuery, type WebhookLog } from "@/store/api/webhookApi"
-
-const PAGE_SIZE = 50
 
 const statusVariant = (status: string): "default" | "outline" | "destructive" => {
   if (status === "processed") return "default"
@@ -197,16 +196,22 @@ function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }
 
 export function AdminWebhookLogsPage() {
   const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(50)
   const [selected, setSelected] = useState<WebhookLog | null>(null)
 
   const { data, isLoading, isFetching, error, refetch } = useGetWebhookLogsQuery({
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
+    limit: pageSize,
+    offset: page * pageSize,
   })
 
   const logs = data?.data?.logs ?? []
   const total = data?.data?.total ?? 0
-  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const totalPages = Math.ceil(total / pageSize)
+
+  const handlePageSizeChange = (val: string) => {
+    setPageSize(Number(val))
+    setPage(0)
+  }
 
   if (isLoading) {
     return (
@@ -229,17 +234,15 @@ export function AdminWebhookLogsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <nav className="text-sm text-gray-500 mb-2">
-          <Link to="/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
-          <span className="mx-1">›</span>
-          <span className="font-semibold text-gray-900">Webhook Logs</span>
-        </nav>
-        <h1 className="text-2xl font-bold">Webhook Logs</h1>
-      </div>
-
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{total} total events</p>
+        <div>
+          <nav className="text-sm text-gray-500 mb-2">
+            <Link to="/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>
+            <span className="mx-1">›</span>
+            <span className="font-semibold text-gray-900">Webhook Logs</span>
+          </nav>
+          <h1 className="text-2xl font-bold">Webhook Logs</h1>
+        </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
@@ -290,9 +293,24 @@ export function AdminWebhookLogsPage() {
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500">Page {page + 1} of {totalPages}</p>
+      <div className="flex items-center justify-between py-2">
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            {total === 0 ? "0" : `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)}`} of {total}
+          </p>
+          <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
+            <SelectTrigger className="w-28 h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[25, 50, 100].map(n => (
+                <SelectItem key={n} value={String(n)}>{n} / page</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">Page {page + 1} of {totalPages || 1}</span>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
               Previous
@@ -302,7 +320,7 @@ export function AdminWebhookLogsPage() {
             </Button>
           </div>
         </div>
-      )}
+      </div>
 
       {selected && <PayloadModal log={selected} onClose={() => setSelected(null)} />}
     </div>

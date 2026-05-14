@@ -114,6 +114,7 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = React.useState("")
+  const [filterValues, setFilterValues] = React.useState<Record<string, string>>({})
 
   const pageCount = serverSide ? Math.ceil(totalRows / pageSize) : undefined
 
@@ -147,6 +148,7 @@ export function DataTable<TData, TValue>({
   const handleFilterChange = (columnId: string, value: string) => {
     const resolved = value === "all" ? undefined : value
     if (serverSide && onFilterChange) {
+      setFilterValues(prev => ({ ...prev, [columnId]: value }))
       onFilterChange(columnId, resolved)
     } else {
       table.getColumn(columnId)?.setFilterValue(resolved)
@@ -163,6 +165,7 @@ export function DataTable<TData, TValue>({
   const handleResetFilters = () => {
     setColumnFilters([])
     setGlobalFilter("")
+    setFilterValues({})
     if (serverSide) {
       onSearchChange?.("")
       filters.forEach(f => onFilterChange?.(f.columnId, undefined))
@@ -179,7 +182,9 @@ export function DataTable<TData, TValue>({
           className="h-10 max-w-sm"
         />
         {filters.map((filter) => {
-          const value = (table.getColumn(filter.columnId)?.getFilterValue() as string) ?? "all"
+          const value = serverSide
+            ? (filterValues[filter.columnId] ?? "all")
+            : ((table.getColumn(filter.columnId)?.getFilterValue() as string) ?? "all")
           if (filter.type === 'combobox') {
             return (
               <ComboboxFilter

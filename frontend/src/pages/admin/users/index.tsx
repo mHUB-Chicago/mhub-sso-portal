@@ -167,7 +167,7 @@ export function AdminUsersPage() {
         <DataTable
           columns={userColumns}
           data={usersWithCompany}
-          searchPlaceholder="Search by name, email..."
+          searchPlaceholder="Search by name, email, PeopleVine ID..."
           filters={filters}
           pageSize={pageSize}
           serverSide

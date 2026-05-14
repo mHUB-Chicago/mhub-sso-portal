@@ -86,6 +86,8 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
       OR: [
         { name: { contains: input.search } },
         { email: { contains: input.search } },
+        { peopleVineId: { contains: input.search } },
+        { username: { contains: input.search } },
       ],
     }),
   };
