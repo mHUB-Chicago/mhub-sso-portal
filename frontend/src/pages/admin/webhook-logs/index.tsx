@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Loader2, RefreshCw } from "lucide-react"
+import { Loader2, RefreshCw, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { useGetWebhookLogsQuery } from "@/store/api/webhookApi"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useGetWebhookLogsQuery, type WebhookLog } from "@/store/api/webhookApi"
 
 const PAGE_SIZE = 50
 
@@ -13,8 +14,108 @@ const statusVariant = (status: string): "default" | "outline" | "destructive" =>
   return "outline"
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  customer_no: "Customer No",
+  event_type: "Event Type",
+  first_name: "First Name",
+  last_name: "Last Name",
+  email: "Email",
+  company_name: "Company Name",
+  membership_type: "Membership Type",
+  phone: "Phone",
+  address: "Address",
+  city: "City",
+  state: "State",
+  zip: "Zip Code",
+  subscription_no: "Subscription No",
+  status: "Status",
+  type: "Type",
+  username: "Username",
+}
+
+function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }) {
+  let fields: [string, string][] = []
+  let parseError = false
+
+  if (log.payload) {
+    try {
+      const parsed = JSON.parse(log.payload)
+      fields = Object.entries(parsed)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)])
+    } catch {
+      parseError = true
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Webhook Details</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 text-sm">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+            <div>
+              <p className="text-muted-foreground">Received At</p>
+              <p className="font-medium">{new Date(log.receivedAt).toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Source</p>
+              <p className="font-medium">{log.source}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Customer No</p>
+              <p className="font-medium">{log.customerNo ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Event Type</p>
+              <p className="font-medium">{log.eventType ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Status</p>
+              <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
+            </div>
+          </div>
+
+          {fields.length > 0 && (
+            <div>
+              <p className="text-muted-foreground font-medium mb-2">Payload Fields</p>
+              <div className="border rounded-md divide-y">
+                {fields.map(([key, value]) => (
+                  <div key={key} className="flex items-start gap-4 px-3 py-2">
+                    <span className="text-muted-foreground w-40 shrink-0">
+                      {FIELD_LABELS[key] ?? key}
+                    </span>
+                    <span className="font-medium break-all">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {parseError && (
+            <div>
+              <p className="text-muted-foreground font-medium mb-2">Raw Payload</p>
+              <pre className="bg-gray-50 border rounded-md p-3 text-xs overflow-auto max-h-48 break-all whitespace-pre-wrap">
+                {log.payload}
+              </pre>
+            </div>
+          )}
+
+          {!log.payload && (
+            <p className="text-muted-foreground text-center py-4">No payload data.</p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function AdminWebhookLogsPage() {
   const [page, setPage] = useState(0)
+  const [selected, setSelected] = useState<WebhookLog | null>(null)
 
   const { data, isLoading, isFetching, error, refetch } = useGetWebhookLogsQuery({
     limit: PAGE_SIZE,
@@ -67,18 +168,18 @@ export function AdminWebhookLogsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Received At</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Customer #</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Event Type</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Payload</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 160 }}>Received At</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 100 }}>Source</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 110 }}>PeopleVine ID</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 140 }}>Event Type</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 100 }}>Status</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 80 }}>Details</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">No webhook logs yet</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">No webhook logs yet</td>
               </tr>
             ) : (
               logs.map((log) => (
@@ -92,14 +193,13 @@ export function AdminWebhookLogsPage() {
                   <td className="px-4 py-3">
                     <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
                   </td>
-                  <td className="px-4 py-3 max-w-xs">
-                    {log.payload ? (
-                      <code className="text-xs text-gray-600 bg-gray-100 px-1 py-0.5 rounded truncate block max-w-xs overflow-hidden">
-                        {log.payload}
-                      </code>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setSelected(log)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))
@@ -110,9 +210,7 @@ export function AdminWebhookLogsPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500">
-            Page {page + 1} of {totalPages}
-          </p>
+          <p className="text-sm text-gray-500">Page {page + 1} of {totalPages}</p>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
               Previous
@@ -123,6 +221,8 @@ export function AdminWebhookLogsPage() {
           </div>
         </div>
       )}
+
+      {selected && <PayloadModal log={selected} onClose={() => setSelected(null)} />}
     </div>
   )
 }

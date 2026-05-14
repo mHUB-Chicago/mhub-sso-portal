@@ -49,11 +49,13 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   {
     id: "actions",
     header: "Actions",
+    size: 80,
     cell: ({ row }) => <UserActionsCell user={row.original} />,
   },
   {
     accessorKey: "name",
     header: "Full Name",
+    size: 260,
     cell: ({ row }) => {
       const user = row.original
       const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
@@ -72,13 +74,24 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     },
   },
   {
+    accessorKey: "peopleVineId",
+    header: "PeopleVine ID",
+    size: 140,
+    cell: ({ row }) => {
+      const val = row.original.peopleVineId
+      return <span className="text-sm">{val ?? <span className="text-muted-foreground">—</span>}</span>
+    },
+  },
+  {
     accessorKey: "companyName",
     header: "Company",
+    size: 200,
     cell: ({ row }) => <span>{row.original.companyName || '-'}</span>,
   },
   {
     accessorKey: "membershipType",
     header: "Membership",
+    size: 200,
     cell: ({ row }) => {
       const val = row.original.membershipType
       return <span className="text-sm">{val ?? <span className="text-muted-foreground">—</span>}</span>
@@ -87,6 +100,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   {
     id: "portalAccess",
     header: "Portal Access",
+    size: 120,
     cell: ({ row }) => {
       const membershipType = row.original.membershipType
       const hasAccess = !!membershipType && portalAccessTypes.has(membershipType)
@@ -100,6 +114,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   {
     accessorKey: "active",
     header: "Active",
+    size: 100,
     cell: ({ row }) => {
       const active = row.original.active
       return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
@@ -108,6 +123,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   {
     accessorKey: "emailVerified",
     header: "Verified",
+    size: 100,
     cell: ({ row }) => {
       const verified = row.getValue("emailVerified") as boolean
       return <Badge variant={verified ? "default" : "outline"}>{verified ? "Verified" : "Pending"}</Badge>
@@ -116,6 +132,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   {
     accessorKey: "updatedAt",
     header: "Modified On",
+    size: 130,
     cell: ({ row }) => {
       const date = new Date(row.getValue("updatedAt") as string)
       return <div className="text-sm text-muted-foreground">{date.toLocaleDateString()}</div>

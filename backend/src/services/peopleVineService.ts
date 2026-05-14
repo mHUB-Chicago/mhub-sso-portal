@@ -654,7 +654,7 @@ export const syncPhaseUsers = async (
     if (!company) {
       if (!activePVSubscriberIds.has(pvId)) return;
       const companyName = customer.company_name || `${customer.full_name}'s Company`;
-      company = await prisma.company.findFirst({ where: { name: companyName } });
+      company = await prisma.company.findFirst({ where: { name: companyName } }) ?? undefined;
       if (!company) {
         const membershipType = subscriberMemberships[pvId] ?? null;
         try {
@@ -667,7 +667,7 @@ export const syncPhaseUsers = async (
             isPersonal: true,
           });
         } catch {
-          company = await prisma.company.findFirst({ where: { OR: [{ peopleVineId: pvId }, { name: companyName }] } });
+          company = await prisma.company.findFirst({ where: { OR: [{ peopleVineId: pvId }, { name: companyName }] } }) ?? undefined;
           if (!company) return;
         }
       }
@@ -697,7 +697,7 @@ export const syncPhaseUsers = async (
       if (needsUpdate) {
         log('info', `Updating user ${customer.full_name} (${customer.email}).`);
         try {
-          return await updateUser(c, {
+          await updateUser(c, {
             id: existingUser.id,
             name: customer.full_name,
             email: customer.email,
@@ -723,7 +723,7 @@ export const syncPhaseUsers = async (
     }
 
     try {
-      return await createUser(c, {
+      await createUser(c, {
         name: customer.full_name,
         email: customer.email,
         username: customer.username ?? null,
@@ -822,7 +822,6 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
 export const syncOne = async (c: Context, peopleVineId: number): Promise<void> => {
   const prisma: PrismaClient = c.get('db');
 
-  // Fetch the specific customer from PeopleVine
   console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
   const customer = await getCustomer(c, peopleVineId.toString());
 
@@ -831,68 +830,35 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
     return;
   }
 
-  console.log('Retrieved customer:', customer);
-
-  // Fetch subscriptions scoped to this customer only (avoids paginating all of PV)
-  const { customers: peopleVineCustomersFromSubscriptions, subscriptionInfoMap, individualSubscriberIds } = await getCustomersFromSubscriptions(c, peopleVineId.toString());
-
-  // Create a map of PeopleVine companies by their PeopleVine ID for easy lookup
-  let companyProfilesMap: Map<string, PeopleVineCustomer> = new Map();
-  for (const company of peopleVineCustomersFromSubscriptions) {
-    companyProfilesMap.set(company.id.toString(), company);
-  }
-
-  const isCompanyProfile = companyProfilesMap.has(customer.id.toString());
-  const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: customer.id.toString() } });
-  const existingCompanyByEmail = await prisma.company.findFirst({ where: { email: customer.email.toLowerCase() } });
-  const existingCompany = existingCompanyByPvId ?? existingCompanyByEmail;
-
-  if (!isCompanyProfile && existingCompany && existingCompany.active) {
-    // Suggestion 5: only deactivate if customer truly has no active subscription at all
-    if (individualSubscriberIds.has(customer.id.toString())) {
-      console.log(`Customer ${customer.id} lost company subscription but retains individual subscription — keeping active.`);
-    } else {
-      console.log(`Customer ${customer.id} lost subscription. Deactivating company ${existingCompany.name}.`);
-      await deactivateCompany(c, existingCompany.id);
-      return;
-    }
-  }
-
-  const subInfo = subscriptionInfoMap.get(customer.id.toString());
-  const membershipType = subInfo?.membershipType ?? null;
+  const pvActive = customer.pvActive ?? true;
   const isPersonal = customer.isPersonal ?? false;
-  const isActive = subInfo?.isActive ?? false;
 
-  if (isCompanyProfile) {
-    console.log(`Syncing ${existingCompany ? "existing" : "new"} company for ${customer.company_name} (active: ${isActive}).`);
-    if (existingCompany) {
-      await prisma.company.update({
-        where: { id: existingCompany.id },
-        data: {
-          name: customer.company_name,
-          active: isActive,
-          membershipType,
-          isPersonal,
-          ...(!existingCompany.peopleVineId ? { peopleVineId: customer.id.toString() } : {}),
-        },
-      });
-    } else {
-      await createCompany(c, {
-        name: customer.company_name,
-        peopleVineId: customer.id.toString(),
-        email: customer.email.toLowerCase(),
-        active: isActive,
-        membershipType,
-        isPersonal,
-      });
-    }
+  const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: customer.id.toString() } });
+  const existingCompanyByName = await prisma.company.findFirst({ where: { name: customer.company_name } });
+  const existingCompany = existingCompanyByPvId ?? existingCompanyByName;
+
+  if (!pvActive && existingCompany && existingCompany.active) {
+    console.log(`Customer ${customer.id} is inactive in PeopleVine. Deactivating company ${existingCompany.name}.`);
+    await deactivateCompany(c, existingCompany.id);
+    return;
   }
 
-  const associatedCompany = await prisma.company.findFirst({
-    where: { name: customer.company_name },
-  });
+  if (existingCompany) {
+    console.log(`Updating company ${existingCompany.name}.`);
+    await prisma.company.update({
+      where: { id: existingCompany.id },
+      data: {
+        name: customer.company_name,
+        active: pvActive,
+        isPersonal,
+        ...(!existingCompany.peopleVineId ? { peopleVineId: customer.id.toString() } : {}),
+      },
+    });
+  }
+
+  const associatedCompany = existingCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
   if (!associatedCompany) {
-    console.log(`No associated company found for user ${customer.full_name} (${customer.email}), skipping user creation.`);
+    console.log(`No associated company for user ${customer.full_name} (${customer.email}), skipping.`);
     return;
   }
 
@@ -900,14 +866,14 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
   const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
   const associatedUser = userByPvId ?? userByEmail;
 
-  const pvUserActive = customer.pvActive ?? true;
   if (associatedUser) {
     const needsUpdate =
       associatedUser.name !== customer.full_name ||
       associatedUser.email !== customer.email.toLowerCase() ||
+      associatedUser.username !== (customer.username ?? null) ||
       associatedUser.companyId !== associatedCompany.id ||
       associatedUser.membershipType !== associatedCompany.membershipType ||
-      associatedUser.active !== pvUserActive ||
+      associatedUser.active !== pvActive ||
       associatedUser.profilePhoto !== (customer.profilePhoto ?? null) ||
       associatedUser.phone !== (customer.phone ?? null) ||
       associatedUser.address !== (customer.address ?? null) ||
@@ -917,16 +883,17 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
       associatedUser.cardStatus !== (customer.cardStatus ?? null) ||
       (userByEmail && !userByEmail.peopleVineId);
     if (needsUpdate) {
-      console.log(`Updating user ${customer.full_name} (${customer.email}) details.`);
+      console.log(`Updating user ${customer.full_name} (${customer.email}).`);
       await updateUser(c, {
         id: associatedUser.id,
         name: customer.full_name,
         email: customer.email,
+        username: customer.username ?? null,
         companyId: associatedCompany.id,
         peopleVineId: customer.id.toString(),
         membershipType: associatedCompany.membershipType,
         profilePhoto: customer.profilePhoto,
-        active: pvUserActive,
+        active: pvActive,
         phone: customer.phone ?? null,
         address: customer.address ?? null,
         city: customer.city ?? null,
@@ -940,12 +907,13 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
     await createUser(c, {
       name: customer.full_name,
       email: customer.email,
+      username: customer.username ?? null,
       peopleVineId: customer.id.toString(),
       role: Role.USER,
       companyId: associatedCompany.id,
       membershipType: associatedCompany.membershipType,
       profilePhoto: customer.profilePhoto,
-      active: pvUserActive,
+      active: pvActive,
       phone: customer.phone ?? null,
       address: customer.address ?? null,
       city: customer.city ?? null,
