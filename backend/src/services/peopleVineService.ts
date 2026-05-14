@@ -1057,6 +1057,17 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     }
   }
 
+  diffRecord.subscription = {
+    before: {
+      membershipType: hasSubInfo ? (subInfo?.membershipType ?? null) : '(no data)',
+      isActive: hasSubInfo ? (subInfo?.isActive ?? false) : '(no data)',
+    },
+    after: {
+      membershipType: hasSubInfo ? (subInfo?.membershipType ?? null) : '(no data)',
+      isActive: hasSubInfo ? (subInfo?.isActive ?? false) : '(no data)',
+    },
+  };
+
   if (webhookLogId && Object.keys(diffRecord).length > 0) {
     await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify(diffRecord) } }).catch(() => {});
   }

@@ -46,6 +46,7 @@ const DIFF_LABELS: Record<string, string> = {
   cardStatus: "Card Status",
   profilePhoto: "Profile Photo",
   isPersonal: "Is Personal",
+  isActive: "Active Subscription",
 }
 
 function DiffSection({ label, before, after }: { label: string; before: Record<string, any> | null; after: Record<string, any> | null }) {
@@ -174,6 +175,9 @@ function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }
           {diff && (
             <div className="space-y-3">
               <p className="font-medium">Data Changes</p>
+              {diff.subscription && (
+                <DiffSection label="Subscription (from PeopleVine)" before={diff.subscription.before} after={diff.subscription.after} />
+              )}
               {diff.company && (
                 <DiffSection label="Company" before={diff.company.before} after={diff.company.after} />
               )}
