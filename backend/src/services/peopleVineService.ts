@@ -572,7 +572,8 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
       if (!existing.peopleVineId || existing.peopleVineId !== pvId) {
         log('info', `Merging duplicate company "${customer.company_name}" — assigning real PV ID.`);
       }
-      await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipType, isPersonal, peopleVineId: pvId });
+      const emailUpdate = customer.email ? { email: customer.email.toLowerCase() } : {};
+      await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipType, isPersonal, peopleVineId: pvId, ...emailUpdate });
     } else {
       await createCompany(c, { name: customer.company_name, peopleVineId: pvId, active: isActive, email: customer.email.toLowerCase(), membershipType, isPersonal });
     }
@@ -850,9 +851,10 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
 
   if (existingCompany) {
     console.log(`Updating company ${existingCompany.name}.`);
+    const newEmail = customer.email ? customer.email.toLowerCase() : undefined;
     diffRecord.company = {
-      before: { name: existingCompany.name, active: existingCompany.active, isPersonal: existingCompany.isPersonal },
-      after: { name: customer.company_name, active: pvActive, isPersonal },
+      before: { name: existingCompany.name, active: existingCompany.active, isPersonal: existingCompany.isPersonal, ...(newEmail && newEmail !== existingCompany.email ? { email: existingCompany.email } : {}) },
+      after: { name: customer.company_name, active: pvActive, isPersonal, ...(newEmail && newEmail !== existingCompany.email ? { email: newEmail } : {}) },
     };
     await prisma.company.update({
       where: { id: existingCompany.id },
@@ -861,6 +863,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         active: pvActive,
         isPersonal,
         ...(!existingCompany.peopleVineId ? { peopleVineId: customer.id.toString() } : {}),
+        ...(newEmail ? { email: newEmail } : {}),
       },
     });
   }
