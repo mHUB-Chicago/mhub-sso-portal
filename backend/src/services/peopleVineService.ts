@@ -686,7 +686,7 @@ export const syncPhaseUsers = async (
         existingUser.membershipType !== company.membershipType ||
         existingUser.active !== pvUserActive ||
         existingUser.profilePhoto !== (customer.profilePhoto ?? null) ||
-        existingUser.username !== (customer.username ?? null) ||
+        existingUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
         (existingByEmail && !existingByEmail.peopleVineId) ||
         existingUser.phone !== (customer.phone ?? null) ||
         existingUser.address !== (customer.address ?? null) ||
@@ -834,6 +834,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   }
 
   const pvId = customer.id.toString();
+  const hasSubInfo = subResult.subscriptionInfoMap.has(pvId);
   const subInfo = subResult.subscriptionInfoMap.get(pvId);
   const membershipType = subInfo?.membershipType ?? null;
   const isPersonal = customer.isPersonal ?? false;
@@ -884,13 +885,13 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       const wasInactive = !companyForRepOps.active;
       diffRecord.company = {
         before: { name: companyForRepOps.name, active: companyForRepOps.active, membershipType: companyForRepOps.membershipType, isPersonal: companyForRepOps.isPersonal },
-        after: { name: customer.company_name, active: pvActive, membershipType, isPersonal },
+        after: { name: customer.company_name, active: pvActive, membershipType: hasSubInfo ? membershipType : companyForRepOps.membershipType, isPersonal },
       };
       await updateCompany(c, {
         id: companyForRepOps.id,
         name: customer.company_name,
         active: pvActive,
-        membershipType,
+        membershipType: hasSubInfo ? membershipType : companyForRepOps.membershipType,
         isPersonal,
         peopleVineId: pvId,
       });
@@ -945,7 +946,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const needsUpdate =
       associatedUser.name !== customer.full_name ||
       associatedUser.email !== customer.email.toLowerCase() ||
-      associatedUser.username !== (customer.username ?? null) ||
+      associatedUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
       associatedUser.companyId !== associatedCompany.id ||
       associatedUser.membershipType !== userMembershipType ||
       associatedUser.active !== pvActive ||
@@ -976,7 +977,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         after: {
           name: customer.full_name,
           email: customer.email.toLowerCase(),
-          username: customer.username ?? null,
+          username: customer.username ? customer.username.trim().toLowerCase() : null,
           active: pvActive,
           phone: customer.phone ?? null,
           address: customer.address ?? null,
