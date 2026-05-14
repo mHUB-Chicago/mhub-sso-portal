@@ -347,7 +347,7 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): P
           queryParams: {
             page_size: pageSize.toString(),
             page_number: pageNumber.toString(),
-            ...(customerNo ? { customer_no: customerNo } : {}),
+            ...(customerNo ? { Customer_Id: customerNo } : {}),
           },
         });
         success = true;
