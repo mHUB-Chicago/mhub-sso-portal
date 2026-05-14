@@ -819,7 +819,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
 };
 
-export const syncOne = async (c: Context, peopleVineId: number): Promise<void> => {
+export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: string): Promise<void> => {
   const prisma: PrismaClient = c.get('db');
 
   console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
@@ -832,6 +832,7 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
 
   const pvActive = customer.pvActive ?? true;
   const isPersonal = customer.isPersonal ?? false;
+  const diffRecord: Record<string, { before: any; after: any }> = {};
 
   const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: customer.id.toString() } });
   const existingCompanyByName = await prisma.company.findFirst({ where: { name: customer.company_name } });
@@ -839,12 +840,20 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
 
   if (!pvActive && existingCompany && existingCompany.active) {
     console.log(`Customer ${customer.id} is inactive in PeopleVine. Deactivating company ${existingCompany.name}.`);
+    diffRecord.company = { before: { active: true }, after: { active: false } };
+    if (webhookLogId) {
+      await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify(diffRecord) } }).catch(() => {});
+    }
     await deactivateCompany(c, existingCompany.id);
     return;
   }
 
   if (existingCompany) {
     console.log(`Updating company ${existingCompany.name}.`);
+    diffRecord.company = {
+      before: { name: existingCompany.name, active: existingCompany.active, isPersonal: existingCompany.isPersonal },
+      after: { name: customer.company_name, active: pvActive, isPersonal },
+    };
     await prisma.company.update({
       where: { id: existingCompany.id },
       data: {
@@ -884,6 +893,34 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
       (userByEmail && !userByEmail.peopleVineId);
     if (needsUpdate) {
       console.log(`Updating user ${customer.full_name} (${customer.email}).`);
+      diffRecord.user = {
+        before: {
+          name: associatedUser.name,
+          email: associatedUser.email,
+          username: associatedUser.username,
+          active: associatedUser.active,
+          phone: associatedUser.phone,
+          address: associatedUser.address,
+          city: associatedUser.city,
+          state: associatedUser.state,
+          zipCode: associatedUser.zipCode,
+          cardStatus: associatedUser.cardStatus,
+          profilePhoto: associatedUser.profilePhoto,
+        },
+        after: {
+          name: customer.full_name,
+          email: customer.email.toLowerCase(),
+          username: customer.username ?? null,
+          active: pvActive,
+          phone: customer.phone ?? null,
+          address: customer.address ?? null,
+          city: customer.city ?? null,
+          state: customer.state ?? null,
+          zipCode: customer.zipCode ?? null,
+          cardStatus: customer.cardStatus ?? null,
+          profilePhoto: customer.profilePhoto ?? null,
+        },
+      };
       await updateUser(c, {
         id: associatedUser.id,
         name: customer.full_name,
@@ -904,6 +941,22 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
     }
   } else {
     console.log(`Creating user for ${customer.full_name} (${customer.email}).`);
+    diffRecord.user = {
+      before: null,
+      after: {
+        name: customer.full_name,
+        email: customer.email.toLowerCase(),
+        username: customer.username ?? null,
+        active: pvActive,
+        phone: customer.phone ?? null,
+        address: customer.address ?? null,
+        city: customer.city ?? null,
+        state: customer.state ?? null,
+        zipCode: customer.zipCode ?? null,
+        cardStatus: customer.cardStatus ?? null,
+        profilePhoto: customer.profilePhoto ?? null,
+      },
+    };
     await createUser(c, {
       name: customer.full_name,
       email: customer.email,
@@ -922,6 +975,11 @@ export const syncOne = async (c: Context, peopleVineId: number): Promise<void> =
       cardStatus: customer.cardStatus ?? null,
     });
   }
+
+  if (webhookLogId && Object.keys(diffRecord).length > 0) {
+    await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify(diffRecord) } }).catch(() => {});
+  }
+
   console.log(`Sync for customer with PeopleVine ID ${peopleVineId} complete.`);
 }
 

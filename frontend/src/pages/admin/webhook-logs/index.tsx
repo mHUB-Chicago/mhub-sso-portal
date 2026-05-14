@@ -33,9 +33,73 @@ const FIELD_LABELS: Record<string, string> = {
   username: "Username",
 }
 
+const DIFF_LABELS: Record<string, string> = {
+  name: "Name",
+  email: "Email",
+  username: "Username",
+  active: "Active",
+  phone: "Phone",
+  address: "Address",
+  city: "City",
+  state: "State",
+  zipCode: "Zip Code",
+  cardStatus: "Card Status",
+  profilePhoto: "Profile Photo",
+  isPersonal: "Is Personal",
+}
+
+function DiffSection({ label, before, after }: { label: string; before: Record<string, any> | null; after: Record<string, any> | null }) {
+  if (!before && !after) return null
+
+  const keys = Object.keys(after ?? before ?? {})
+  const changed = keys.filter(k => JSON.stringify((before ?? {})[k]) !== JSON.stringify((after ?? {})[k]))
+
+  if (before === null) {
+    return (
+      <div>
+        <p className="text-muted-foreground font-medium mb-2">{label} — Created</p>
+        <div className="border rounded-md divide-y">
+          {keys.map(k => (
+            <div key={k} className="flex items-start gap-4 px-3 py-2">
+              <span className="text-muted-foreground w-36 shrink-0">{DIFF_LABELS[k] ?? k}</span>
+              <span className="text-green-600 font-medium break-all">{String(after![k] ?? "—")}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (changed.length === 0) {
+    return (
+      <div>
+        <p className="text-muted-foreground font-medium mb-2">{label} — No changes</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-muted-foreground font-medium mb-2">{label} — Changes</p>
+      <div className="border rounded-md divide-y">
+        {changed.map(k => (
+          <div key={k} className="flex items-start gap-4 px-3 py-2">
+            <span className="text-muted-foreground w-36 shrink-0">{DIFF_LABELS[k] ?? k}</span>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-red-500 line-through break-all text-xs">{String((before ?? {})[k] ?? "—")}</span>
+              <span className="text-green-600 font-medium break-all">{String((after ?? {})[k] ?? "—")}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }) {
   let fields: [string, string][] = []
   let parseError = false
+  let diff: Record<string, { before: any; after: any }> | null = null
 
   if (log.payload) {
     try {
@@ -48,9 +112,15 @@ function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }
     }
   }
 
+  if (log.diff) {
+    try {
+      diff = JSON.parse(log.diff)
+    } catch {}
+  }
+
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Webhook Details</DialogTitle>
         </DialogHeader>
@@ -78,6 +148,18 @@ function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }
               <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
             </div>
           </div>
+
+          {diff && (
+            <div className="space-y-3">
+              <p className="font-medium">Data Changes</p>
+              {diff.company && (
+                <DiffSection label="Company" before={diff.company.before} after={diff.company.after} />
+              )}
+              {diff.user && (
+                <DiffSection label="User" before={diff.user.before} after={diff.user.after} />
+              )}
+            </div>
+          )}
 
           {fields.length > 0 && (
             <div>

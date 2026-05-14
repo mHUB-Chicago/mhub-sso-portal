@@ -7,6 +7,7 @@ export interface WebhookLog {
   eventType: string | null
   payload: string | null
   status: string
+  diff: string | null
   receivedAt: string
 }
 

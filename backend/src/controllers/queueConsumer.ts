@@ -104,7 +104,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
             await msg.ack();
             return;
           }
-          await syncOnePeopleVine(context, peopleVineId);
+          await syncOnePeopleVine(context, peopleVineId, webhookLogId);
           if (webhookLogId) {
             await prisma.webhookLog.update({ where: { id: webhookLogId }, data: { status: 'processed' } }).catch(() => {});
           }

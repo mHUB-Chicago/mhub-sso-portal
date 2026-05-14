@@ -189,6 +189,7 @@ model WebhookLog {
   eventType  String?
   payload    String?
   status     String   @default("received")
+  diff       String?
   receivedAt DateTime @default(now())
 }
 

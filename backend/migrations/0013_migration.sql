@@ -1,0 +1,1 @@
+ALTER TABLE "WebhookLog" ADD COLUMN "diff" TEXT;
