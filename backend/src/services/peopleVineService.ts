@@ -676,7 +676,7 @@ export const syncPhaseUsers = async (
     const existingByPvId = byPvId.get(pvId);
     const existingByEmail = byEmail.get(customer.email.toLowerCase());
     const existingUser = existingByPvId ?? existingByEmail;
-    const pvUserActive = customer.pvActive ?? true;
+    const pvUserActive = (customer.pvActive ?? true) && (company.active !== false);
 
     if (existingUser) {
       const needsUpdate =
@@ -823,53 +823,119 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const prisma: PrismaClient = c.get('db');
 
   console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
-  const customer = await getCustomer(c, peopleVineId.toString());
+  const [customer, subResult] = await Promise.all([
+    getCustomer(c, peopleVineId.toString()),
+    getCustomersFromSubscriptions(c, peopleVineId.toString()),
+  ]);
 
   if (!customer) {
     console.log(`Customer with PeopleVine ID ${peopleVineId} not found.`);
     return;
   }
 
-  const pvActive = customer.pvActive ?? true;
+  const pvId = customer.id.toString();
+  const subInfo = subResult.subscriptionInfoMap.get(pvId);
+  const membershipType = subInfo?.membershipType ?? null;
   const isPersonal = customer.isPersonal ?? false;
   const diffRecord: Record<string, { before: any; after: any }> = {};
 
-  const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: customer.id.toString() } });
+  const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: pvId } });
   const existingCompanyByName = await prisma.company.findFirst({ where: { name: customer.company_name } });
-  const existingCompany = existingCompanyByPvId ?? existingCompanyByName;
 
-  if (!pvActive && existingCompany && existingCompany.active) {
-    console.log(`Customer ${customer.id} is inactive in PeopleVine. Deactivating company ${existingCompany.name}.`);
-    diffRecord.company = { before: { active: true }, after: { active: false } };
-    if (webhookLogId) {
-      await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify(diffRecord) } }).catch(() => {});
+  // A customer is a company representative if our DB already links a company to their PV ID,
+  // or if PeopleVine returned a company-level subscription for them.
+  // Sub-members belong to a company but hold no company-level subscription of their own.
+  const hasCompanyLevelSub = subResult.customers.some(cu => cu.id.toString() === pvId);
+  const isCompanyRep = existingCompanyByPvId !== null || hasCompanyLevelSub;
+
+  // Company reps must have an active subscription to remain active.
+  // Sub-members rely only on their customer profile status — their personal subscriptions
+  // (e.g. parking, equipment) must not affect portal access or company state.
+  const pvActive = (isCompanyRep && subInfo)
+    ? ((customer.pvActive ?? true) && subInfo.isActive)
+    : (customer.pvActive ?? true);
+
+  // A name-matched company with no PV ID is treated as the rep's unlinked company —
+  // we will set its PV ID during the update. A name-matched company that already has
+  // a different PV ID belongs to someone else and must not be touched.
+  const nameFoundIsRep = existingCompanyByName && !existingCompanyByName.peopleVineId;
+  const repCompanyCandidate = existingCompanyByPvId ?? (nameFoundIsRep ? existingCompanyByName : null);
+
+  // If the customer moved from a deactivated company account to a personal subscription,
+  // don't reactivate the old company — create a fresh personal account instead.
+  const movingToPersonal = repCompanyCandidate && !repCompanyCandidate.active && isPersonal && !repCompanyCandidate.isPersonal;
+  const companyForRepOps = movingToPersonal ? null : repCompanyCandidate;
+
+  // Company deactivation/update only applies to the company this customer represents.
+  // Never mutate a company based on a sub-member's subscription state.
+  if (isCompanyRep) {
+    if (!pvActive && companyForRepOps && companyForRepOps.active) {
+      console.log(`Customer ${customer.id} has no active subscription. Deactivating company ${companyForRepOps.name}.`);
+      diffRecord.company = { before: { active: true }, after: { active: false } };
+      if (webhookLogId) {
+        await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify(diffRecord) } }).catch(() => {});
+      }
+      await deactivateCompany(c, companyForRepOps.id);
+      return;
     }
-    await deactivateCompany(c, existingCompany.id);
-    return;
-  }
 
-  if (existingCompany) {
-    console.log(`Updating company ${existingCompany.name}.`);
-    diffRecord.company = {
-      before: { name: existingCompany.name, active: existingCompany.active, isPersonal: existingCompany.isPersonal },
-      after: { name: customer.company_name, active: pvActive, isPersonal },
-    };
-    await prisma.company.update({
-      where: { id: existingCompany.id },
-      data: {
+    if (companyForRepOps) {
+      console.log(`Updating company ${companyForRepOps.name}.`);
+      const wasInactive = !companyForRepOps.active;
+      diffRecord.company = {
+        before: { name: companyForRepOps.name, active: companyForRepOps.active, membershipType: companyForRepOps.membershipType, isPersonal: companyForRepOps.isPersonal },
+        after: { name: customer.company_name, active: pvActive, membershipType, isPersonal },
+      };
+      await updateCompany(c, {
+        id: companyForRepOps.id,
         name: customer.company_name,
         active: pvActive,
+        membershipType,
         isPersonal,
-        ...(!existingCompany.peopleVineId ? { peopleVineId: customer.id.toString() } : {}),
-      },
-    });
+        peopleVineId: pvId,
+      });
+      if (wasInactive && pvActive) {
+        console.log(`Reactivating users for company ${companyForRepOps.name}.`);
+        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { active: true } });
+      }
+    }
   }
 
-  const associatedCompany = existingCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
+  const baseCompany = movingToPersonal ? null : (repCompanyCandidate ?? existingCompanyByName);
+  let associatedCompany = baseCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
   if (!associatedCompany) {
-    console.log(`No associated company for user ${customer.full_name} (${customer.email}), skipping.`);
-    return;
+    // Only company reps with an active subscription can create a new company record.
+    // Sub-members must belong to an existing company — if none found, skip.
+    if (!isCompanyRep || !pvActive) {
+      console.log(`No company found for ${customer.full_name} — sub-member or inactive, skipping.`);
+      return;
+    }
+    console.log(`Creating new company for ${customer.company_name}.`);
+    diffRecord.company = {
+      before: null,
+      after: { name: customer.company_name, active: true, membershipType, isPersonal },
+    };
+    try {
+      associatedCompany = await createCompany(c, {
+        name: customer.company_name,
+        peopleVineId: pvId,
+        active: true,
+        email: customer.email.toLowerCase(),
+        membershipType,
+        isPersonal,
+      });
+    } catch (e) {
+      if (isUniqueConstraintError(e)) {
+        associatedCompany = await prisma.company.findFirst({ where: { OR: [{ peopleVineId: pvId }, { name: customer.company_name }] } });
+        if (!associatedCompany) return;
+      } else {
+        throw e;
+      }
+    }
   }
+
+  // Sub-members inherit the company's membershipType; subscription holders use their own.
+  const userMembershipType = membershipType ?? associatedCompany.membershipType;
 
   const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
   const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
@@ -881,7 +947,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       associatedUser.email !== customer.email.toLowerCase() ||
       associatedUser.username !== (customer.username ?? null) ||
       associatedUser.companyId !== associatedCompany.id ||
-      associatedUser.membershipType !== associatedCompany.membershipType ||
+      associatedUser.membershipType !== userMembershipType ||
       associatedUser.active !== pvActive ||
       associatedUser.profilePhoto !== (customer.profilePhoto ?? null) ||
       associatedUser.phone !== (customer.phone ?? null) ||
@@ -928,7 +994,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         username: customer.username ?? null,
         companyId: associatedCompany.id,
         peopleVineId: customer.id.toString(),
-        membershipType: associatedCompany.membershipType,
+        membershipType: userMembershipType,
         profilePhoto: customer.profilePhoto,
         active: pvActive,
         phone: customer.phone ?? null,
@@ -940,6 +1006,10 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       });
     }
   } else {
+    if (!pvActive) {
+      console.log(`User ${customer.full_name} is inactive, skipping creation.`);
+      return;
+    }
     console.log(`Creating user for ${customer.full_name} (${customer.email}).`);
     diffRecord.user = {
       before: null,
@@ -957,23 +1027,28 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         profilePhoto: customer.profilePhoto ?? null,
       },
     };
-    await createUser(c, {
-      name: customer.full_name,
-      email: customer.email,
-      username: customer.username ?? null,
-      peopleVineId: customer.id.toString(),
-      role: Role.USER,
-      companyId: associatedCompany.id,
-      membershipType: associatedCompany.membershipType,
-      profilePhoto: customer.profilePhoto,
-      active: pvActive,
-      phone: customer.phone ?? null,
-      address: customer.address ?? null,
-      city: customer.city ?? null,
-      state: customer.state ?? null,
-      zipCode: customer.zipCode ?? null,
-      cardStatus: customer.cardStatus ?? null,
-    });
+    try {
+      await createUser(c, {
+        name: customer.full_name,
+        email: customer.email,
+        username: customer.username ?? null,
+        peopleVineId: customer.id.toString(),
+        role: Role.USER,
+        companyId: associatedCompany.id,
+        membershipType: userMembershipType,
+        profilePhoto: customer.profilePhoto,
+        active: pvActive,
+        phone: customer.phone ?? null,
+        address: customer.address ?? null,
+        city: customer.city ?? null,
+        state: customer.state ?? null,
+        zipCode: customer.zipCode ?? null,
+        cardStatus: customer.cardStatus ?? null,
+      });
+    } catch (e) {
+      if (isUniqueConstraintError(e)) return;
+      throw e;
+    }
   }
 
   if (webhookLogId && Object.keys(diffRecord).length > 0) {

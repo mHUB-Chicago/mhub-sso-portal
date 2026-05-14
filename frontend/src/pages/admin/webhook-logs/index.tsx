@@ -37,6 +37,7 @@ const DIFF_LABELS: Record<string, string> = {
   email: "Email",
   username: "Username",
   active: "Active",
+  membershipType: "Membership Type",
   phone: "Phone",
   address: "Address",
   city: "City",
@@ -93,6 +94,20 @@ function DiffSection({ label, before, after }: { label: string; before: Record<s
       </div>
     </div>
   )
+}
+
+const logHasChanges = (log: WebhookLog): boolean => {
+  if (!log.diff) return false
+  try {
+    const diff = JSON.parse(log.diff) as Record<string, { before: any; after: any }>
+    return Object.values(diff).some(({ before, after }) => {
+      if (before === null) return true
+      const keys = Object.keys(after ?? before ?? {})
+      return keys.some(k => JSON.stringify((before ?? {})[k]) !== JSON.stringify((after ?? {})[k]))
+    })
+  } catch {
+    return false
+  }
 }
 
 function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }) {
@@ -267,27 +282,30 @@ export function AdminWebhookLogsPage() {
                 <td colSpan={6} className="px-4 py-8 text-center text-gray-500">No webhook logs yet</td>
               </tr>
             ) : (
-              logs.map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                    {new Date(log.receivedAt).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{log.source}</td>
-                  <td className="px-4 py-3 text-gray-700">{log.customerNo ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-700">{log.eventType ?? <span className="text-gray-400">—</span>}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => setSelected(log)}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))
+              logs.map((log) => {
+                const changed = logHasChanges(log)
+                return (
+                  <tr key={log.id} className="hover:bg-gray-50">
+                    <td className={`px-4 py-3 whitespace-nowrap ${changed ? "text-red-600 font-bold" : "text-gray-600"}`}>
+                      {new Date(log.receivedAt).toLocaleString()}
+                    </td>
+                    <td className={`px-4 py-3 ${changed ? "text-red-600 font-bold" : "text-gray-700"}`}>{log.source}</td>
+                    <td className={`px-4 py-3 ${changed ? "text-red-600 font-bold" : "text-gray-700"}`}>{log.customerNo ?? <span className="text-gray-400">—</span>}</td>
+                    <td className={`px-4 py-3 ${changed ? "text-red-600 font-bold" : "text-gray-700"}`}>{log.eventType ?? <span className="text-gray-400">—</span>}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={statusVariant(log.status)}>{log.status}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setSelected(log)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
