@@ -2,9 +2,10 @@ import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { DataTable, type FilterConfig } from "@/components/data-table/data-table"
 import { companyColumns } from "@/components/data-table/columns"
-import { Download, Loader2 } from "lucide-react"
+import { Download, Loader2, AlertCircle } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetCompaniesQuery, useLazyGetCompaniesQuery } from "@/store/api/companyApi"
+import { useGetUsersQuery } from "@/store/api/userApi"
 import { useGetMembershipTypesQuery } from "@/store/api/syncApi"
 import { toCsv, downloadCsv } from "@/utils/csv"
 import { toast } from "sonner"
@@ -30,6 +31,8 @@ export function AdminCompaniesPage() {
   })
 
   const { data: membershipTypesData } = useGetMembershipTypesQuery()
+  const { data: noPortalCountData } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', portalAccess: 'false', active: 'true', noEmail: 'false' })
+  const noPortalCount = noPortalCountData?.data?.total ?? 0
   const [fetchAll] = useLazyGetCompaniesQuery()
 
   const companies = companiesData?.data?.companies ?? []
@@ -107,6 +110,20 @@ export function AdminCompaniesPage() {
         </nav>
         <h1 className="text-2xl font-bold">Company Summary</h1>
       </div>
+
+      {noPortalCount > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
+          <AlertCircle className="h-4 w-4 text-orange-500 shrink-0" />
+          <span className="text-orange-700">
+            <span className="font-semibold">{noPortalCount}</span> member{noPortalCount !== 1 ? 's' : ''} have no portal access
+          </span>
+          <Link to="/admin/users" className="ml-auto">
+            <Button size="sm" variant="outline" className="h-7 border-orange-300 text-orange-700 hover:bg-orange-100">
+              View in Users
+            </Button>
+          </Link>
+        </div>
+      )}
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">

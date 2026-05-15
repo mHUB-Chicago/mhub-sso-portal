@@ -621,28 +621,17 @@ function AuditLogsTab() {
   )
 }
 
-type AttentionFilter = 'all' | 'no-email' | 'no-portal'
-
 function NeedsAttentionTab() {
-  const [filter, setFilter] = useState<AttentionFilter>('all')
   const [search, setSearch] = useState('')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
   const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
-  const { data: noPortalData, isLoading: loadingNoPortal } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', portalAccess: 'false', active: 'true', noEmail: 'false' })
 
   const q = search.toLowerCase().trim()
   const noEmailUsers = (noEmailUsersData?.data?.users ?? []).filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   const noEmailCompanies = (noEmailCompaniesData?.data?.companies ?? []).filter(co => !q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q))
-  const noPortalUsers = (noPortalData?.data?.users ?? []).filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
 
-  const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies || loadingNoPortal
-
-  const filterBtns: { key: AttentionFilter; label: string; count: number }[] = [
-    { key: 'all',      label: 'All Issues',       count: noEmailUsers.length + noEmailCompanies.length + noPortalUsers.length },
-    { key: 'no-email', label: 'No Email',          count: noEmailUsers.length + noEmailCompanies.length },
-    { key: 'no-portal', label: 'No Portal Access', count: noPortalUsers.length },
-  ]
+  const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies
 
   if (isLoading) {
     return (
@@ -652,7 +641,7 @@ function NeedsAttentionTab() {
     )
   }
 
-  const totalIssues = noEmailUsers.length + noEmailCompanies.length + noPortalUsers.length
+  const totalIssues = noEmailUsers.length + noEmailCompanies.length
 
   if (totalIssues === 0) {
     return (
@@ -670,26 +659,8 @@ function NeedsAttentionTab() {
         placeholder="Search by name or email…"
         className="max-w-sm h-9 text-sm"
       />
-      <div className="flex gap-2">
-        {filterBtns.map(btn => (
-          <button
-            key={btn.key}
-            onClick={() => setFilter(btn.key)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              filter === btn.key
-                ? 'bg-brand text-white border-brand'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            {btn.label}
-            <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold ${filter === btn.key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              {btn.count}
-            </span>
-          </button>
-        ))}
-      </div>
 
-      {(filter === 'all' || filter === 'no-email') && (noEmailUsers.length > 0 || noEmailCompanies.length > 0) && (
+      {(noEmailUsers.length > 0 || noEmailCompanies.length > 0) && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Users ({noEmailUsers.length})</p>
           {noEmailUsers.length > 0 ? (
@@ -740,34 +711,6 @@ function NeedsAttentionTab() {
           ) : <p className="text-sm text-gray-400 pl-1">None</p>}
         </div>
       )}
-
-      {(filter === 'all' || filter === 'no-portal') && noPortalUsers.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Portal Access — Users ({noPortalUsers.length})</p>
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600">Email</th>
-                  <th className="text-left px-4 py-2 font-medium text-gray-600">Membership Type</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {noPortalUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-gray-900">{u.name}</td>
-                    <td className="px-4 py-2 text-gray-500 text-xs">{u.email}</td>
-                    <td className="px-4 py-2 text-xs">
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700">{u.membershipType ?? '—'}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -787,8 +730,7 @@ export function AdminSyncPage() {
 
   const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
   const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true' })
-  const { data: noPortalUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', portalAccess: 'false', active: 'true', noEmail: 'false' })
-  const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0) + (noPortalUsersCount?.data?.total ?? 0)
+  const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0)
 
   useEffect(() => {
     if (isRunning) {
