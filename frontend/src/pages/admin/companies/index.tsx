@@ -52,7 +52,7 @@ export function AdminCompaniesPage() {
   }
 
   const filters: FilterConfig[] = useMemo(() => {
-    const membershipOptions = (membershipTypesData?.data ?? []).map(t => ({ value: t, label: t }))
+    const membershipOptions = [...(membershipTypesData?.data ?? [])].sort((a, b) => a.localeCompare(b)).map(t => ({ value: t, label: t }))
     return [
       { columnId: "membershipType", placeholder: "Membership", options: membershipOptions, width: "w-48", type: 'combobox' },
       { columnId: "active",         placeholder: "Status",     options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }], width: "w-36" },

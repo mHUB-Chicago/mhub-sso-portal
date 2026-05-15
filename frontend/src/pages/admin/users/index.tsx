@@ -83,8 +83,8 @@ export function AdminUsersPage() {
   }
 
   const filters: FilterConfig[] = useMemo(() => {
-    const companyOptions = companiesData?.data?.companies?.map(c => ({ value: c.id, label: c.name })) || []
-    const membershipOptions = (membershipTypesData?.data ?? []).map(t => ({ value: t, label: t }))
+    const companyOptions = [...(companiesData?.data?.companies ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map(c => ({ value: c.id, label: c.name }))
+    const membershipOptions = [...(membershipTypesData?.data ?? [])].sort((a, b) => a.localeCompare(b)).map(t => ({ value: t, label: t }))
     return [
       { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
       { columnId: "membershipType", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
