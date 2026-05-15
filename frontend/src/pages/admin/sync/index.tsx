@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
 import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
+import { useGetUsersQuery } from '@/store/api/userApi'
+import { useGetCompaniesQuery } from '@/store/api/companyApi'
 
 const POLL_INTERVAL_MS = 1000
 
@@ -619,8 +621,151 @@ function AuditLogsTab() {
   )
 }
 
+type AttentionFilter = 'all' | 'no-email' | 'no-portal'
+
+function NeedsAttentionTab() {
+  const [filter, setFilter] = useState<AttentionFilter>('all')
+
+  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
+  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
+  const { data: noPortalData, isLoading: loadingNoPortal } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', portalAccess: 'false', active: 'true', noEmail: 'false' })
+
+  const noEmailUsers = noEmailUsersData?.data?.users ?? []
+  const noEmailCompanies = noEmailCompaniesData?.data?.companies ?? []
+  const noPortalUsers = noPortalData?.data?.users ?? []
+
+  const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies || loadingNoPortal
+
+  const filterBtns: { key: AttentionFilter; label: string; count: number }[] = [
+    { key: 'all',      label: 'All Issues',       count: noEmailUsers.length + noEmailCompanies.length + noPortalUsers.length },
+    { key: 'no-email', label: 'No Email',          count: noEmailUsers.length + noEmailCompanies.length },
+    { key: 'no-portal', label: 'No Portal Access', count: noPortalUsers.length },
+  ]
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-gray-400 py-12 justify-center">
+        <Loader2 className="h-4 w-4 animate-spin" />Loading…
+      </div>
+    )
+  }
+
+  const totalIssues = noEmailUsers.length + noEmailCompanies.length + noPortalUsers.length
+
+  if (totalIssues === 0) {
+    return (
+      <div className="bg-gray-50 rounded-lg border border-dashed border-gray-200 h-40 flex items-center justify-center">
+        <p className="text-sm text-gray-400">No issues found. All active members have emails and portal access.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {filterBtns.map(btn => (
+          <button
+            key={btn.key}
+            onClick={() => setFilter(btn.key)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+              filter === btn.key
+                ? 'bg-brand text-white border-brand'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            {btn.label}
+            <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold ${filter === btn.key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              {btn.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {(filter === 'all' || filter === 'no-email') && (noEmailUsers.length > 0 || noEmailCompanies.length > 0) && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Users ({noEmailUsers.length})</p>
+          {noEmailUsers.length > 0 ? (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {noEmailUsers.map(u => (
+                    <tr key={u.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 text-gray-900">{u.name}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-gray-400">{u.email}</td>
+                      <td className="px-4 py-2 text-gray-500 text-xs">{u.membershipType ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4">No Email — Companies ({noEmailCompanies.length})</p>
+          {noEmailCompanies.length > 0 ? (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">Company</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {noEmailCompanies.map(co => (
+                    <tr key={co.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 text-gray-900">{co.name}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-gray-400">{co.email}</td>
+                      <td className="px-4 py-2 text-gray-500 text-xs">{co.membershipType ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+        </div>
+      )}
+
+      {(filter === 'all' || filter === 'no-portal') && noPortalUsers.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Portal Access — Users ({noPortalUsers.length})</p>
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
+                  <th className="text-left px-4 py-2 font-medium text-gray-600">Email</th>
+                  <th className="text-left px-4 py-2 font-medium text-gray-600">Membership Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {noPortalUsers.map(u => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-900">{u.name}</td>
+                    <td className="px-4 py-2 text-gray-500 text-xs">{u.email}</td>
+                    <td className="px-4 py-2 text-xs">
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700">{u.membershipType ?? '—'}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AdminSyncPage() {
-  const [activeTab, setActiveTab] = useState<'ALL' | 'CONTINUE' | 'FRESH' | 'LOGS'>('ALL')
+  const [activeTab, setActiveTab] = useState<'ALL' | 'CONTINUE' | 'FRESH' | 'LOGS' | 'ATTENTION'>('ALL')
   const [pollingInterval, setPollingInterval] = useState<number | false>(false)
 
   const { data, refetch } = useGetSyncStatusQuery(undefined, {
@@ -631,6 +776,11 @@ export function AdminSyncPage() {
 
   const session = data?.data ?? null
   const isRunning = session?.status === 'running' || session?.status === 'pending'
+
+  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
+  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true' })
+  const { data: noPortalUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', portalAccess: 'false', active: 'true', noEmail: 'false' })
+  const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0) + (noPortalUsersCount?.data?.total ?? 0)
 
   useEffect(() => {
     if (isRunning) {
@@ -657,11 +807,12 @@ export function AdminSyncPage() {
     }
   }
 
-  const tabs: { key: 'ALL' | 'CONTINUE' | 'FRESH' | 'LOGS'; label: string }[] = [
-    { key: 'ALL', label: 'Sync All' },
-    { key: 'CONTINUE', label: 'Sync Continue' },
-    { key: 'FRESH', label: 'Fresh Sync' },
-    { key: 'LOGS', label: 'Audit Logs' },
+  const tabs: { key: 'ALL' | 'CONTINUE' | 'FRESH' | 'LOGS' | 'ATTENTION'; label: string; badge?: number }[] = [
+    { key: 'ALL',       label: 'Sync All' },
+    { key: 'CONTINUE',  label: 'Sync Continue' },
+    { key: 'FRESH',     label: 'Fresh Sync' },
+    { key: 'LOGS',      label: 'Audit Logs' },
+    { key: 'ATTENTION', label: 'Needs Attention', badge: attentionCount },
   ]
 
   return (
@@ -689,13 +840,18 @@ export function AdminSyncPage() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.key
                   ? 'border-brand text-brand'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
               {tab.label}
+              {tab.badge !== undefined && tab.badge > 0 && (
+                <span className="inline-flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold min-w-[18px] h-[18px] px-1">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -732,6 +888,7 @@ export function AdminSyncPage() {
         )}
         {activeTab === 'FRESH' && <FreshSyncTab />}
         {activeTab === 'LOGS' && <AuditLogsTab />}
+        {activeTab === 'ATTENTION' && <NeedsAttentionTab />}
       </div>
     </div>
   )

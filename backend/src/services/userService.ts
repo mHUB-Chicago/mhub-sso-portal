@@ -14,6 +14,7 @@ export interface GetPaginatedUsersInput {
   active?: 'true' | 'false';
   emailVerified?: 'true' | 'false';
   portalAccess?: 'true' | 'false';
+  noEmail?: 'true' | 'false';
 }
 
 export interface GetPaginatedUsersResult {
@@ -76,21 +77,32 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     membershipTypeFilter = input.portalAccess === 'true' ? { in: names } : { notIn: names };
   }
 
+  const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];
+  const placeholderFilter = PLACEHOLDER_SUFFIXES.map(s => ({ email: { contains: s } }));
+
   const whereClause: any = {
     ...(input.role && { role: input.role }),
     ...(input.companyId && { companyId: input.companyId }),
     ...(input.active !== undefined && { active: input.active === 'true' }),
     ...(input.emailVerified !== undefined && { emailVerified: input.emailVerified === 'true' }),
     ...(membershipTypeFilter !== undefined && { membershipType: membershipTypeFilter }),
-    ...(input.search && {
-      OR: [
-        { name: { contains: input.search } },
-        { email: { contains: input.search } },
-        { peopleVineId: { contains: input.search } },
-        { username: { contains: input.search } },
-      ],
-    }),
   };
+
+  const andConditions: any[] = [];
+  if (input.search) {
+    andConditions.push({ OR: [
+      { name: { contains: input.search } },
+      { email: { contains: input.search } },
+      { peopleVineId: { contains: input.search } },
+      { username: { contains: input.search } },
+    ]});
+  }
+  if (input.noEmail === 'true') {
+    andConditions.push({ OR: placeholderFilter });
+  } else if (input.noEmail === 'false') {
+    andConditions.push({ NOT: { OR: placeholderFilter } });
+  }
+  if (andConditions.length > 0) whereClause.AND = andConditions;
 
   const [users, total] = await Promise.all([
     prisma.user.findMany({

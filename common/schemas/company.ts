@@ -20,6 +20,7 @@ export const GetCompaniesRequestSchema = z.object({
   search: z.string().optional(),
   membershipType: z.string().optional(),
   active: z.enum(['true', 'false']).optional(),
+  noEmail: z.enum(['true', 'false']).optional(),
 });
 
 export const GetCompaniesResponseSchema = SuccessResponseSchema(z.object({

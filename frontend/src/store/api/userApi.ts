@@ -59,6 +59,7 @@ interface GetUsersRequest {
   active?: 'true' | 'false'
   emailVerified?: 'true' | 'false'
   portalAccess?: 'true' | 'false'
+  noEmail?: 'true' | 'false'
 }
 
 interface GetUsersResponse {
@@ -118,7 +119,7 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role, search, companyId, membershipType, active, emailVerified, portalAccess }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId, membershipType, active, emailVerified, portalAccess, noEmail }) => ({
         url: '/user',
         params: {
           limit,
@@ -130,6 +131,7 @@ export const userApi = createApi({
           ...(active !== undefined && { active }),
           ...(emailVerified !== undefined && { emailVerified }),
           ...(portalAccess !== undefined && { portalAccess }),
+          ...(noEmail !== undefined && { noEmail }),
         },
       }),
       providesTags: ['Users'],

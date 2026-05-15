@@ -290,7 +290,7 @@ const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
       : null;
     const rawEmail = customer.email ? customer.email.toLowerCase().trim() : '';
     const username = (customer.username ?? '').trim() || null;
-    const email = rawEmail.length > 0 ? rawEmail : (username ? `${customer.id}@noemail.mhub` : '');
+    const email = rawEmail.length > 0 ? rawEmail : `${customer.id}@noemail.mhub`;
     const trimmedName = customer.full_name ? customer.full_name.trim() : '';
     const full_name = trimmedName.length > 0 ? trimmedName : (username ?? email.split('@')[0]);
     const phone = customer.mobile?.number || customer.phone?.number || null;
@@ -315,8 +315,6 @@ const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
       zipCode,
       cardStatus,
     });
-  }).filter((customer) => {
-    return customer.email && customer.email.length > 0;
   });
 }
 
@@ -809,7 +807,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const activePVCompanySet = new Set(activePVCompanyIds);
     const dbCompanies = await prisma.company.findMany();
     await runConcurrent(dbCompanies, 20, async (co) => {
-      if (co.peopleVineId && !activePVCompanySet.has(co.peopleVineId)) await deactivateCompany(c, co.id);
+      if (co.peopleVineId && !activePVCompanySet.has(co.peopleVineId) && !activePVSubscriberIds.has(co.peopleVineId)) await deactivateCompany(c, co.id);
     });
   }
 

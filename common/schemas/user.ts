@@ -46,6 +46,7 @@ export const GetUsersRequestSchema = z.object({
   active: z.enum(['true', 'false']).optional(),
   emailVerified: z.enum(['true', 'false']).optional(),
   portalAccess: z.enum(['true', 'false']).optional(),
+  noEmail: z.enum(['true', 'false']).optional(),
 });
 
 export const GetUsersResponseSchema = SuccessResponseSchema(z.object({

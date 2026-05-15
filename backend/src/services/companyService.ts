@@ -10,6 +10,7 @@ export interface GetPaginatedCompaniesInput {
   search?: string;
   membershipType?: string;
   active?: 'true' | 'false';
+  noEmail?: 'true' | 'false';
 }
 
 export interface GetPaginatedCompaniesResult {
@@ -38,16 +39,27 @@ export interface UpdateCompanyInput {
 
 export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompaniesInput): Promise<GetPaginatedCompaniesResult> => {
   const prisma: PrismaClient = c.get("db");
+  const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];
+  const placeholderFilter = PLACEHOLDER_SUFFIXES.map(s => ({ email: { contains: s } }));
+
   const whereClause: any = {
     ...(input.membershipType && { membershipType: input.membershipType }),
     ...(input.active !== undefined && { active: input.active === 'true' }),
-    ...(input.search && {
-      OR: [
-        { name: { contains: input.search } },
-        { email: { contains: input.search } },
-      ],
-    }),
   };
+
+  const andConditions: any[] = [];
+  if (input.search) {
+    andConditions.push({ OR: [
+      { name: { contains: input.search } },
+      { email: { contains: input.search } },
+    ]});
+  }
+  if (input.noEmail === 'true') {
+    andConditions.push({ OR: placeholderFilter });
+  } else if (input.noEmail === 'false') {
+    andConditions.push({ NOT: { OR: placeholderFilter } });
+  }
+  if (andConditions.length > 0) whereClause.AND = andConditions;
   const [companies, total] = await Promise.all([
     prisma.company.findMany({
       where: whereClause,
