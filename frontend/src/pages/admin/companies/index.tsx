@@ -17,7 +17,6 @@ export function AdminCompaniesPage() {
   const [search, setSearch] = useState("")
   const [membershipType, setMembershipType] = useState<string | undefined>(undefined)
   const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
-  const [noEmail, setNoEmail] = useState<'true' | 'false' | undefined>('false')
   const [exporting, setExporting] = useState(false)
 
   const { data: companiesData, isLoading, error: companiesError } = useGetCompaniesQuery({
@@ -26,7 +25,7 @@ export function AdminCompaniesPage() {
     search: search || undefined,
     membershipType,
     active,
-    noEmail,
+    noEmail: 'false',
   })
 
   const { data: membershipTypesData } = useGetMembershipTypesQuery()
@@ -43,7 +42,6 @@ export function AdminCompaniesPage() {
     setPage(0)
     if (columnId === "membershipType") setMembershipType(value)
     else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
-    else if (columnId === "noEmail") setNoEmail(value as 'true' | 'false' | undefined)
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -56,7 +54,6 @@ export function AdminCompaniesPage() {
     return [
       { columnId: "membershipType", placeholder: "Membership", options: membershipOptions, width: "w-48", type: 'combobox' },
       { columnId: "active",         placeholder: "Status",     options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }], width: "w-36" },
-      { columnId: "noEmail",        placeholder: "Email",      options: [{ value: "false", label: "Has Email" }, { value: "true", label: "No Email" }], width: "w-36" },
     ]
   }, [membershipTypesData])
 

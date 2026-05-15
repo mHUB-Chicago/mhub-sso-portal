@@ -21,7 +21,6 @@ export function AdminUsersPage() {
   const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
   const [emailVerified, setEmailVerified] = useState<'true' | 'false' | undefined>(undefined)
   const [portalAccess, setPortalAccess] = useState<'true' | 'false' | undefined>(undefined)
-  const [noEmail, setNoEmail] = useState<'true' | 'false' | undefined>('false')
   const [exporting, setExporting] = useState(false)
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
@@ -34,7 +33,7 @@ export function AdminUsersPage() {
     active,
     emailVerified,
     portalAccess,
-    noEmail,
+    noEmail: 'false',
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
   const { data: portalAccessData } = useGetPortalAccessTypesQuery()
@@ -74,7 +73,6 @@ export function AdminUsersPage() {
     else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
     else if (columnId === "emailVerified") setEmailVerified(value as 'true' | 'false' | undefined)
     else if (columnId === "portalAccess") setPortalAccess(value as 'true' | 'false' | undefined)
-    else if (columnId === "noEmail") setNoEmail(value as 'true' | 'false' | undefined)
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -91,7 +89,6 @@ export function AdminUsersPage() {
       { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
       { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
-      { columnId: "noEmail",        placeholder: "Email",         options: [{ value: "false", label: "Has Email" }, { value: "true", label: "No Email" }],   width: "w-36" },
     ]
   }, [companiesData, membershipTypesData])
 

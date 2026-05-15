@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { RefreshCw, Play, Loader2, CheckCircle2, XCircle, Clock, StopCircle, AlertCircle, Upload, X, Plus } from 'lucide-react'
+import { RefreshCw, Play, Loader2, CheckCircle2, XCircle, Clock, StopCircle, AlertCircle, Upload, X, Plus, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
+import { toCsv, downloadCsv } from '@/utils/csv'
 import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
 import { useGetUsersQuery } from '@/store/api/userApi'
 import { useGetCompaniesQuery } from '@/store/api/companyApi'
@@ -623,13 +624,34 @@ function AuditLogsTab() {
 
 function NeedsAttentionTab() {
   const [search, setSearch] = useState('')
+  const [membershipType, setMembershipType] = useState('')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
   const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
+  const { data: membershipTypesData } = useGetMembershipTypesQuery()
+  const membershipTypes = membershipTypesData?.data ?? []
+
+  const allNoEmailUsers = noEmailUsersData?.data?.users ?? []
+  const allNoEmailCompanies = noEmailCompaniesData?.data?.companies ?? []
 
   const q = search.toLowerCase().trim()
-  const noEmailUsers = (noEmailUsersData?.data?.users ?? []).filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
-  const noEmailCompanies = (noEmailCompaniesData?.data?.companies ?? []).filter(co => !q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q))
+  const noEmailUsers = allNoEmailUsers.filter(u =>
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+    (!membershipType || u.membershipType === membershipType)
+  )
+  const noEmailCompanies = allNoEmailCompanies.filter(co =>
+    (!q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q)) &&
+    (!membershipType || co.membershipType === membershipType)
+  )
+
+  const handleExport = () => {
+    const headers = ['Type', 'Name', 'PV Email', 'Membership Type']
+    const rows = [
+      ...noEmailUsers.map(u => ['User', u.name, u.email, u.membershipType ?? '']),
+      ...noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipType ?? '']),
+    ]
+    downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
+  }
 
   const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies
 
@@ -653,12 +675,25 @@ function NeedsAttentionTab() {
 
   return (
     <div className="space-y-4">
-      <Input
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Search by name or email…"
-        className="max-w-sm h-9 text-sm"
-      />
+      <div className="flex items-center gap-2">
+        <Input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name or email…"
+          className="max-w-sm h-9 text-sm"
+        />
+        <select
+          value={membershipType}
+          onChange={e => setMembershipType(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">All Memberships</option>
+          {membershipTypes.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={noEmailUsers.length + noEmailCompanies.length === 0}>
+          <Download className="h-4 w-4 mr-2" />Export
+        </Button>
+      </div>
 
       {(noEmailUsers.length > 0 || noEmailCompanies.length > 0) && (
         <div className="space-y-2">
