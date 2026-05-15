@@ -625,14 +625,16 @@ type AttentionFilter = 'all' | 'no-email' | 'no-portal'
 
 function NeedsAttentionTab() {
   const [filter, setFilter] = useState<AttentionFilter>('all')
+  const [search, setSearch] = useState('')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
   const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
   const { data: noPortalData, isLoading: loadingNoPortal } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', portalAccess: 'false', active: 'true', noEmail: 'false' })
 
-  const noEmailUsers = noEmailUsersData?.data?.users ?? []
-  const noEmailCompanies = noEmailCompaniesData?.data?.companies ?? []
-  const noPortalUsers = noPortalData?.data?.users ?? []
+  const q = search.toLowerCase().trim()
+  const noEmailUsers = (noEmailUsersData?.data?.users ?? []).filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+  const noEmailCompanies = (noEmailCompaniesData?.data?.companies ?? []).filter(co => !q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q))
+  const noPortalUsers = (noPortalData?.data?.users ?? []).filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
 
   const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies || loadingNoPortal
 
@@ -662,6 +664,12 @@ function NeedsAttentionTab() {
 
   return (
     <div className="space-y-4">
+      <Input
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Search by name or email…"
+        className="max-w-sm h-9 text-sm"
+      />
       <div className="flex gap-2">
         {filterBtns.map(btn => (
           <button
