@@ -90,6 +90,7 @@ export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
     data: {
       name: input.name,
       active: input.active,
+      ...(input.email ? { email: input.email } : {}),
       membershipType: input.membershipType,
       isPersonal: input.isPersonal,
       ...(input.peopleVineId ? { peopleVineId: input.peopleVineId } : {}),

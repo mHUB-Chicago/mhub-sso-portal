@@ -572,7 +572,18 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
       if (!existing.peopleVineId || existing.peopleVineId !== pvId) {
         log('info', `Merging duplicate company "${customer.company_name}" — assigning real PV ID.`);
       }
-      await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipType, isPersonal, peopleVineId: pvId });
+      const isPlaceholderEmail = existing.email.endsWith('@placeholder.invalid') || existing.email.endsWith('@noemail.mhub');
+      const newEmail = isPlaceholderEmail && customer.email ? customer.email.toLowerCase() : undefined;
+      try {
+        await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipType, isPersonal, peopleVineId: pvId, email: newEmail });
+      } catch (e) {
+        if (isUniqueConstraintError(e)) {
+          log('warn', `[sync] Could not update email for company "${customer.company_name}" — email already in use.`);
+          await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipType, isPersonal, peopleVineId: pvId });
+        } else {
+          throw e;
+        }
+      }
     } else {
       await createCompany(c, { name: customer.company_name, peopleVineId: pvId, active: isActive, email: customer.email.toLowerCase(), membershipType, isPersonal });
     }
@@ -887,17 +898,22 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         before: { name: companyForRepOps.name, active: companyForRepOps.active, membershipType: companyForRepOps.membershipType, isPersonal: companyForRepOps.isPersonal },
         after: { name: customer.company_name, active: pvActive, membershipType: hasSubInfo ? membershipType : companyForRepOps.membershipType, isPersonal },
       };
+      const newMembershipType = hasSubInfo ? membershipType : companyForRepOps.membershipType;
       await updateCompany(c, {
         id: companyForRepOps.id,
         name: customer.company_name,
         active: pvActive,
-        membershipType: hasSubInfo ? membershipType : companyForRepOps.membershipType,
+        membershipType: newMembershipType,
         isPersonal,
         peopleVineId: pvId,
       });
       if (wasInactive && pvActive) {
         console.log(`Reactivating users for company ${companyForRepOps.name}.`);
         await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { active: true } });
+      }
+      if (hasSubInfo && newMembershipType !== companyForRepOps.membershipType) {
+        console.log(`Cascading membership type change to all users of company ${companyForRepOps.name}.`);
+        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { membershipType: newMembershipType } });
       }
     }
   }
