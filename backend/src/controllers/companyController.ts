@@ -6,8 +6,8 @@ import { getCompanyById, getPaginatedCompanies, GetPaginatedCompaniesResult, upd
 import { getAllServiceProviders } from "@/services/serviceProviderService";
 
 export const handleGetCompanies = async (c: Context<AppType, string, QueryInput<typeof GetCompaniesRequestSchema>>) => {
-  const { limit, offset, search, membershipType, active } = c.req.valid("query");
-  const result: GetPaginatedCompaniesResult = await getPaginatedCompanies(c, { limit, offset, search, membershipType, active });
+  const { limit, offset, search, membershipType, active, noEmail } = c.req.valid("query");
+  const result: GetPaginatedCompaniesResult = await getPaginatedCompanies(c, { limit, offset, search, membershipType, active, noEmail });
   const response = GetCompaniesResponseSchema.parse({
     success: true,
     message: "Success",
