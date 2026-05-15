@@ -557,6 +557,8 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
   await flush(20, 'Syncing companies');
   log('info', 'Syncing companies');
 
+  const activatedCompanyIds = new Set<string>();
+
   await runConcurrent(Array.from(companyProfilesMap.values()), 20, async (customer) => {
     const pvId = customer.id.toString();
     const subInfo = subscriptionInfoMap.get(pvId);
@@ -582,8 +584,10 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
           throw e;
         }
       }
+      if (isActive) activatedCompanyIds.add(existing.id);
     } else {
-      await createCompany(c, { name: customer.company_name, peopleVineId: pvId, active: isActive, email: customer.email.toLowerCase(), membershipType, isPersonal });
+      const created = await createCompany(c, { name: customer.company_name, peopleVineId: pvId, active: isActive, email: customer.email.toLowerCase(), membershipType, isPersonal });
+      if (isActive && created) activatedCompanyIds.add(created.id);
     }
   });
 
@@ -596,6 +600,7 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
     companiesDone: true,
     activePVCompanyIds: Array.from(companyProfilesMap.keys()),
     activePVSubscriberIds: Array.from(individualSubscriberIds),
+    activatedCompanyIds: Array.from(activatedCompanyIds),
     subscriberMemberships,
     lastCustomerPage: 0,
     companyHadErrors: hadErrors,
@@ -793,6 +798,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   const activePVCompanyIds: string[] = meta.activePVCompanyIds ?? [];
   const activePVUserIds: string[] = meta.activePVUserIds ?? [];
   const activePVSubscriberIds = new Set<string>(meta.activePVSubscriberIds ?? []);
+  const activatedCompanyIds = new Set<string>(meta.activatedCompanyIds ?? []);
 
   if (activePVCompanyIds.length === 0 && activePVUserIds.length === 0) {
     log('warn', '[sync] No active PV IDs in session metadata, skipping deactivation.');
@@ -807,6 +813,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const activePVCompanySet = new Set(activePVCompanyIds);
     const dbCompanies = await prisma.company.findMany();
     await runConcurrent(dbCompanies, 20, async (co) => {
+      if (activatedCompanyIds.has(co.id)) return;
       if (co.peopleVineId && !activePVCompanySet.has(co.peopleVineId) && !activePVSubscriberIds.has(co.peopleVineId)) await deactivateCompany(c, co.id);
     });
   }

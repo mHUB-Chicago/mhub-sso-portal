@@ -95,7 +95,18 @@ export function AdminUsersPage() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      const result = await fetchAllUsers({ limit: 10000, offset: 0, role: 'USER' }).unwrap()
+      const result = await fetchAllUsers({
+        limit: 10000,
+        offset: 0,
+        role: 'USER',
+        search: search || undefined,
+        companyId,
+        membershipType,
+        active,
+        emailVerified,
+        portalAccess,
+        noEmail: 'false',
+      }).unwrap()
       const rows = result.data.users.map(u => [
         u.name,
         u.email,

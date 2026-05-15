@@ -60,7 +60,14 @@ export function AdminCompaniesPage() {
   const handleExport = async () => {
     setExporting(true)
     try {
-      const result = await fetchAll({ limit: 10000, offset: 0 }).unwrap()
+      const result = await fetchAll({
+        limit: 10000,
+        offset: 0,
+        search: search || undefined,
+        membershipType,
+        active,
+        noEmail: 'false',
+      }).unwrap()
       const rows = result.data.companies.map(c => [
         c.name,
         c.membershipType ?? "",
