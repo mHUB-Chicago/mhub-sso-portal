@@ -26,7 +26,6 @@ export function AdminUsersPage() {
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
     limit: pageSize,
     offset: page * pageSize,
-    role: 'USER',
     search: search || undefined,
     companyId,
     membershipType,
@@ -98,7 +97,6 @@ export function AdminUsersPage() {
       const result = await fetchAllUsers({
         limit: 10000,
         offset: 0,
-        role: 'USER',
         search: search || undefined,
         companyId,
         membershipType,
