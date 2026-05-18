@@ -15,7 +15,7 @@ const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 export const hasPortalAccess = async (c: Context, membershipType: string | null | undefined): Promise<boolean> => {
   if (!membershipType) return false;
   const prisma: PrismaClient = c.get('db');
-  const type = await prisma.portalAccessType.findUnique({ where: { name: membershipType.trim() } });
+  const type = await prisma.companyMembershipType.findUnique({ where: { name: membershipType.trim() } });
   return type !== null;
 };
 
@@ -372,7 +372,7 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): P
   const prisma: PrismaClient = c.get('db');
   const [dbCompanyTypes, dbPortalTypes] = await Promise.all([
     prisma.companyMembershipType.findMany({ select: { name: true } }),
-    prisma.portalAccessType.findMany({ select: { name: true } }),
+    prisma.companyMembershipType.findMany({ select: { name: true } }),
   ]);
   const companyMembershipTypes = new Set(dbCompanyTypes.map(t => t.name));
   const portalAccessTypes = new Set(dbPortalTypes.map(t => t.name));
@@ -389,9 +389,9 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): P
       subscriptionInfoMap.set(pvId, { membershipTypes: [], isActive: false });
     }
     const entry = subscriptionInfoMap.get(pvId)!;
-    if (subIsActive) {
+    if (subIsActive && title && companyMembershipTypes.has(title)) {
       entry.isActive = true;
-      if (title && companyMembershipTypes.has(title) && !entry.membershipTypes.includes(title)) {
+      if (!entry.membershipTypes.includes(title)) {
         entry.membershipTypes.push(title);
       }
       individualSubscriberIds.add(pvId);
@@ -653,7 +653,7 @@ export const syncPhaseUsers = async (
   const subscriberMemberships: Record<string, string | null> = sessionMeta.subscriberMemberships ?? {};
   const includeFreeMembers: boolean = sessionMeta.includeFreeMembers !== false;
 
-  const dbPortalTypes = await prisma.portalAccessType.findMany({ select: { name: true } });
+  const dbPortalTypes = await prisma.companyMembershipType.findMany({ select: { name: true } });
   const portalTypeSet = new Set(dbPortalTypes.map(t => t.name));
   const getBestType = (co: { membershipTypes: string }): string | null => {
     const types = JSON.parse(co.membershipTypes || '[]') as string[];

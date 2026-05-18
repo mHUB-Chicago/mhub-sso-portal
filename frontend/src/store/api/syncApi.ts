@@ -48,7 +48,7 @@ export const syncApi = createApi({
       return headers
     },
   }),
-  tagTypes: ['SyncStatus', 'MembershipTypes', 'PortalAccessTypes'],
+  tagTypes: ['SyncStatus', 'MembershipTypes'],
   endpoints: (builder) => ({
     getSyncStatus: builder.query<SyncStatusResponse, void>({
       query: () => '/sync/status',
@@ -99,19 +99,7 @@ export const syncApi = createApi({
       query: (name) => ({ url: `/config/membership-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
       invalidatesTags: ['MembershipTypes'],
     }),
-    getPortalAccessTypes: builder.query<{ success: boolean; data: string[] }, void>({
-      query: () => '/config/portal-access-types',
-      providesTags: ['PortalAccessTypes'],
-    }),
-    addPortalAccessType: builder.mutation<{ success: boolean }, { name: string }>({
-      query: (body) => ({ url: '/config/portal-access-types', method: 'POST', body }),
-      invalidatesTags: ['PortalAccessTypes'],
-    }),
-    removePortalAccessType: builder.mutation<{ success: boolean }, string>({
-      query: (name) => ({ url: `/config/portal-access-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
-      invalidatesTags: ['PortalAccessTypes'],
-    }),
   }),
 })
 
-export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi
+export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery } = syncApi

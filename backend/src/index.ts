@@ -126,9 +126,21 @@ app.get("/api/webhook/logs", async (c) => {
   const prisma = c.get('db');
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
   const offset = Number(c.req.query('offset') ?? 0);
+  const eventType = c.req.query('eventType') || undefined;
+  const dateFrom = c.req.query('dateFrom') ? new Date(c.req.query('dateFrom')!) : undefined;
+  const dateTo = c.req.query('dateTo') ? new Date(c.req.query('dateTo')!) : undefined;
+  const where = {
+    ...(eventType && { eventType }),
+    ...((dateFrom || dateTo) && {
+      receivedAt: {
+        ...(dateFrom && { gte: dateFrom }),
+        ...(dateTo && { lte: dateTo }),
+      },
+    }),
+  };
   const [logs, total] = await Promise.all([
-    prisma.webhookLog.findMany({ orderBy: { receivedAt: 'desc' }, take: limit, skip: offset }),
-    prisma.webhookLog.count(),
+    prisma.webhookLog.findMany({ where, orderBy: { receivedAt: 'desc' }, take: limit, skip: offset }),
+    prisma.webhookLog.count({ where }),
   ]);
   return c.json({ success: true, data: { logs, total, limit, offset } });
 });
@@ -314,36 +326,6 @@ app.delete("/api/config/membership-types/:name", async (c) => {
   return c.json({ success: true });
 });
 
-app.get("/api/config/portal-access-types", async (c) => {
-  const user = c.get('user');
-  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
-  const prisma = c.get('db');
-  const types = await prisma.portalAccessType.findMany({ orderBy: { name: 'asc' } });
-  return c.json({ success: true, data: types.map(t => t.name) });
-});
-
-app.post("/api/config/portal-access-types", async (c) => {
-  const user = c.get('user');
-  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
-  const { name } = await c.req.json<{ name: string }>();
-  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
-  const prisma = c.get('db');
-  await prisma.portalAccessType.upsert({
-    where: { name: name.trim() },
-    create: { name: name.trim() },
-    update: {},
-  });
-  return c.json({ success: true });
-});
-
-app.delete("/api/config/portal-access-types/:name", async (c) => {
-  const user = c.get('user');
-  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
-  const name = decodeURIComponent(c.req.param('name'));
-  const prisma = c.get('db');
-  await prisma.portalAccessType.delete({ where: { name } }).catch(() => {});
-  return c.json({ success: true });
-});
 
 app.post("/__internal/sync", async (c) => {
   const auth = c.req.header("authorization") ?? "";

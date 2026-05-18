@@ -221,15 +221,45 @@ function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }
   )
 }
 
+const EVENT_TYPES = [
+  'customer_new',
+  'customer_update',
+  'subscription_new',
+  'subscription_update',
+  'subscription_cancel',
+]
+
 export function AdminWebhookLogsPage() {
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(50)
   const [selected, setSelected] = useState<WebhookLog | null>(null)
+  const [eventType, setEventType] = useState<string | undefined>(undefined)
+  const [dateFrom, setDateFrom] = useState<string | undefined>(undefined)
+  const [dateTo, setDateTo] = useState<string | undefined>(undefined)
 
   const { data, isLoading, isFetching, error, refetch } = useGetWebhookLogsQuery({
     limit: pageSize,
     offset: page * pageSize,
+    eventType,
+    dateFrom: dateFrom ? `${dateFrom}T00:00:00.000Z` : undefined,
+    dateTo: dateTo ? `${dateTo}T23:59:59.999Z` : undefined,
   })
+
+  const handleFilterChange = (key: 'eventType' | 'dateFrom' | 'dateTo', value: string | undefined) => {
+    setPage(0)
+    if (key === 'eventType') setEventType(value)
+    if (key === 'dateFrom') setDateFrom(value)
+    if (key === 'dateTo') setDateTo(value)
+  }
+
+  const clearFilters = () => {
+    setPage(0)
+    setEventType(undefined)
+    setDateFrom(undefined)
+    setDateTo(undefined)
+  }
+
+  const hasFilters = !!(eventType || dateFrom || dateTo)
 
   const logs = data?.data?.logs ?? []
   const total = data?.data?.total ?? 0
@@ -274,6 +304,40 @@ export function AdminWebhookLogsPage() {
           <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Select value={eventType ?? "all"} onValueChange={v => handleFilterChange('eventType', v === 'all' ? undefined : v)}>
+          <SelectTrigger className="w-48 h-9 text-sm">
+            <SelectValue placeholder="Event Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Events</SelectItem>
+            {EVENT_TYPES.map(t => (
+              <SelectItem key={t} value={t}>{t}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <input
+          type="date"
+          value={dateFrom ?? ''}
+          onChange={e => handleFilterChange('dateFrom', e.target.value || undefined)}
+          className="h-9 px-3 text-sm border rounded-md bg-background"
+        />
+        <span className="text-muted-foreground text-sm">to</span>
+        <input
+          type="date"
+          value={dateTo ?? ''}
+          onChange={e => handleFilterChange('dateTo', e.target.value || undefined)}
+          className="h-9 px-3 text-sm border rounded-md bg-background"
+        />
+
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+            Clear
+          </Button>
+        )}
       </div>
 
       <div className="border rounded-lg overflow-hidden">
