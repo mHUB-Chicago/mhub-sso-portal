@@ -583,7 +583,7 @@ function AuditLogsTab() {
       if (!res.ok || !res.body) return
 
       const reader = res.body.getReader()
-      const chunks: Uint8Array[] = []
+      const chunks: Uint8Array<ArrayBuffer>[] = []
       let received = 0
 
       while (true) {
