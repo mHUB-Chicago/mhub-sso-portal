@@ -1,4 +1,4 @@
-import { Company, PrismaClient } from "@/database/models";
+import { Company, Prisma, PrismaClient } from "@/database/models";
 import { Context } from "hono";
 import { deactivateUsersByCompanyId } from "./userService";
 import { getAllServiceProviders } from "./serviceProviderService";
@@ -11,6 +11,7 @@ export interface GetPaginatedCompaniesInput {
   membershipType?: string;
   active?: 'true' | 'false';
   noEmail?: 'true' | 'false';
+  cmtOnly?: 'true' | 'false';
 }
 
 export interface GetPaginatedCompaniesResult {
@@ -42,12 +43,38 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
   const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];
   const placeholderFilter = PLACEHOLDER_SUFFIXES.map(s => ({ email: { contains: s } }));
 
+  if (!input.membershipType && input.cmtOnly !== 'false') {
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`EXISTS (SELECT 1 FROM json_each(c."membershipTypes") je WHERE je.value IN (SELECT name FROM "CompanyMembershipType"))`,
+    ];
+    if (input.active !== undefined) {
+      conditions.push(Prisma.sql`c.active = ${input.active === 'true' ? 1 : 0}`);
+    }
+    if (input.search) {
+      conditions.push(Prisma.sql`(c.name LIKE ${'%' + input.search + '%'} OR c.email LIKE ${'%' + input.search + '%'})`);
+    }
+    if (input.noEmail === 'true') {
+      conditions.push(Prisma.sql`(c.email LIKE ${'%@noemail.mhub'} OR c.email LIKE ${'%@placeholder.invalid'})`);
+    } else if (input.noEmail === 'false') {
+      conditions.push(Prisma.sql`(c.email NOT LIKE ${'%@noemail.mhub'} AND c.email NOT LIKE ${'%@placeholder.invalid'})`);
+    }
+    const where = Prisma.join(conditions, ' AND ');
+    const [rawCompanies, countResult] = await Promise.all([
+      prisma.$queryRaw<any[]>`SELECT c.* FROM "Company" c WHERE ${where} ORDER BY c."createdAt" DESC LIMIT ${input.limit} OFFSET ${input.offset}`,
+      prisma.$queryRaw<{ total: bigint }[]>`SELECT COUNT(*) as total FROM "Company" c WHERE ${where}`,
+    ]);
+    const companies = rawCompanies.map(c => ({ ...c, active: Boolean(c.active), isPersonal: Boolean(c.isPersonal) })) as Company[];
+    return { companies, total: Number(countResult[0]?.total ?? 0) };
+  }
+
   const whereClause: any = {
-    ...(input.membershipType && { membershipTypes: { contains: `"${input.membershipType}"` } }),
     ...(input.active !== undefined && { active: input.active === 'true' }),
   };
-
   const andConditions: any[] = [];
+
+  if (input.membershipType) {
+    whereClause.membershipTypes = { contains: `"${input.membershipType}"` };
+  }
   if (input.search) {
     andConditions.push({ OR: [
       { name: { contains: input.search } },

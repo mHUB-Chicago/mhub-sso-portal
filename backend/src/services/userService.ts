@@ -16,6 +16,7 @@ export interface GetPaginatedUsersInput {
   portalAccess?: 'true' | 'false';
   noEmail?: 'true' | 'false';
   memberSource?: 'subscription' | 'membership';
+  cmtOnly?: 'true' | 'false';
 }
 
 export interface GetPaginatedUsersResult {
@@ -71,13 +72,15 @@ export interface UpdateUserInput {
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
   const prisma: PrismaClient = c.get("db");
 
+  const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
+
   let membershipTypeFilter: any = undefined;
   if (input.membershipType) {
     membershipTypeFilter = input.membershipType;
   } else if (input.portalAccess !== undefined) {
-    const accessTypes = await prisma.portalAccessType.findMany({ select: { name: true } });
-    const names = accessTypes.map(t => t.name);
-    membershipTypeFilter = input.portalAccess === 'true' ? { in: names } : { notIn: names };
+    membershipTypeFilter = input.portalAccess === 'true' ? { in: cmtNames } : { notIn: cmtNames };
+  } else if (input.cmtOnly !== 'false') {
+    membershipTypeFilter = { in: cmtNames };
   }
 
   const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];

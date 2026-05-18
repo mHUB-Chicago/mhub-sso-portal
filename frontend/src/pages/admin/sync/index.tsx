@@ -695,8 +695,8 @@ function NeedsAttentionTab() {
   const [membershipType, setMembershipType] = useState('')
   const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
 
-  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
-  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
+  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true', cmtOnly: 'false' })
+  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true', cmtOnly: 'false' })
   const { data: membershipTypesData } = useGetMembershipTypesQuery()
   const membershipTypes = membershipTypesData?.data ?? []
 
@@ -873,8 +873,8 @@ export function AdminSyncPage() {
   const session = data?.data ?? null
   const isRunning = session?.status === 'running' || session?.status === 'pending'
 
-  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
-  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true' })
+  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true', cmtOnly: 'false' })
+  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true', cmtOnly: 'false' })
   const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0)
 
   useEffect(() => {

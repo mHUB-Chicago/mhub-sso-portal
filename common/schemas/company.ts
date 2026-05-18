@@ -21,6 +21,7 @@ export const GetCompaniesRequestSchema = z.object({
   membershipType: z.string().optional(),
   active: z.enum(['true', 'false']).optional(),
   noEmail: z.enum(['true', 'false']).optional(),
+  cmtOnly: z.enum(['true', 'false']).optional(),
 });
 
 export const GetCompaniesResponseSchema = SuccessResponseSchema(z.object({

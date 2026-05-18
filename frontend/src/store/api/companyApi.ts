@@ -8,6 +8,7 @@ interface GetCompaniesRequest {
   membershipType?: string
   active?: 'true' | 'false'
   noEmail?: 'true' | 'false'
+  cmtOnly?: 'true' | 'false'
 }
 
 interface GetCompaniesResponse {
@@ -65,7 +66,7 @@ export const companyApi = createApi({
   tagTypes: ['Company', 'Companies', 'Users'],
   endpoints: (builder) => ({
     getCompanies: builder.query<GetCompaniesResponse, GetCompaniesRequest>({
-      query: ({ limit = 100, offset = 0, search, membershipType, active, noEmail }) => ({
+      query: ({ limit = 100, offset = 0, search, membershipType, active, noEmail, cmtOnly }) => ({
         url: '/company',
         params: {
           limit,
@@ -74,6 +75,7 @@ export const companyApi = createApi({
           ...(membershipType && { membershipType }),
           ...(active !== undefined && { active }),
           ...(noEmail !== undefined && { noEmail }),
+          ...(cmtOnly !== undefined && { cmtOnly }),
         },
       }),
       providesTags: ['Companies'],

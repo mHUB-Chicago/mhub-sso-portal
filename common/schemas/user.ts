@@ -49,6 +49,7 @@ export const GetUsersRequestSchema = z.object({
   portalAccess: z.enum(['true', 'false']).optional(),
   noEmail: z.enum(['true', 'false']).optional(),
   memberSource: z.enum(['subscription', 'membership']).optional(),
+  cmtOnly: z.enum(['true', 'false']).optional(),
 });
 
 export const GetUsersResponseSchema = SuccessResponseSchema(z.object({
