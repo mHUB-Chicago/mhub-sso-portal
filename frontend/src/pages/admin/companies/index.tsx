@@ -70,7 +70,7 @@ export function AdminCompaniesPage() {
       }).unwrap()
       const rows = result.data.companies.map(c => [
         c.name,
-        c.membershipType ?? "",
+        c.membershipTypes?.join(', ') ?? "",
         c.active ? "true" : "false",
       ])
       downloadCsv(`companies-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(COMPANY_HEADERS, rows))

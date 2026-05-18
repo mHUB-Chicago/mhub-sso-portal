@@ -8,7 +8,7 @@ export const CompanySchema = z.object({
   name: z.string(),
   email: z.string(),
   active: z.boolean(),
-  membershipType: z.string().nullable(),
+  membershipTypes: z.string().transform(s => { try { return JSON.parse(s) as string[]; } catch { return []; } }),
   isPersonal: z.boolean(),
   createdAt: z.coerce.date().transform(d => d.toISOString()),
   updatedAt: z.coerce.date().transform(d => d.toISOString())

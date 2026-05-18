@@ -5,6 +5,14 @@ import { PrismaClient } from "@prisma/client";
 // Webhook Body: {"customer_no": {@customer_no@}}
 
 export const handlePeopleVineWebhook = async (c: Context) => {
+  const expectedSecret = c.env.WEBHOOK_SECRET as string | undefined;
+  if (expectedSecret) {
+    const provided = c.req.query('secret') || c.req.header('x-webhook-secret');
+    if (provided !== expectedSecret) {
+      return c.json({ message: 'Unauthorized' }, 401);
+    }
+  }
+
   const rawBody = await c.req.text();
   let payload: Record<string, unknown>;
   try {

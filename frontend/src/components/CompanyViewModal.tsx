@@ -30,7 +30,7 @@ export function CompanyViewModal({ company, open, onClose }: Props) {
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm pt-2">
           <div>
             <p className="text-muted-foreground">Membership</p>
-            <p className="font-medium">{company.membershipType || '—'}</p>
+            <p className="font-medium">{company.membershipTypes.length > 0 ? company.membershipTypes.join(', ') : '—'}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Status</p>

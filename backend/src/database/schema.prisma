@@ -35,7 +35,7 @@ model Company {
   active                  Boolean                  @default(true)
   name                    String
   email                   String                   @unique
-  membershipType          String?
+  membershipTypes         String                   @default("[]")
   isPersonal              Boolean                  @default(false)
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
@@ -65,6 +65,7 @@ model User {
   state                String?
   zipCode              String?
   cardStatus           String?
+  memberSource         String                @default("subscription")
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]

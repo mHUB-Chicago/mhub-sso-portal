@@ -16,6 +16,7 @@ import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
 import { Role } from "@prisma/client";
+import { fetchAllPvData, fetchPvPage } from "@/services/peopleVineService";
 
 
 type Bindings = {
@@ -82,7 +83,7 @@ app.get("/api/sync/status", async (c) => {
 app.post("/api/sync/start", async (c) => {
   const user = c.get('user');
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
-  const { type } = await c.req.json<{ type: 'ALL' | 'CONTINUE' }>();
+  const { type, includeFreeMembers = true } = await c.req.json<{ type: 'ALL' | 'CONTINUE'; includeFreeMembers?: boolean }>();
   const prisma = c.get('db');
   const session = await prisma.syncSession.create({
     data: {
@@ -90,6 +91,7 @@ app.post("/api/sync/start", async (c) => {
       status: 'pending',
       step: 'Queued',
       logs: JSON.stringify([{ time: new Date().toISOString(), level: 'info', message: 'Sync queued' }]),
+      metadata: JSON.stringify({ includeFreeMembers }),
     },
   });
   await c.env.QUEUE.send({
@@ -206,6 +208,79 @@ app.get("/api/sync/history", async (c) => {
       offset,
     },
   });
+});
+
+app.get("/api/sync/raw-export", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+
+  const { subscriptions } = await fetchAllPvData(c);
+
+  const filename = `pv-raw-${new Date().toISOString().slice(0, 10)}.json`;
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+  const w = async (s: string) => writer.write(enc.encode(s));
+
+  (async () => {
+    try {
+      await w(`{\n"fetchedAt":"${new Date().toISOString()}",\n"subscriptions":[\n`);
+      let firstSub = true;
+      for (const sub of subscriptions) {
+        if (!firstSub) await w(',\n');
+        await w('  ' + JSON.stringify(sub));
+        firstSub = false;
+      }
+
+      await w(`\n],\n"customers":[\n`);
+      let page = 1;
+      let firstCust = true;
+      while (page <= 500) {
+        const result = await fetchPvPage(c, '/customers', page);
+        if (result && result.length > 0) {
+          for (const item of result) {
+            if (!firstCust) await w(',\n');
+            await w('  ' + JSON.stringify(item));
+            firstCust = false;
+          }
+        }
+        if (!result || result.length < 100) break;
+        page++;
+      }
+      await w(`\n]}`);
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+});
+
+app.get("/api/sync/pv-subscriptions", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { subscriptions, skippedSubPages } = await fetchAllPvData(c);
+  return c.json({ success: true, data: { subscriptions, skippedSubPages } });
+});
+
+
+
+app.get("/api/sync/conflicts", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.findFirst({
+    where: { type: { in: ['ALL', 'CONTINUE'] }, status: 'completed' },
+    orderBy: { startedAt: 'desc' },
+  });
+  if (!session) return c.json({ success: true, data: [] });
+  const meta = JSON.parse(session.metadata ?? '{}');
+  return c.json({ success: true, data: meta.subscriptionConflicts ?? [] });
 });
 
 app.get("/api/config/membership-types", async (c) => {

@@ -21,7 +21,9 @@
     ],
     "consumers": [
       {
-        "queue": "mhub-sso-portal"
+        "queue": "mhub-sso-portal",
+        "max_retries": 3,
+        "max_concurrency": 5
       }
     ]
   },

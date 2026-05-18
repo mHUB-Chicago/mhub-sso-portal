@@ -28,12 +28,11 @@ export const enum JobType {
 
 export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionContext) => {
   const context = createMockContext(env, ctx);
-  await Promise.all(
-    batch.messages.map(async (msg) => {
-      const { jobId, jobType, payload } = msg.body;
-      console.log(`Processing job ${jobId} of type ${jobType}`);
+  for (const msg of batch.messages) {
+    const { jobId, jobType, payload } = msg.body;
+    console.log(`Processing job ${jobId} of type ${jobType}`);
 
-      try {
+    try {
         if (jobType === JobType.SYNC_PEOPLEVINE_EVERYTHING) {
           const { sessionId, type } = payload ?? {};
           if (type === 'CONTINUE') {
@@ -102,7 +101,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
               await prisma.webhookLog.update({ where: { id: webhookLogId }, data: { status: 'skipped' } }).catch(() => {});
             }
             await msg.ack();
-            return;
+            continue;
           }
           await syncOnePeopleVine(context, peopleVineId, webhookLogId);
           if (webhookLogId) {
@@ -140,15 +139,35 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
         }
 
         await msg.ack();
-      } catch (err) {
-        if (err instanceof SyncCancelledError) {
-          console.log(`Job ${jobId} (${jobType}) cancelled — acknowledging without retry.`);
-          await msg.ack();
-          return;
-        }
-        console.error(`Job ${jobId} (${jobType}) failed, will retry:`, err);
-        await msg.retry();
+    } catch (err) {
+      if (err instanceof SyncCancelledError) {
+        console.log(`Job ${jobId} (${jobType}) cancelled — acknowledging without retry.`);
+        await msg.ack();
+        continue;
       }
-    })
-  );
+      const prisma = context.get('db') as PrismaClient;
+      if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
+        const { webhookLogId } = payload;
+        if (webhookLogId) {
+          await prisma.webhookLog.update({
+            where: { id: webhookLogId },
+            data: { status: 'failed' },
+          }).catch(() => {});
+        }
+      } else {
+        const { sessionId } = payload ?? {};
+        if (sessionId) {
+          const current = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { logs: true } }).catch(() => null);
+          const logs = current?.logs ? JSON.parse(current.logs) : [];
+          logs.push({ time: new Date().toISOString(), level: 'error', message: `Job ${jobType} failed: ${err instanceof Error ? err.message : String(err)}` });
+          await prisma.syncSession.update({
+            where: { id: sessionId },
+            data: { status: 'failed', step: 'Failed', completedAt: new Date(), logs: JSON.stringify(logs) },
+          }).catch(() => {});
+        }
+      }
+      console.error(`Job ${jobId} (${jobType}) failed, will retry:`, err);
+      await msg.retry();
+    }
+  }
 };

@@ -6,6 +6,12 @@ export interface SyncLogEntry {
   message: string
 }
 
+export interface SubscriptionConflict {
+  companyName: string
+  chosen: { customerId: string; subscriptionType: string }
+  alternatives: Array<{ customerId: string; subscriptionType: string }>
+}
+
 export interface SyncSession {
   id: string
   type: 'ALL' | 'CONTINUE' | 'FILTERED'
@@ -48,7 +54,7 @@ export const syncApi = createApi({
       query: () => '/sync/status',
       providesTags: ['SyncStatus'],
     }),
-    startSync: builder.mutation<StartSyncResponse, { type: 'ALL' | 'CONTINUE' }>({
+    startSync: builder.mutation<StartSyncResponse, { type: 'ALL' | 'CONTINUE'; includeFreeMembers?: boolean }>({
       query: (body) => ({ url: '/sync/start', method: 'POST', body }),
       invalidatesTags: ['SyncStatus'],
     }),
@@ -71,6 +77,9 @@ export const syncApi = createApi({
     }>({
       query: (body) => ({ url: '/sync/import-filtered', method: 'POST', body }),
       invalidatesTags: ['SyncStatus'],
+    }),
+    getSubscriptionConflicts: builder.query<{ success: boolean; data: SubscriptionConflict[] }, void>({
+      query: () => '/sync/conflicts',
     }),
     getSyncHistory: builder.query<{
       success: boolean
@@ -105,4 +114,4 @@ export const syncApi = createApi({
   }),
 })
 
-export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi
+export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi

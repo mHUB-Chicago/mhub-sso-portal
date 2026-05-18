@@ -560,21 +560,87 @@ const SYNC_TYPE_LABELS: Record<string, string> = {
   FILTERED: 'Fresh Sync',
 }
 
+const BASE_URL = `${import.meta.env.VITE_API_URL ?? 'http://localhost:8787'}${import.meta.env.VITE_API_BASE_PATH ?? '/api'}`
+
+const ESTIMATED_RAW_BYTES = 10 * 1024 * 1024 // 10 MB estimate for progress bar
+
 function AuditLogsTab() {
   const [selectedSession, setSelectedSession] = useState<SyncSession | null>(null)
+  const [dlState, setDlState] = useState<{ active: boolean; bytes: number; done: boolean }>({ active: false, bytes: 0, done: false })
   const { data, isLoading, refetch } = useGetSyncHistoryQuery({})
 
   const sessions = data?.data?.sessions ?? []
   const total = data?.data?.total ?? 0
 
+  const handleRawDownload = async () => {
+    setDlState({ active: true, bytes: 0, done: false })
+    try {
+      const token = localStorage.getItem('authToken')
+      const res = await fetch(`${BASE_URL}/sync/raw-export`, {
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok || !res.body) return
+
+      const reader = res.body.getReader()
+      const chunks: Uint8Array[] = []
+      let received = 0
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(value)
+        received += value.length
+        setDlState({ active: true, bytes: received, done: false })
+      }
+
+      setDlState({ active: true, bytes: received, done: true })
+
+      const blob = new Blob(chunks, { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `pv-raw-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setTimeout(() => setDlState({ active: false, bytes: 0, done: false }), 2000)
+    }
+  }
+
+  const dlPct = dlState.done
+    ? 100
+    : Math.min(Math.round((dlState.bytes / ESTIMATED_RAW_BYTES) * 100), 99)
+  const dlMb = (dlState.bytes / (1024 * 1024)).toFixed(1)
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{total} total sync sessions</p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleRawDownload} disabled={dlState.active}>
+            <Download className="h-4 w-4 mr-2" />Raw
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-2" />Refresh
+          </Button>
+        </div>
       </div>
+
+      {dlState.active && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>{dlState.done ? 'Download complete' : 'Downloading raw PV data…'}</span>
+            <span className="font-medium tabular-nums">{dlPct}% · {dlMb} MB</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+            <div
+              className={`h-2 rounded-full transition-all duration-300 ease-out ${dlState.done ? 'bg-green-500' : 'bg-brand'}`}
+              style={{ width: `${dlPct}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-gray-400 py-8 justify-center">
@@ -622,9 +688,11 @@ function AuditLogsTab() {
   )
 }
 
+
 function NeedsAttentionTab() {
   const [search, setSearch] = useState('')
   const [membershipType, setMembershipType] = useState('')
+  const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
   const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
@@ -641,14 +709,17 @@ function NeedsAttentionTab() {
   )
   const noEmailCompanies = allNoEmailCompanies.filter(co =>
     (!q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q)) &&
-    (!membershipType || co.membershipType === membershipType)
+    (!membershipType || co.membershipTypes?.includes(membershipType))
   )
+
+  const showUsers = view === 'all' || view === 'users'
+  const showCompanies = view === 'all' || view === 'companies'
 
   const handleExport = () => {
     const headers = ['Type', 'Name', 'PV Email', 'Membership Type']
     const rows = [
-      ...noEmailUsers.map(u => ['User', u.name, u.email, u.membershipType ?? '']),
-      ...noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipType ?? '']),
+      ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.membershipType ?? '']) : []),
+      ...(showCompanies ? noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '']) : []),
     ]
     downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
   }
@@ -675,84 +746,110 @@ function NeedsAttentionTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name or email…"
-          className="max-w-sm h-9 text-sm"
-        />
-        <select
-          value={membershipType}
-          onChange={e => setMembershipType(e.target.value)}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">All Memberships</option>
-          {membershipTypes.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <Button variant="outline" size="sm" onClick={handleExport} disabled={noEmailUsers.length + noEmailCompanies.length === 0}>
-          <Download className="h-4 w-4 mr-2" />Export
-        </Button>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
+          {(['all', 'companies', 'users'] as const).map(v => {
+            const count = v === 'all' ? totalIssues : v === 'companies' ? noEmailCompanies.length : noEmailUsers.length
+            return (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${view === v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {v.charAt(0).toUpperCase() + v.slice(1)}
+                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${view === v ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-500'}`}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or email…"
+            className="w-56 h-9 text-sm"
+          />
+          <select
+            value={membershipType}
+            onChange={e => setMembershipType(e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">All Memberships</option>
+            {membershipTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={totalIssues === 0}>
+            <Download className="h-4 w-4 mr-2" />Export
+          </Button>
+        </div>
       </div>
 
-      {(noEmailUsers.length > 0 || noEmailCompanies.length > 0) && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Users ({noEmailUsers.length})</p>
-          {noEmailUsers.length > 0 ? (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {noEmailUsers.map(u => (
-                    <tr key={u.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-900">{u.name}</td>
-                      <td className="px-4 py-2 font-mono text-xs text-gray-400">{u.email}</td>
-                      <td className="px-4 py-2 text-gray-500 text-xs">{u.membershipType ?? '—'}</td>
+      <div className="space-y-4">
+        {showUsers && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Users ({noEmailUsers.length})</p>
+            {noEmailUsers.length > 0 ? (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {noEmailUsers.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-gray-900">{u.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400">{u.email}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs">{u.membershipType ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+          </div>
+        )}
 
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4">No Email — Companies ({noEmailCompanies.length})</p>
-          {noEmailCompanies.length > 0 ? (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">Company</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                    <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {noEmailCompanies.map(co => (
-                    <tr key={co.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-900">{co.name}</td>
-                      <td className="px-4 py-2 font-mono text-xs text-gray-400">{co.email}</td>
-                      <td className="px-4 py-2 text-gray-500 text-xs">{co.membershipType ?? '—'}</td>
+        {showCompanies && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Companies ({noEmailCompanies.length})</p>
+            {noEmailCompanies.length > 0 ? (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Company</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="text-sm text-gray-400 pl-1">None</p>}
-        </div>
-      )}
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {noEmailCompanies.map(co => (
+                      <tr key={co.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-gray-900">{co.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400">{co.email}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs">{co.membershipTypes?.join(', ') || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
+type SyncConfirm = { type: 'ALL' | 'CONTINUE'; includeFreeMembers: boolean } | null
+
 export function AdminSyncPage() {
   const [activeTab, setActiveTab] = useState<'ALL' | 'CONTINUE' | 'FRESH' | 'LOGS' | 'ATTENTION'>('ALL')
   const [pollingInterval, setPollingInterval] = useState<number | false>(false)
+  const [syncConfirm, setSyncConfirm] = useState<SyncConfirm>(null)
 
   const { data, refetch } = useGetSyncStatusQuery(undefined, {
     pollingInterval: pollingInterval || undefined,
@@ -775,9 +872,16 @@ export function AdminSyncPage() {
     }
   }, [isRunning])
 
-  const handleStart = async (type: 'ALL' | 'CONTINUE') => {
+  const handleStart = (type: 'ALL' | 'CONTINUE') => {
+    setSyncConfirm({ type, includeFreeMembers: true })
+  }
+
+  const handleConfirmSync = async () => {
+    if (!syncConfirm) return
+    const { type, includeFreeMembers } = syncConfirm
+    setSyncConfirm(null)
     setActiveTab(type)
-    await startSync({ type })
+    await startSync({ type, includeFreeMembers })
     setPollingInterval(POLL_INTERVAL_MS)
     refetch()
   }
@@ -841,6 +945,40 @@ export function AdminSyncPage() {
           ))}
         </nav>
       </div>
+
+      {syncConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  {syncConfirm.type === 'ALL' ? 'Start Sync All?' : 'Start Continue Sync?'}
+                </p>
+                <p className="text-sm text-gray-500 mt-1">Configure sync options before starting.</p>
+              </div>
+            </div>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={syncConfirm.includeFreeMembers}
+                onChange={e => setSyncConfirm({ ...syncConfirm, includeFreeMembers: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand"
+              />
+              <div>
+                <p className="text-sm font-medium text-gray-800">Include free membership members</p>
+                <p className="text-xs text-gray-500 mt-0.5">Syncs CRM-only members who have a PeopleVine membership but no active billing subscription.</p>
+              </div>
+            </label>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setSyncConfirm(null)}>Cancel</Button>
+              <Button size="sm" onClick={handleConfirmSync} disabled={isStarting}>
+                {isStarting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Starting…</> : 'Start Sync'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab content */}
       <div>

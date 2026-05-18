@@ -4,6 +4,14 @@ const bufferToHex = (buffer: ArrayBuffer) => {
     .join("")
 }
 
+const hexToBuffer = (hex: string): Uint8Array => {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return bytes;
+}
+
 const base64UrlToBase64 = (base64Url: string): string => {
   return base64Url.replace(/-/g, "+").replace(/_/g, "/").padEnd(base64Url.length + (4 - base64Url.length % 4) % 4, "=");
 }
@@ -41,14 +49,63 @@ const sign = async (data: string, secret: string) => {
   return bufferToBase64Url(signature)
 }
 
+const timingSafeEqual = (a: string, b: string): boolean => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+};
+
+const PBKDF2_ITERATIONS = 100_000;
+const SALT_BYTES = 16;
+const HASH_BYTES = 32;
+
 export const hashPassword = async (password: string): Promise<string> => {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  
-  const hash = await crypto.subtle.digest("SHA-256", data)
-  
-  return bufferToHex(hash)
-}
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const hashBuffer = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    keyMaterial,
+    HASH_BYTES * 8
+  );
+  const saltHex = bufferToHex(salt.buffer);
+  const hashHex = bufferToHex(hashBuffer);
+  return `pbkdf2:${PBKDF2_ITERATIONS}:${saltHex}:${hashHex}`;
+};
+
+export const verifyPassword = async (password: string, stored: string): Promise<boolean> => {
+  if (stored.startsWith("pbkdf2:")) {
+    const parts = stored.split(":");
+    if (parts.length !== 4) return false;
+    const iterations = parseInt(parts[1], 10);
+    const salt = hexToBuffer(parts[2]);
+    const expectedHex = parts[3];
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(password),
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+    const hashBuffer = await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+      keyMaterial,
+      HASH_BYTES * 8
+    );
+    return timingSafeEqual(bufferToHex(hashBuffer), expectedHex);
+  }
+  // Legacy SHA-256 (backward compat for existing hashes in DB)
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(password));
+  return timingSafeEqual(bufferToHex(hash), stored);
+};
 
 export const verifyToken = async (token: string, secret: string): Promise<boolean> => {
   const [headerB64, payloadB64, signatureB64] = token.split(".")
@@ -56,7 +113,6 @@ export const verifyToken = async (token: string, secret: string): Promise<boolea
   const now = Math.floor(Date.now() / 1000);
   const expiration = Number(payload.exp) ?? 0;
   if (expiration < now) {
-    // Token has expired
     return false;
   }
   const encoder = new TextEncoder()
@@ -72,7 +128,6 @@ export const verifyToken = async (token: string, secret: string): Promise<boolea
   const data = `${headerB64}.${payloadB64}`
   const signature = base64UrlToUint8Array(signatureB64);
 
-  // Check if the signature is valid, meaning it was signed with the correct secret
   const isValidSignature = await crypto.subtle.verify("HMAC", key, signature, encoder.encode(data))
   return isValidSignature;
 }

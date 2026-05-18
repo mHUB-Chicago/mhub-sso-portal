@@ -133,7 +133,7 @@ export function AdminEditCompanyPage() {
 
           <div className="space-y-2">
             <Label className="text-gray-500">Membership Type</Label>
-            <p className="font-medium">{company.membershipType ?? 'N/A'}</p>
+            <p className="font-medium">{company.membershipTypes?.length > 0 ? company.membershipTypes.join(', ') : 'N/A'}</p>
           </div>
 
           <div className="space-y-2">

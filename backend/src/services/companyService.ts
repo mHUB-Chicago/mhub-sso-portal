@@ -23,7 +23,7 @@ export interface CreateCompanyInput {
   peopleVineId: string | null;
   active: boolean;
   email: string;
-  membershipType?: string | null;
+  membershipTypes?: string[];
   isPersonal?: boolean;
 }
 
@@ -32,7 +32,7 @@ export interface UpdateCompanyInput {
   name?: string;
   active?: boolean;
   email?: string;
-  membershipType?: string | null;
+  membershipTypes?: string[];
   isPersonal?: boolean;
   peopleVineId?: string;
 }
@@ -43,7 +43,7 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
   const placeholderFilter = PLACEHOLDER_SUFFIXES.map(s => ({ email: { contains: s } }));
 
   const whereClause: any = {
-    ...(input.membershipType && { membershipType: input.membershipType }),
+    ...(input.membershipType && { membershipTypes: { contains: `"${input.membershipType}"` } }),
     ...(input.active !== undefined && { active: input.active === 'true' }),
   };
 
@@ -80,7 +80,7 @@ export const createCompany = async (c: Context, input: CreateCompanyInput) => {
       peopleVineId: input.peopleVineId,
       active: input.active,
       email: input.email,
-      membershipType: input.membershipType ?? null,
+      membershipTypes: JSON.stringify(input.membershipTypes ?? []),
       isPersonal: input.isPersonal ?? false,
     },
   });
@@ -103,7 +103,7 @@ export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
       name: input.name,
       active: input.active,
       ...(input.email ? { email: input.email } : {}),
-      membershipType: input.membershipType,
+      ...(input.membershipTypes !== undefined ? { membershipTypes: JSON.stringify(input.membershipTypes) } : {}),
       isPersonal: input.isPersonal,
       ...(input.peopleVineId ? { peopleVineId: input.peopleVineId } : {}),
     },

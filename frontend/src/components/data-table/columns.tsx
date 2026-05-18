@@ -94,7 +94,26 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     size: 200,
     cell: ({ row }) => {
       const val = row.original.membershipType
-      return <span className="text-sm">{val ?? <span className="text-muted-foreground">—</span>}</span>
+      const isFree = row.original.memberSource === 'membership'
+      return (
+        <span className="flex items-center gap-1.5 text-sm">
+          {val ?? <span className="text-muted-foreground">—</span>}
+          {isFree && <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-600 border-blue-300">Free</Badge>}
+        </span>
+      )
+    },
+  },
+  {
+    accessorKey: "memberSource",
+    header: "Member Type",
+    size: 120,
+    cell: ({ row }) => {
+      const isFree = row.original.memberSource === 'membership'
+      return (
+        <Badge variant={isFree ? "outline" : "default"} className={isFree ? "text-blue-600 border-blue-300 bg-blue-50" : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100"}>
+          {isFree ? "Free" : "Paid"}
+        </Badge>
+      )
     },
   },
   {
@@ -226,12 +245,12 @@ export const companyColumns: ColumnDef<Company>[] = [
     },
   },
   {
-    accessorKey: "membershipType",
+    accessorKey: "membershipTypes",
     header: "Membership Type",
     size: 260,
     cell: ({ row }) => {
-      const value = row.getValue("membershipType") as string | null
-      return <span className="text-sm">{value ?? <span className="text-muted-foreground">—</span>}</span>
+      const value = row.getValue("membershipTypes") as string[]
+      return <span className="text-sm">{value?.length > 0 ? value.join(', ') : <span className="text-muted-foreground">—</span>}</span>
     },
   },
   {

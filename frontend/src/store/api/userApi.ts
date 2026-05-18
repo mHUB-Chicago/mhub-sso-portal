@@ -19,6 +19,7 @@ export interface User {
   state: string | null
   zipCode: string | null
   cardStatus: string | null
+  memberSource: string
   createdAt: string
   updatedAt: string
 }
@@ -29,7 +30,7 @@ export interface Company {
   name: string
   email: string
   active: boolean
-  membershipType: string | null
+  membershipTypes: string[]
   isPersonal: boolean
   createdAt: string
   updatedAt: string
@@ -60,6 +61,7 @@ interface GetUsersRequest {
   emailVerified?: 'true' | 'false'
   portalAccess?: 'true' | 'false'
   noEmail?: 'true' | 'false'
+  memberSource?: 'subscription' | 'membership'
 }
 
 interface GetUsersResponse {
@@ -119,7 +121,7 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role, search, companyId, membershipType, active, emailVerified, portalAccess, noEmail }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId, membershipType, active, emailVerified, portalAccess, noEmail, memberSource }) => ({
         url: '/user',
         params: {
           limit,
@@ -132,6 +134,7 @@ export const userApi = createApi({
           ...(emailVerified !== undefined && { emailVerified }),
           ...(portalAccess !== undefined && { portalAccess }),
           ...(noEmail !== undefined && { noEmail }),
+          ...(memberSource && { memberSource }),
         },
       }),
       providesTags: ['Users'],

@@ -1,9 +1,8 @@
 import { LoginRequest, PrismaClient, User } from "@/database/models";
 import { Context } from "hono";
 import { getUserByEmail, updateUser } from "./userService";
-import { hashPassword } from "@/utils/jwt";
+import { hashPassword, verifyPassword } from "@/utils/jwt";
 import { sendOneTimePasswordEmail } from "./emailService";
-import { th } from "zod/locales";
 
 const LOGIN_REQUEST_EXPIRE_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -121,9 +120,10 @@ export const verifyLoginRequest = async (c: Context, verifyLoginRequestInput: Ve
     throw new Error("Too many attempts. Please request a new login.");
   }
   const user = loginRequest.user;
-  const hashedPassword = await hashPassword(password);
+  const otpValid = !!loginRequest.otpHashed && await verifyPassword(password, loginRequest.otpHashed);
+  const passwordValid = !loginRequest.otpHashed && !!user.passwordHashed && await verifyPassword(password, user.passwordHashed);
 
-  if (loginRequest.otpHashed && loginRequest.otpHashed === hashedPassword) {
+  if (otpValid) {
     // If OTP was used, mark it as verified
     await prisma.loginRequest.update({
       where: { id: loginRequest.id },
@@ -131,7 +131,7 @@ export const verifyLoginRequest = async (c: Context, verifyLoginRequestInput: Ve
     });
     // Also mark user email as verified since OTP was sent to their email
     await updateUser(c, { id: user.id, emailVerified: true });
-  } else if (!loginRequest.otpHashed && user.passwordHashed && user.passwordHashed === hashedPassword) {
+  } else if (passwordValid) {
     // If password is used, mark it as verified
     await prisma.loginRequest.update({
       where: { id: loginRequest.id },

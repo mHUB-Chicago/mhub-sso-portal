@@ -15,6 +15,7 @@ export interface GetPaginatedUsersInput {
   emailVerified?: 'true' | 'false';
   portalAccess?: 'true' | 'false';
   noEmail?: 'true' | 'false';
+  memberSource?: 'subscription' | 'membership';
 }
 
 export interface GetPaginatedUsersResult {
@@ -41,6 +42,7 @@ export interface CreateUserInput {
   zipCode?: string | null;
   cardStatus?: string | null;
   active?: boolean;
+  memberSource?: string;
 }
 
 export interface UpdateUserInput {
@@ -63,6 +65,7 @@ export interface UpdateUserInput {
   zipCode?: string | null;
   cardStatus?: string | null;
   active?: boolean;
+  memberSource?: string;
 }
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
@@ -86,6 +89,7 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     ...(input.active !== undefined && { active: input.active === 'true' }),
     ...(input.emailVerified !== undefined && { emailVerified: input.emailVerified === 'true' }),
     ...(membershipTypeFilter !== undefined && { membershipType: membershipTypeFilter }),
+    ...(input.memberSource && { memberSource: input.memberSource }),
   };
 
   const andConditions: any[] = [];
@@ -139,7 +143,7 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, membershipType, profilePhoto, phone, address, city, state, zipCode, cardStatus, active } = createUserInput;
+  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, membershipType, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
   const existingUser = await prisma.user.findFirst({
@@ -169,6 +173,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       zipCode: zipCode ?? null,
       cardStatus: cardStatus ?? null,
       active: active ?? true,
+      memberSource: memberSource ?? 'subscription',
     },
   });
   if (!createdUser) {
@@ -190,7 +195,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, membershipType, profilePhoto, phone, address, city, state, zipCode, cardStatus, active } = updateUserInput;
+  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, membershipType, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   return prisma.user.update({
@@ -214,6 +219,7 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       zipCode,
       cardStatus,
       active,
+      memberSource,
     },
   });
 }

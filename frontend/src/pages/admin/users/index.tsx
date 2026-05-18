@@ -21,6 +21,7 @@ export function AdminUsersPage() {
   const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
   const [emailVerified, setEmailVerified] = useState<'true' | 'false' | undefined>(undefined)
   const [portalAccess, setPortalAccess] = useState<'true' | 'false' | undefined>(undefined)
+  const [memberSource, setMemberSource] = useState<'subscription' | 'membership' | undefined>(undefined)
   const [exporting, setExporting] = useState(false)
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
@@ -32,6 +33,7 @@ export function AdminUsersPage() {
     active,
     emailVerified,
     portalAccess,
+    memberSource,
     noEmail: 'false',
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
@@ -72,6 +74,7 @@ export function AdminUsersPage() {
     else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
     else if (columnId === "emailVerified") setEmailVerified(value as 'true' | 'false' | undefined)
     else if (columnId === "portalAccess") setPortalAccess(value as 'true' | 'false' | undefined)
+    else if (columnId === "memberSource") setMemberSource(value as 'subscription' | 'membership' | undefined)
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -85,6 +88,7 @@ export function AdminUsersPage() {
     return [
       { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
       { columnId: "membershipType", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
+      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Paid" }, { value: "membership", label: "Free" }], width: "w-36" },
       { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
       { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
@@ -103,6 +107,7 @@ export function AdminUsersPage() {
         active,
         emailVerified,
         portalAccess,
+        memberSource,
         noEmail: 'false',
       }).unwrap()
       const rows = result.data.users.map(u => [

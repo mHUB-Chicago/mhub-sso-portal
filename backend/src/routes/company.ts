@@ -82,7 +82,7 @@ app.post(
             where: { id: existing.id },
             data: {
               name,
-              membershipType: row.membershipType ?? existing.membershipType,
+              membershipTypes: row.membershipType ? JSON.stringify([row.membershipType]) : existing.membershipTypes,
               active: row.active ?? existing.active,
             },
           });
@@ -93,7 +93,7 @@ app.post(
             email,
             peopleVineId: crypto.randomUUID(),
             active: row.active ?? true,
-            membershipType: row.membershipType ?? null,
+            membershipTypes: row.membershipType ? [row.membershipType] : [],
           });
           created++;
         }
