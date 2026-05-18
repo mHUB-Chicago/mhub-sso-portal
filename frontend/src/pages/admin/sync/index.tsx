@@ -795,6 +795,7 @@ function NeedsAttentionTab() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -803,6 +804,11 @@ function NeedsAttentionTab() {
                         <td className="px-4 py-2 text-gray-900">{u.name}</td>
                         <td className="px-4 py-2 font-mono text-xs text-gray-400">{u.email}</td>
                         <td className="px-4 py-2 text-gray-500 text-xs">{u.membershipType ?? '—'}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
+                            {u.active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -823,6 +829,7 @@ function NeedsAttentionTab() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Company</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -831,6 +838,11 @@ function NeedsAttentionTab() {
                         <td className="px-4 py-2 text-gray-900">{co.name}</td>
                         <td className="px-4 py-2 font-mono text-xs text-gray-400">{co.email}</td>
                         <td className="px-4 py-2 text-gray-500 text-xs">{co.membershipTypes?.join(', ') || '—'}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant={co.active ? 'default' : 'outline'} className={co.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
+                            {co.active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
