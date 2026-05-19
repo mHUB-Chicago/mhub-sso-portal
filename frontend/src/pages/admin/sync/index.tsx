@@ -695,8 +695,8 @@ function NeedsAttentionTab() {
   const [membershipType, setMembershipType] = useState('')
   const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
 
-  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true', cmtOnly: 'false' })
-  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true', cmtOnly: 'false' })
+  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
+  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
   const { data: membershipTypesData } = useGetMembershipTypesQuery()
   const membershipTypes = membershipTypesData?.data ?? []
 
@@ -716,11 +716,14 @@ function NeedsAttentionTab() {
   const showUsers = view === 'all' || view === 'users'
   const showCompanies = view === 'all' || view === 'companies'
 
+  const getIssue = (email: string) =>
+    email.endsWith('@placeholder.invalid') ? 'Not Linked to PV' : 'No Email in PV'
+
   const handleExport = () => {
-    const headers = ['Type', 'Name', 'PV Email', 'Membership Type']
+    const headers = ['Type', 'Name', 'PV Email', 'Membership Type', 'Issue']
     const rows = [
-      ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.membershipType ?? '']) : []),
-      ...(showCompanies ? noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '']) : []),
+      ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.membershipType ?? '', getIssue(u.email)]) : []),
+      ...(showCompanies ? noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getIssue(co.email)]) : []),
     ]
     downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
   }
@@ -791,20 +794,31 @@ function NeedsAttentionTab() {
             {noEmailUsers.length > 0 ? (
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
+                  <colgroup>
+                    <col className="w-40" />
+                    <col className="w-56" />
+                    <col className="w-48" />
+                    <col className="w-36" />
+                    <col className="w-24" />
+                  </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Issue</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {noEmailUsers.map(u => (
                       <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900">{u.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400">{u.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs">{u.membershipType ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{u.membershipType ?? '—'}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50 whitespace-nowrap">{getIssue(u.email)}</Badge>
+                        </td>
                         <td className="px-4 py-2">
                           <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
                             {u.active ? 'Active' : 'Inactive'}
@@ -825,20 +839,31 @@ function NeedsAttentionTab() {
             {noEmailCompanies.length > 0 ? (
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
+                  <colgroup>
+                    <col className="w-40" />
+                    <col className="w-56" />
+                    <col className="w-48" />
+                    <col className="w-36" />
+                    <col className="w-24" />
+                  </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Company</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Issue</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {noEmailCompanies.map(co => (
                       <tr key={co.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900">{co.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400">{co.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs">{co.membershipTypes?.join(', ') || '—'}</td>
+                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{co.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={co.email}>{co.email}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{co.membershipTypes?.join(', ') || '—'}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50 whitespace-nowrap">{getIssue(co.email)}</Badge>
+                        </td>
                         <td className="px-4 py-2">
                           <Badge variant={co.active ? 'default' : 'outline'} className={co.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
                             {co.active ? 'Active' : 'Inactive'}
@@ -873,8 +898,8 @@ export function AdminSyncPage() {
   const session = data?.data ?? null
   const isRunning = session?.status === 'running' || session?.status === 'pending'
 
-  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true', cmtOnly: 'false' })
-  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true', cmtOnly: 'false' })
+  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
+  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true' })
   const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0)
 
   useEffect(() => {
