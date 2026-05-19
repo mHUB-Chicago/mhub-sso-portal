@@ -87,7 +87,7 @@ export function AdminUsersPage() {
     return [
       { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
       { columnId: "membershipType", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
-      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Paid" }, { value: "membership", label: "Free" }], width: "w-36" },
+      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription" }, { value: "membership", label: "Member" }], width: "w-36" },
       { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
       { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },

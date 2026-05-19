@@ -98,7 +98,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
       return (
         <span className="flex items-center gap-1.5 text-sm">
           {val ?? <span className="text-muted-foreground">—</span>}
-          {isFree && <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-600 border-blue-300">Free</Badge>}
+          {isFree && <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-600 border-blue-300">Member</Badge>}
         </span>
       )
     },
@@ -111,7 +111,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
       const isFree = row.original.memberSource === 'membership'
       return (
         <Badge variant={isFree ? "outline" : "default"} className={isFree ? "text-blue-600 border-blue-300 bg-blue-50" : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100"}>
-          {isFree ? "Free" : "Paid"}
+          {isFree ? "Member" : "Subscription"}
         </Badge>
       )
     },
