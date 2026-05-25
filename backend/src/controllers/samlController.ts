@@ -133,8 +133,9 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
   const currentUser = await verifySession(c);
   const sessionId = getSessionId(c);
   if (!currentUser || !sessionId) {
-    const redirectUrl = new URL(`${c.env.FRONTEND_URL}/login`);
-    return c.redirect(redirectUrl.toString());
+    const loginUrl = new URL(`${c.env.FRONTEND_URL}/login`);
+    loginUrl.searchParams.set('returnTo', `${c.env.BACKEND_URL}/saml/sso/${serviceProviderId}`);
+    return c.redirect(loginUrl.toString());
   }
 
   const serviceProvider = await getServiceProviderById(c, serviceProviderId);
