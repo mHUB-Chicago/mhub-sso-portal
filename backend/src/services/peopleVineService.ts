@@ -726,7 +726,7 @@ export const syncPhaseUsers = async (
     const pvUserActive = (customer.pvActive ?? true) && (
       isMember
         ? companyQualifiesForFreeMember(company)
-        : ((company.active !== false) && (isSubscriber || activePVSubscriberIds.has(company.peopleVineId ?? '')))
+        : ((company.active !== false) && isSubscriber)
     );
     const memberSource = isSubscriber ? 'subscription' : 'membership';
 
