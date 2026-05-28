@@ -1128,7 +1128,6 @@ export function AdminSyncPage() {
             <MembershipTypesManager />
             <PrimarySubscriptionTypesManager />
             <AddonSubscriptionTypesManager />
-            <FreeMemberExclusionTypesManager />
           </div>
         )}
         {activeTab === 'CONTINUE' && (
