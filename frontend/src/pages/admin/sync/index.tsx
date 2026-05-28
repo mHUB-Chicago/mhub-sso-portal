@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
 import { toCsv, downloadCsv } from '@/utils/csv'
-import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
+import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
 import { useGetUsersQuery } from '@/store/api/userApi'
 import { useGetCompaniesQuery } from '@/store/api/companyApi'
 
@@ -349,36 +349,6 @@ function AddonSubscriptionTypesManager() {
   )
 }
 
-function FreeMemberExclusionTypesManager() {
-  const { data, isLoading } = useGetFreeMemberExclusionTypesQuery()
-  const [addType, { isLoading: isAdding }] = useAddFreeMemberExclusionTypeMutation()
-  const [removeType] = useRemoveFreeMemberExclusionTypeMutation()
-  const types = data?.data ?? []
-
-  const handleAdd = async (name: string) => {
-    try { await addType({ name }).unwrap() }
-    catch { toast.error('Failed to add exclusion type') }
-  }
-
-  const handleRemove = async (name: string) => {
-    try { await removeType(name).unwrap() }
-    catch { toast.error('Failed to remove exclusion type') }
-  }
-
-  return (
-    <TypesManager
-      title="Free Member Exclusion Types"
-      description="is_member=True users whose company only has these subscription types will NOT get portal access. Use this to exclude desk/space renters who are members but should not log in."
-      placeholder="Add exclusion type…"
-      badgeClass="bg-red-50 text-red-700 border-red-200"
-      types={types}
-      isLoading={isLoading}
-      isAdding={isAdding}
-      onAdd={handleAdd}
-      onRemove={handleRemove}
-    />
-  )
-}
 
 type ClearResult = { usersDeleted: number; companiesDeleted: number }
 type CompanyImport = { subscriptionNo: string; companyName: string; primaryMembership: string | null }
