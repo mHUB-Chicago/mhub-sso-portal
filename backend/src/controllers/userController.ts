@@ -26,8 +26,8 @@ export const handleGetMyUser = async (c: Context<AppType>) => {
 };
 
 export const handleGetUsers = async (c: Context<AppType, string, QueryInput<typeof GetUsersRequestSchema>>) => {
-  const { limit, offset, role, search, companyId, membershipType, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly } = c.req.valid("query");
-  const result: GetPaginatedUsersResult = await getPaginatedUsers(c, { limit, offset, role, search, companyId, membershipType, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly });
+  const { limit, offset, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly } = c.req.valid("query");
+  const result: GetPaginatedUsersResult = await getPaginatedUsers(c, { limit, offset, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly });
   const response = GetUsersResponseSchema.parse({
     success: true,
     message: "Success",

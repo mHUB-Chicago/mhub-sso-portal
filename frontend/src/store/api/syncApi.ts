@@ -48,7 +48,7 @@ export const syncApi = createApi({
       return headers
     },
   }),
-  tagTypes: ['SyncStatus', 'MembershipTypes'],
+  tagTypes: ['SyncStatus', 'MembershipTypes', 'PrimarySubscriptionTypes', 'AddonSubscriptionTypes', 'FreeMemberExclusionTypes'],
   endpoints: (builder) => ({
     getSyncStatus: builder.query<SyncStatusResponse, void>({
       query: () => '/sync/status',
@@ -72,7 +72,7 @@ export const syncApi = createApi({
       query: () => ({ url: '/sync/fresh', method: 'POST', body: {} }),
     }),
     importFiltered: builder.mutation<{ success: boolean; data: { sessionId: string } }, {
-      companies: { subscriptionNo: string; companyName: string; membershipType: string | null }[]
+      companies: { subscriptionNo: string; companyName: string; primaryMembership: string | null }[]
       members: { customerNo: string; email: string; firstName: string; lastName: string; companyName: string; username: string | null }[]
     }>({
       query: (body) => ({ url: '/sync/import-filtered', method: 'POST', body }),
@@ -99,7 +99,43 @@ export const syncApi = createApi({
       query: (name) => ({ url: `/config/membership-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
       invalidatesTags: ['MembershipTypes'],
     }),
+    getPrimarySubscriptionTypes: builder.query<{ success: boolean; data: string[] }, void>({
+      query: () => '/config/primary-subscription-types',
+      providesTags: ['PrimarySubscriptionTypes'],
+    }),
+    addPrimarySubscriptionType: builder.mutation<{ success: boolean }, { name: string }>({
+      query: (body) => ({ url: '/config/primary-subscription-types', method: 'POST', body }),
+      invalidatesTags: ['PrimarySubscriptionTypes'],
+    }),
+    removePrimarySubscriptionType: builder.mutation<{ success: boolean }, string>({
+      query: (name) => ({ url: `/config/primary-subscription-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
+      invalidatesTags: ['PrimarySubscriptionTypes'],
+    }),
+    getAddonSubscriptionTypes: builder.query<{ success: boolean; data: string[] }, void>({
+      query: () => '/config/addon-subscription-types',
+      providesTags: ['AddonSubscriptionTypes'],
+    }),
+    addAddonSubscriptionType: builder.mutation<{ success: boolean }, { name: string }>({
+      query: (body) => ({ url: '/config/addon-subscription-types', method: 'POST', body }),
+      invalidatesTags: ['AddonSubscriptionTypes'],
+    }),
+    removeAddonSubscriptionType: builder.mutation<{ success: boolean }, string>({
+      query: (name) => ({ url: `/config/addon-subscription-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
+      invalidatesTags: ['AddonSubscriptionTypes'],
+    }),
+    getFreeMemberExclusionTypes: builder.query<{ success: boolean; data: string[] }, void>({
+      query: () => '/config/free-member-exclusion-types',
+      providesTags: ['FreeMemberExclusionTypes'],
+    }),
+    addFreeMemberExclusionType: builder.mutation<{ success: boolean }, { name: string }>({
+      query: (body) => ({ url: '/config/free-member-exclusion-types', method: 'POST', body }),
+      invalidatesTags: ['FreeMemberExclusionTypes'],
+    }),
+    removeFreeMemberExclusionType: builder.mutation<{ success: boolean }, string>({
+      query: (name) => ({ url: `/config/free-member-exclusion-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
+      invalidatesTags: ['FreeMemberExclusionTypes'],
+    }),
   }),
 })
 
-export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery } = syncApi
+export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation } = syncApi

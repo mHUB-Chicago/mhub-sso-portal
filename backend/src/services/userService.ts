@@ -10,7 +10,7 @@ export interface GetPaginatedUsersInput {
   offset: number;
   search?: string;
   companyId?: string;
-  membershipType?: string;
+  primaryMembership?: string;
   active?: 'true' | 'false';
   emailVerified?: 'true' | 'false';
   portalAccess?: 'true' | 'false';
@@ -34,7 +34,8 @@ export interface CreateUserInput {
   peopleVineId: string;
   mustResetPassword?: boolean;
   emailVerified?: boolean;
-  membershipType?: string | null;
+  primaryMembership?: string | null;
+  addOns?: string[];
   profilePhoto?: string | null;
   phone?: string | null;
   address?: string | null;
@@ -57,7 +58,8 @@ export interface UpdateUserInput {
   peopleVineId?: string;
   emailVerified?: boolean;
   mustResetPassword?: boolean;
-  membershipType?: string | null;
+  primaryMembership?: string | null;
+  addOns?: string[];
   profilePhoto?: string | null;
   phone?: string | null;
   address?: string | null;
@@ -75,8 +77,8 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
   const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
 
   let membershipTypeFilter: any = undefined;
-  if (input.membershipType) {
-    membershipTypeFilter = input.membershipType;
+  if (input.primaryMembership) {
+    membershipTypeFilter = input.primaryMembership;
   } else if (input.portalAccess !== undefined) {
     membershipTypeFilter = input.portalAccess === 'true' ? { in: cmtNames } : { notIn: cmtNames };
   } else if (input.cmtOnly !== 'false') {
@@ -91,7 +93,7 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     ...(input.companyId && { companyId: input.companyId }),
     ...(input.active !== undefined && { active: input.active === 'true' }),
     ...(input.emailVerified !== undefined && { emailVerified: input.emailVerified === 'true' }),
-    ...(membershipTypeFilter !== undefined && { membershipType: membershipTypeFilter }),
+    ...(membershipTypeFilter !== undefined && { primaryMembership: membershipTypeFilter }),
     ...(input.memberSource && { memberSource: input.memberSource }),
   };
 
@@ -146,7 +148,7 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, membershipType, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = createUserInput;
+  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
   const existingUser = await prisma.user.findFirst({
@@ -167,7 +169,8 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       username: normalizedUsername,
       mustResetPassword: mustResetPassword ?? true,
       emailVerified: emailVerified ?? false,
-      membershipType: membershipType ?? null,
+      primaryMembership: primaryMembership ?? null,
+      addOns: JSON.stringify(addOns ?? []),
       profilePhoto: profilePhoto ?? null,
       phone: phone ?? null,
       address: address ?? null,
@@ -198,7 +201,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, membershipType, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = updateUserInput;
+  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   return prisma.user.update({
@@ -213,7 +216,8 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       peopleVineId,
       emailVerified,
       mustResetPassword,
-      membershipType,
+      primaryMembership,
+      ...(addOns !== undefined && { addOns: JSON.stringify(addOns) }),
       profilePhoto,
       phone,
       address,
@@ -238,7 +242,7 @@ export const deactivateUser = async (c: Context, id: string): Promise<void> => {
 export const deactivateUsersByCompanyId = async (c: Context, companyId: string) => {
   const prisma: PrismaClient = c.get("db");
   const { count } = await prisma.user.updateMany({
-    where: { companyId },
+    where: { companyId, memberSource: { not: 'membership' } },
     data: { active: false },
   });
   console.log(`Deactivated ${count} users for company ID: ${companyId}`);

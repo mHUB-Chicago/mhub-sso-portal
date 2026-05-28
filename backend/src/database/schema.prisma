@@ -57,7 +57,8 @@ model User {
   emailVerified        Boolean               @default(false)
   mustResetPassword    Boolean               @default(false)
   lastLogin            DateTime?
-  membershipType       String?
+  primaryMembership    String?
+  addOns               String                @default("[]")
   profilePhoto         String?
   phone                String?
   address              String?
@@ -200,6 +201,21 @@ model CompanyMembershipType {
 }
 
 model PortalAccessType {
+  name      String   @id
+  createdAt DateTime @default(now())
+}
+
+model PrimarySubscriptionType {
+  name      String   @id
+  createdAt DateTime @default(now())
+}
+
+model AddonSubscriptionType {
+  name      String   @id
+  createdAt DateTime @default(now())
+}
+
+model FreeMemberExclusionType {
   name      String   @id
   createdAt DateTime @default(now())
 }

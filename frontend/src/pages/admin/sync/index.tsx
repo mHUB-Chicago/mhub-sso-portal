@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
 import { toCsv, downloadCsv } from '@/utils/csv'
-import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
+import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
 import { useGetUsersQuery } from '@/store/api/userApi'
 import { useGetCompaniesQuery } from '@/store/api/companyApi'
 
@@ -287,8 +287,101 @@ function MembershipTypesManager() {
   )
 }
 
+function PrimarySubscriptionTypesManager() {
+  const { data, isLoading } = useGetPrimarySubscriptionTypesQuery()
+  const [addType, { isLoading: isAdding }] = useAddPrimarySubscriptionTypeMutation()
+  const [removeType] = useRemovePrimarySubscriptionTypeMutation()
+  const types = data?.data ?? []
+
+  const handleAdd = async (name: string) => {
+    try { await addType({ name }).unwrap() }
+    catch { toast.error('Failed to add primary subscription type') }
+  }
+
+  const handleRemove = async (name: string) => {
+    try { await removeType(name).unwrap() }
+    catch { toast.error('Failed to remove primary subscription type') }
+  }
+
+  return (
+    <TypesManager
+      title="Primary Subscription Types"
+      description="Subscriptions listed here are treated as the primary membership a user inherits from their company. Used to populate the Primary Membership column on users."
+      placeholder="Add primary subscription type…"
+      badgeClass="bg-blue-50 text-blue-700 border-blue-200"
+      types={types}
+      isLoading={isLoading}
+      isAdding={isAdding}
+      onAdd={handleAdd}
+      onRemove={handleRemove}
+    />
+  )
+}
+
+function AddonSubscriptionTypesManager() {
+  const { data, isLoading } = useGetAddonSubscriptionTypesQuery()
+  const [addType, { isLoading: isAdding }] = useAddAddonSubscriptionTypeMutation()
+  const [removeType] = useRemoveAddonSubscriptionTypeMutation()
+  const types = data?.data ?? []
+
+  const handleAdd = async (name: string) => {
+    try { await addType({ name }).unwrap() }
+    catch { toast.error('Failed to add add-on subscription type') }
+  }
+
+  const handleRemove = async (name: string) => {
+    try { await removeType(name).unwrap() }
+    catch { toast.error('Failed to remove add-on subscription type') }
+  }
+
+  return (
+    <TypesManager
+      title="Add-on Subscription Types"
+      description="Subscriptions listed here are treated as add-ons on top of a primary membership. Used to populate the Add-ons column on users."
+      placeholder="Add add-on subscription type…"
+      badgeClass="bg-purple-50 text-purple-700 border-purple-200"
+      types={types}
+      isLoading={isLoading}
+      isAdding={isAdding}
+      onAdd={handleAdd}
+      onRemove={handleRemove}
+    />
+  )
+}
+
+function FreeMemberExclusionTypesManager() {
+  const { data, isLoading } = useGetFreeMemberExclusionTypesQuery()
+  const [addType, { isLoading: isAdding }] = useAddFreeMemberExclusionTypeMutation()
+  const [removeType] = useRemoveFreeMemberExclusionTypeMutation()
+  const types = data?.data ?? []
+
+  const handleAdd = async (name: string) => {
+    try { await addType({ name }).unwrap() }
+    catch { toast.error('Failed to add exclusion type') }
+  }
+
+  const handleRemove = async (name: string) => {
+    try { await removeType(name).unwrap() }
+    catch { toast.error('Failed to remove exclusion type') }
+  }
+
+  return (
+    <TypesManager
+      title="Free Member Exclusion Types"
+      description="is_member=True users whose company only has these subscription types will NOT get portal access. Use this to exclude desk/space renters who are members but should not log in."
+      placeholder="Add exclusion type…"
+      badgeClass="bg-red-50 text-red-700 border-red-200"
+      types={types}
+      isLoading={isLoading}
+      isAdding={isAdding}
+      onAdd={handleAdd}
+      onRemove={handleRemove}
+    />
+  )
+}
+
 type ClearResult = { usersDeleted: number; companiesDeleted: number }
-type CompanyImport = { subscriptionNo: string; companyName: string; membershipType: string | null }
+type CompanyImport = { subscriptionNo: string; companyName: string; primaryMembership: string | null }
 type MemberImport = { customerNo: string; email: string; firstName: string; lastName: string; companyName: string; username: string | null }
 type ImportData = { companies: CompanyImport[]; members: MemberImport[] }
 type ConfirmMode = 'clear' | 'clear-and-sync'
@@ -339,7 +432,7 @@ function FreshSyncTab() {
         .map((r: any) => ({
           subscriptionNo: r.subcription_no ? String(r.subcription_no) : '',
           companyName: String(r.company_name).trim(),
-          membershipType: r.membership_type ? String(r.membership_type).trim() : null,
+          primaryMembership: r.membership_type ? String(r.membership_type).trim() : null,
         }))
       const memberRows = utils.sheet_to_json<{ customer_no?: number | string; email?: string; first_name?: string; last_name?: string; company_name?: string; username?: string }>(wb.Sheets['Members'] ?? {}) as any[]
       const members: MemberImport[] = memberRows
@@ -692,7 +785,7 @@ function AuditLogsTab() {
 
 function NeedsAttentionTab() {
   const [search, setSearch] = useState('')
-  const [membershipType, setMembershipType] = useState('')
+  const [primaryMembership, setPrimaryMembership] = useState('')
   const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
@@ -706,11 +799,11 @@ function NeedsAttentionTab() {
   const q = search.toLowerCase().trim()
   const noEmailUsers = allNoEmailUsers.filter(u =>
     (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-    (!membershipType || u.membershipType === membershipType)
+    (!primaryMembership || u.primaryMembership === primaryMembership)
   )
   const noEmailCompanies = allNoEmailCompanies.filter(co =>
     (!q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q)) &&
-    (!membershipType || co.membershipTypes?.includes(membershipType))
+    (!primaryMembership || co.membershipTypes?.includes(primaryMembership))
   )
 
   const showUsers = view === 'all' || view === 'users'
@@ -722,7 +815,7 @@ function NeedsAttentionTab() {
   const handleExport = () => {
     const headers = ['Type', 'Name', 'PV Email', 'Membership Type', 'Issue']
     const rows = [
-      ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.membershipType ?? '', getIssue(u.email)]) : []),
+      ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', getIssue(u.email)]) : []),
       ...(showCompanies ? noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getIssue(co.email)]) : []),
     ]
     downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
@@ -774,8 +867,8 @@ function NeedsAttentionTab() {
             className="w-56 h-9 text-sm"
           />
           <select
-            value={membershipType}
-            onChange={e => setMembershipType(e.target.value)}
+            value={primaryMembership}
+            onChange={e => setPrimaryMembership(e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">All Memberships</option>
@@ -815,7 +908,7 @@ function NeedsAttentionTab() {
                       <tr key={u.id} className="hover:bg-gray-50">
                         <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
                         <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{u.membershipType ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{u.primaryMembership ?? '—'}</td>
                         <td className="px-4 py-2">
                           <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50 whitespace-nowrap">{getIssue(u.email)}</Badge>
                         </td>
@@ -1033,6 +1126,9 @@ export function AdminSyncPage() {
               isCancelling={isCancelling}
             />
             <MembershipTypesManager />
+            <PrimarySubscriptionTypesManager />
+            <AddonSubscriptionTypesManager />
+            <FreeMemberExclusionTypesManager />
           </div>
         )}
         {activeTab === 'CONTINUE' && (

@@ -76,7 +76,7 @@ app.post(
   roleMiddleware([Role.ADMIN]),
   async (c) => {
     const prisma: PrismaClient = c.get("db");
-    const rows: { name: string; email: string; companyName?: string; membershipType?: string; active?: boolean; emailVerified?: boolean }[] = await c.req.json();
+    const rows: { name: string; email: string; companyName?: string; primaryMembership?: string; active?: boolean; emailVerified?: boolean }[] = await c.req.json();
 
     let created = 0, updated = 0, skipped = 0;
     const errors: string[] = [];
@@ -101,7 +101,7 @@ app.post(
             name,
             email,
             companyId,
-            membershipType: row.membershipType ?? existing.membershipType,
+            primaryMembership: row.primaryMembership ?? existing.primaryMembership,
             active: row.active ?? existing.active,
             emailVerified: row.emailVerified ?? existing.emailVerified,
           });
@@ -113,7 +113,7 @@ app.post(
             peopleVineId: crypto.randomUUID(),
             role: Role.USER,
             companyId,
-            membershipType: row.membershipType ?? null,
+            primaryMembership: row.primaryMembership ?? null,
             active: row.active ?? true,
             emailVerified: row.emailVerified ?? false,
             mustResetPassword: true,

@@ -89,18 +89,39 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     cell: ({ row }) => <span>{row.original.companyName || '-'}</span>,
   },
   {
-    accessorKey: "membershipType",
-    header: "Membership",
+    accessorKey: "primaryMembership",
+    header: "Primary Membership",
     size: 200,
     cell: ({ row }) => {
-      const val = row.original.membershipType
-      const isFree = row.original.memberSource === 'membership'
+      const val = row.original.primaryMembership
+      return <span className="text-sm">{val ?? <span className="text-muted-foreground">—</span>}</span>
+    },
+  },
+  {
+    id: "addOns",
+    header: "Add-ons",
+    size: 200,
+    cell: ({ row }) => {
+      const raw = row.original.addOns
+      let addOns: string[] = []
+      try { addOns = JSON.parse(raw) } catch {}
+      if (addOns.length === 0) return <span className="text-muted-foreground">—</span>
       return (
-        <span className="flex items-center gap-1.5 text-sm">
-          {val ?? <span className="text-muted-foreground">—</span>}
-          {isFree && <Badge variant="outline" className="text-xs px-1.5 py-0 text-blue-600 border-blue-300">Member</Badge>}
-        </span>
+        <div className="flex flex-wrap gap-1">
+          {addOns.map(a => (
+            <Badge key={a} variant="outline" className="text-xs px-1.5 py-0 text-purple-700 border-purple-300 bg-purple-50">{a}</Badge>
+          ))}
+        </div>
       )
+    },
+  },
+  {
+    accessorKey: "active",
+    header: "Active",
+    size: 100,
+    cell: ({ row }) => {
+      const active = row.original.active
+      return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
     },
   },
   {
@@ -121,22 +142,13 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     header: "Portal Access",
     size: 120,
     cell: ({ row }) => {
-      const membershipType = row.original.membershipType
-      const hasAccess = !!membershipType && portalAccessTypes.has(membershipType)
+      const primaryMembership = row.original.primaryMembership
+      const hasAccess = !!primaryMembership && portalAccessTypes.has(primaryMembership)
       return (
         <Badge variant={hasAccess ? "default" : "outline"} className={hasAccess ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100" : "text-gray-400"}>
           {hasAccess ? "Yes" : "No"}
         </Badge>
       )
-    },
-  },
-  {
-    accessorKey: "active",
-    header: "Active",
-    size: 100,
-    cell: ({ row }) => {
-      const active = row.original.active
-      return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
     },
   },
   {

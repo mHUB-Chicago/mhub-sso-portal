@@ -180,7 +180,7 @@ app.post("/api/sync/import-filtered", async (c) => {
   const user = c.get('user');
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
   const { companies, members } = await c.req.json<{
-    companies: { subscriptionNo: string; companyName: string; membershipType: string | null }[];
+    companies: { subscriptionNo: string; companyName: string; primaryMembership: string | null }[];
     members: { customerNo: string; email: string; firstName: string; lastName: string; companyName: string; username: string | null }[];
   }>();
   const prisma = c.get('db');
@@ -323,6 +323,87 @@ app.delete("/api/config/membership-types/:name", async (c) => {
   const name = decodeURIComponent(c.req.param('name'));
   const prisma = c.get('db');
   await prisma.companyMembershipType.delete({ where: { name } }).catch(() => {});
+  return c.json({ success: true });
+});
+
+app.get("/api/config/primary-subscription-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const types = await prisma.primarySubscriptionType.findMany({ orderBy: { name: 'asc' } });
+  return c.json({ success: true, data: types.map(t => t.name) });
+});
+
+app.post("/api/config/primary-subscription-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
+  const prisma = c.get('db');
+  await prisma.primarySubscriptionType.upsert({ where: { name: name.trim() }, create: { name: name.trim() }, update: {} });
+  return c.json({ success: true });
+});
+
+app.delete("/api/config/primary-subscription-types/:name", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const name = decodeURIComponent(c.req.param('name'));
+  const prisma = c.get('db');
+  await prisma.primarySubscriptionType.delete({ where: { name } }).catch(() => {});
+  return c.json({ success: true });
+});
+
+app.get("/api/config/addon-subscription-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const types = await prisma.addonSubscriptionType.findMany({ orderBy: { name: 'asc' } });
+  return c.json({ success: true, data: types.map(t => t.name) });
+});
+
+app.post("/api/config/addon-subscription-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
+  const prisma = c.get('db');
+  await prisma.addonSubscriptionType.upsert({ where: { name: name.trim() }, create: { name: name.trim() }, update: {} });
+  return c.json({ success: true });
+});
+
+app.delete("/api/config/addon-subscription-types/:name", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const name = decodeURIComponent(c.req.param('name'));
+  const prisma = c.get('db');
+  await prisma.addonSubscriptionType.delete({ where: { name } }).catch(() => {});
+  return c.json({ success: true });
+});
+
+app.get("/api/config/free-member-exclusion-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const types = await prisma.freeMemberExclusionType.findMany({ orderBy: { name: 'asc' } });
+  return c.json({ success: true, data: types.map(t => t.name) });
+});
+
+app.post("/api/config/free-member-exclusion-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
+  const prisma = c.get('db');
+  await prisma.freeMemberExclusionType.upsert({ where: { name: name.trim() }, create: { name: name.trim() }, update: {} });
+  return c.json({ success: true });
+});
+
+app.delete("/api/config/free-member-exclusion-types/:name", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const name = decodeURIComponent(c.req.param('name'));
+  const prisma = c.get('db');
+  await prisma.freeMemberExclusionType.delete({ where: { name } }).catch(() => {});
   return c.json({ success: true });
 });
 

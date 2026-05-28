@@ -12,10 +12,10 @@ const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) => Prom
 
 const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 
-export const hasPortalAccess = async (c: Context, membershipType: string | null | undefined): Promise<boolean> => {
-  if (!membershipType) return false;
+export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined): Promise<boolean> => {
+  if (!primaryMembership) return false;
   const prisma: PrismaClient = c.get('db');
-  const type = await prisma.companyMembershipType.findUnique({ where: { name: membershipType.trim() } });
+  const type = await prisma.companyMembershipType.findUnique({ where: { name: primaryMembership.trim() } });
   return type !== null;
 };
 
@@ -335,15 +335,18 @@ const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const SUB_PAGE_SIZE = 100;
+
 const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): Promise<{
   customers: PeopleVineCustomer[];
   hadErrors: boolean;
+  skippedSubPages: number[];
   subscriptionInfoMap: Map<string, { membershipTypes: string[]; isActive: boolean }>;
   individualSubscriberIds: Set<string>;
   portalAccessTypes: Set<string>;
 }> => {
   const subscriptions: any[] = [];
-  let hadErrors = false;
+  const skippedSubPages: number[] = [];
 
   for (let pageNumber = 1; pageNumber <= 500; pageNumber++) {
     let result: { data: any[]; pagination: PvPagination | null };
@@ -354,14 +357,14 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): P
         method: 'GET',
         queryParams: {
           Status: 'active',
-          Page_Size: '32',
+          Page_Size: String(SUB_PAGE_SIZE),
           Page_Number: String(pageNumber),
           ...(customerNo ? { Customer_Id: customerNo } : {}),
         },
       });
     } catch {
       console.warn(`[subscriptions] page ${pageNumber} failed, skipping`);
-      hadErrors = true;
+      skippedSubPages.push(pageNumber);
       continue;
     }
 
@@ -425,7 +428,7 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): P
     companies.push((dbMatch ?? subs[0]).customer);
   }
 
-  return { customers: normalizeCustomers(companies), hadErrors, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes };
+  return { customers: normalizeCustomers(companies), hadErrors: skippedSubPages.length > 0, skippedSubPages, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes };
 };
 
 const getCustomers = async (
@@ -540,7 +543,7 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
   await flush(5, 'Fetching subscriptions');
   log('info', 'Retrieving PeopleVine subscription data');
 
-  const { customers: subCustomers, hadErrors, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes } = await getCustomersFromSubscriptions(c);
+  const { customers: subCustomers, hadErrors, skippedSubPages, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes } = await getCustomersFromSubscriptions(c);
   const companyProfilesMap = new Map<string, PeopleVineCustomer>();
   for (const cu of subCustomers) companyProfilesMap.set(cu.id.toString(), cu);
 
@@ -602,7 +605,7 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
     activatedCompanyIds: Array.from(activatedCompanyIds),
     subscriberMemberships,
     lastCustomerPage: 0,
-    companyHadErrors: hadErrors,
+    skippedSubPages,
   });
   await flush(30, 'Companies synced — queuing user sync');
   log('info', 'Companies sync complete. User sync queued.');
@@ -626,10 +629,15 @@ export const syncPhaseUsers = async (
   const dbCompanies = await prisma.company.findMany();
   const companiesByNameMap = new Map<string, Company>();
   for (const co of dbCompanies) {
-    if (companiesByNameMap.has(co.name)) {
-      log('warn', `[sync] Duplicate company name: "${co.name}" — IDs ${companiesByNameMap.get(co.name)!.id} and ${co.id}.`);
+    const existing = companiesByNameMap.get(co.name);
+    if (existing) {
+      log('warn', `[sync] Duplicate company name: "${co.name}" — IDs ${existing.id} and ${co.id}.`);
+      if (!existing.peopleVineId && co.peopleVineId) {
+        companiesByNameMap.set(co.name, co);
+      }
+    } else {
+      companiesByNameMap.set(co.name, co);
     }
-    companiesByNameMap.set(co.name, co);
   }
 
   log('info', `Retrieving customers from PeopleVine (pages ${startPage}–${startPage + BATCH_PAGES - 1})`);
@@ -655,9 +663,24 @@ export const syncPhaseUsers = async (
 
   const dbPortalTypes = await prisma.companyMembershipType.findMany({ select: { name: true } });
   const portalTypeSet = new Set(dbPortalTypes.map(t => t.name));
-  const getBestType = (co: { membershipTypes: string }): string | null => {
+  const dbPrimaryTypes = await prisma.primarySubscriptionType.findMany({ select: { name: true } });
+  const primaryTypeSet = new Set(dbPrimaryTypes.map(t => t.name));
+  const dbAddonTypes = await prisma.addonSubscriptionType.findMany({ select: { name: true } });
+  const addonTypeSet = new Set(dbAddonTypes.map(t => t.name));
+  const dbFreeMemberExclusions = await prisma.freeMemberExclusionType.findMany({ select: { name: true } });
+  const freeMemberExclusionSet = new Set(dbFreeMemberExclusions.map(t => t.name));
+
+  const getPrimaryType = (co: { membershipTypes: string }): string | null => {
     const types = JSON.parse(co.membershipTypes || '[]') as string[];
-    return types.find(t => portalTypeSet.has(t)) ?? types[0] ?? null;
+    return types.find(t => primaryTypeSet.has(t)) ?? types.find(t => portalTypeSet.has(t)) ?? types[0] ?? null;
+  };
+  const getAddonTypes = (co: { membershipTypes: string }): string[] => {
+    const types = JSON.parse(co.membershipTypes || '[]') as string[];
+    return types.filter(t => addonTypeSet.has(t));
+  };
+  const companyQualifiesForFreeMember = (co: { membershipTypes: string }): boolean => {
+    const types = JSON.parse(co.membershipTypes || '[]') as string[];
+    return types.some(t => (portalTypeSet.has(t) || primaryTypeSet.has(t)) && !freeMemberExclusionSet.has(t));
   };
 
   await flush(70, 'Syncing users');
@@ -700,15 +723,20 @@ export const syncPhaseUsers = async (
     const existingByPvId = byPvId.get(pvId);
     const existingByEmail = byEmail.get(customer.email.toLowerCase());
     const existingUser = existingByPvId ?? existingByEmail;
-    const pvUserActive = (customer.pvActive ?? true) && (company.active !== false);
-    const memberSource = isSubscriber || hadExistingCompany ? 'subscription' : 'membership';
+    const pvUserActive = (customer.pvActive ?? true) && (
+      isMember
+        ? companyQualifiesForFreeMember(company)
+        : ((company.active !== false) && (isSubscriber || !!company.peopleVineId))
+    );
+    const memberSource = isSubscriber ? 'subscription' : 'membership';
 
     if (existingUser) {
       const needsUpdate =
         existingUser.name !== customer.full_name ||
         existingUser.email !== customer.email.toLowerCase() ||
         existingUser.companyId !== company.id ||
-        existingUser.membershipType !== getBestType(company) ||
+        existingUser.primaryMembership !== getPrimaryType(company) ||
+        existingUser.addOns !== JSON.stringify(getAddonTypes(company)) ||
         existingUser.active !== pvUserActive ||
         existingUser.profilePhoto !== (customer.profilePhoto ?? null) ||
         existingUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
@@ -730,7 +758,8 @@ export const syncPhaseUsers = async (
             username: customer.username ?? null,
             companyId: company.id,
             peopleVineId: pvId,
-            membershipType: getBestType(company),
+            primaryMembership: getPrimaryType(company),
+            addOns: getAddonTypes(company),
             profilePhoto: customer.profilePhoto,
             active: pvUserActive,
             phone: customer.phone ?? null,
@@ -757,7 +786,8 @@ export const syncPhaseUsers = async (
         peopleVineId: pvId,
         role: Role.USER,
         companyId: company.id,
-        membershipType: getBestType(company),
+        primaryMembership: getPrimaryType(company),
+        addOns: getAddonTypes(company),
         profilePhoto: customer.profilePhoto,
         active: pvUserActive,
         phone: customer.phone ?? null,
@@ -800,17 +830,40 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   const session = sessionId ? await prisma.syncSession.findUnique({ where: { id: sessionId } }) : null;
   const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
 
-  if (meta.companyHadErrors || meta.userHadErrors) {
+  const activePVCompanyIds: string[] = meta.activePVCompanyIds ?? [];
+  const activePVSubscriberIds = new Set<string>(meta.activePVSubscriberIds ?? []);
+  const activePVCompanySet = new Set(activePVCompanyIds);
+
+  if (activePVCompanyIds.length > 0) {
+    const orphanedUsers = await prisma.user.findMany({
+      where: { role: 'USER', peopleVineId: null, memberSource: { not: 'membership' } },
+      include: { company: { select: { peopleVineId: true } } },
+    });
+    log('info', `[deactivate] Found ${orphanedUsers.length} orphaned users with no PV ID.`);
+    await runConcurrent(orphanedUsers, 20, async (u) => {
+      const companyPvId = u.company?.peopleVineId;
+      if (companyPvId && (activePVCompanySet.has(companyPvId) || activePVSubscriberIds.has(companyPvId))) return;
+      log('info', `[deactivate] Deactivating orphaned user: ${u.email}`);
+      await deactivateUser(c, u.id);
+    }, () => checkCancelled(prisma, sessionId));
+  } else {
+    log('warn', `[deactivate] activePVCompanyIds is empty — skipping orphaned user deactivation.`);
+  }
+
+  const skippedSubPages: number[] = meta.skippedSubPages ?? (meta.companyHadErrors ? [2] : []);
+  const hasRealSubErrors = skippedSubPages.some(p => p !== 2);
+  if (hasRealSubErrors || meta.userHadErrors) {
     log('warn', '[sync] Skipping deactivation — previous phase had errors.');
     log('info', 'PeopleVine synchronization complete (deactivation skipped).');
     await flush(100, 'Complete', 'completed');
     if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
     return;
   }
+  if (skippedSubPages.length > 0) {
+    log('warn', `[sync] Subscription page(s) [${skippedSubPages.join(', ')}] failed but proceeding with deactivation.`);
+  }
 
-  const activePVCompanyIds: string[] = meta.activePVCompanyIds ?? [];
   const activePVUserIds: string[] = meta.activePVUserIds ?? [];
-  const activePVSubscriberIds = new Set<string>(meta.activePVSubscriberIds ?? []);
   const activatedCompanyIds = new Set<string>(meta.activatedCompanyIds ?? []);
 
   if (activePVCompanyIds.length === 0 && activePVUserIds.length === 0) {
@@ -823,7 +876,6 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   log('info', 'Deactivating removed companies and users');
 
   if (activePVCompanyIds.length > 0) {
-    const activePVCompanySet = new Set(activePVCompanyIds);
     const dbCompanies = await prisma.company.findMany();
     await runConcurrent(dbCompanies, 20, async (co) => {
       if (activatedCompanyIds.has(co.id)) return;
@@ -833,11 +885,19 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
 
   if (activePVUserIds.length > 0) {
     const activePVUserSet = new Set(activePVUserIds);
-    const existingUsers = await prisma.user.findMany();
+    const existingUsers = await prisma.user.findMany({
+      where: { role: 'USER', peopleVineId: { not: null } },
+      include: { company: { select: { active: true } } },
+    });
     await runConcurrent(existingUsers, 20, async (u) => {
-      if (u.peopleVineId && !activePVUserSet.has(u.peopleVineId)) {
-        if (activePVSubscriberIds.has(u.peopleVineId)) return;
-        if (u.memberSource === 'membership') return;
+      if (activePVSubscriberIds.has(u.peopleVineId!)) return;
+      if (u.memberSource === 'membership') return;
+      if (!activePVUserSet.has(u.peopleVineId!)) {
+        await deactivateUser(c, u.id);
+        return;
+      }
+      if (u.company && !u.company.active) {
+        log('info', `[deactivate] Deactivating user of inactive company: ${u.email}`);
         await deactivateUser(c, u.id);
       }
     }, () => checkCancelled(prisma, sessionId));
@@ -882,7 +942,18 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const subInfo = subResult.subscriptionInfoMap.get(pvId);
   const membershipTypes = subInfo?.membershipTypes ?? [];
   const portalAccessTypes = subResult.portalAccessTypes;
-  const pickBest = (types: string[]): string | null => types.find(t => portalAccessTypes.has(t)) ?? types[0] ?? null;
+  const prismaForSync: PrismaClient = c.get('db');
+  const [dbPrimaryTypesSync, dbAddonTypesSync, dbFreeMemberExclusionsSync] = await Promise.all([
+    prismaForSync.primarySubscriptionType.findMany({ select: { name: true } }),
+    prismaForSync.addonSubscriptionType.findMany({ select: { name: true } }),
+    prismaForSync.freeMemberExclusionType.findMany({ select: { name: true } }),
+  ]);
+  const primaryTypeSetSync = new Set(dbPrimaryTypesSync.map(t => t.name));
+  const addonTypeSetSync = new Set(dbAddonTypesSync.map(t => t.name));
+  const freeMemberExclusionSetSync = new Set(dbFreeMemberExclusionsSync.map(t => t.name));
+  const pickBest = (types: string[]): string | null =>
+    types.find(t => primaryTypeSetSync.has(t)) ?? types.find(t => portalAccessTypes.has(t)) ?? types[0] ?? null;
+  const pickAddons = (types: string[]): string[] => types.filter(t => addonTypeSetSync.has(t));
   const membershipType = pickBest(membershipTypes);
   const isPersonal = customer.isPersonal ?? false;
   const diffRecord: Record<string, { before: any; after: any }> = {};
@@ -939,7 +1010,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       const typesChanged = JSON.stringify([...newMembershipTypes].sort()) !== JSON.stringify([...existingTypes].sort());
       if (hasSubInfo && typesChanged) {
         console.log(`Cascading membership type change to all users of company ${companyForRepOps.name}.`);
-        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { membershipType: pickBest(newMembershipTypes) } });
+        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { primaryMembership: pickBest(newMembershipTypes), addOns: JSON.stringify(pickAddons(newMembershipTypes)) } });
       }
     }
   }
@@ -975,8 +1046,16 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     }
   }
 
-  const userPvActive = pvActive && (associatedCompany.active !== false);
-  const userMembershipType = membershipType ?? pickBest(JSON.parse(associatedCompany.membershipTypes || '[]'));
+  const companyQualifiesForFreeMemberSync = (co: { membershipTypes: string }): boolean => {
+    const types = JSON.parse(co.membershipTypes || '[]') as string[];
+    return types.some(t => (portalAccessTypes.has(t) || primaryTypeSetSync.has(t)) && !freeMemberExclusionSetSync.has(t));
+  };
+  const memberSource = isCompanyRep ? 'subscription' : 'membership';
+  const freeMemberAllowed = isCompanyRep ? true : companyQualifiesForFreeMemberSync(associatedCompany);
+  const userPvActive = pvActive && (associatedCompany.active !== false) && freeMemberAllowed;
+  const companyTypes = JSON.parse(associatedCompany.membershipTypes || '[]') as string[];
+  const userPrimaryMembership = membershipType ?? pickBest(companyTypes);
+  const userAddOns = pickAddons(membershipTypes.length > 0 ? membershipTypes : companyTypes);
 
   const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
   const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
@@ -988,7 +1067,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       associatedUser.email !== customer.email.toLowerCase() ||
       associatedUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
       associatedUser.companyId !== associatedCompany.id ||
-      associatedUser.membershipType !== userMembershipType ||
+      associatedUser.primaryMembership !== userPrimaryMembership ||
+      associatedUser.addOns !== JSON.stringify(userAddOns) ||
       associatedUser.active !== userPvActive ||
       associatedUser.profilePhoto !== (customer.profilePhoto ?? null) ||
       associatedUser.phone !== (customer.phone ?? null) ||
@@ -997,13 +1077,15 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       associatedUser.state !== (customer.state ?? null) ||
       associatedUser.zipCode !== (customer.zipCode ?? null) ||
       associatedUser.cardStatus !== (customer.cardStatus ?? null) ||
+      associatedUser.memberSource !== memberSource ||
       (userByEmail && !userByEmail.peopleVineId);
     const userAfterSnapshot = {
       name: customer.full_name,
       email: customer.email.toLowerCase(),
       username: customer.username ? customer.username.trim().toLowerCase() : null,
       active: userPvActive,
-      membershipType: userMembershipType,
+      primaryMembership: userPrimaryMembership,
+      addOns: userAddOns,
       phone: customer.phone ?? null,
       address: customer.address ?? null,
       city: customer.city ?? null,
@@ -1020,7 +1102,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           email: associatedUser.email,
           username: associatedUser.username,
           active: associatedUser.active,
-          membershipType: associatedUser.membershipType,
+          primaryMembership: associatedUser.primaryMembership,
+          addOns: associatedUser.addOns,
           phone: associatedUser.phone,
           address: associatedUser.address,
           city: associatedUser.city,
@@ -1039,7 +1122,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           username: customer.username ?? null,
           companyId: associatedCompany.id,
           peopleVineId: customer.id.toString(),
-          membershipType: userMembershipType,
+          primaryMembership: userPrimaryMembership,
+          addOns: userAddOns,
           profilePhoto: customer.profilePhoto,
           active: userPvActive,
           phone: customer.phone ?? null,
@@ -1048,6 +1132,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           state: customer.state ?? null,
           zipCode: customer.zipCode ?? null,
           cardStatus: customer.cardStatus ?? null,
+          memberSource,
         });
       } catch (e) {
         if (isUniqueConstraintError(e)) {
@@ -1089,7 +1174,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         peopleVineId: customer.id.toString(),
         role: Role.USER,
         companyId: associatedCompany.id,
-        membershipType: userMembershipType,
+        primaryMembership: userPrimaryMembership,
+        addOns: userAddOns,
         profilePhoto: customer.profilePhoto,
         active: userPvActive,
         phone: customer.phone ?? null,
@@ -1126,7 +1212,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
 interface CompanyImport {
   subscriptionNo: string;
   companyName: string;
-  membershipType: string | null;
+  primaryMembership: string | null;
 }
 
 interface MemberImport {
@@ -1172,7 +1258,7 @@ export const syncFiltered = async (
             peopleVineId: null,
             active: true,
             email: `placeholder-${crypto.randomUUID()}@placeholder.invalid`,
-            membershipTypes: co.membershipType ? [co.membershipType] : [],
+            membershipTypes: co.primaryMembership ? [co.primaryMembership] : [],
             isPersonal: false,
           });
           existingByNormName.set(key, { id: created.id, peopleVineId: null });
@@ -1303,7 +1389,7 @@ export const syncFilteredMembers = async (
         role: Role.USER,
         companyId: dbCompany.id,
         active: true,
-        membershipType: (JSON.parse(dbCompany.membershipTypes || '[]') as string[])[0] ?? null,
+        primaryMembership: (JSON.parse(dbCompany.membershipTypes || '[]') as string[])[0] ?? null,
         profilePhoto: null,
       });
       usersCreated++;
@@ -1351,8 +1437,6 @@ export const fetchPvPage = async (c: Context, endpoint: string, page: number, ex
   }
   return null;
 };
-
-const SUB_PAGE_SIZE = 32;
 
 export const fetchAllPvData = async (c: Context): Promise<{
   subscriptions: any[];

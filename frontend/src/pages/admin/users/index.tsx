@@ -17,7 +17,7 @@ export function AdminUsersPage() {
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState("")
   const [companyId, setCompanyId] = useState<string | undefined>(undefined)
-  const [membershipType, setMembershipType] = useState<string | undefined>(undefined)
+  const [primaryMembership, setMembershipType] = useState<string | undefined>(undefined)
   const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
   const [emailVerified, setEmailVerified] = useState<'true' | 'false' | undefined>(undefined)
   const [portalAccess, setPortalAccess] = useState<'true' | 'false' | undefined>(undefined)
@@ -29,7 +29,7 @@ export function AdminUsersPage() {
     offset: page * pageSize,
     search: search || undefined,
     companyId,
-    membershipType,
+    primaryMembership,
     active,
     emailVerified,
     portalAccess,
@@ -37,16 +37,16 @@ export function AdminUsersPage() {
     noEmail: 'false',
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
-  const { data: membershipTypesData } = useGetMembershipTypesQuery()
+  const { data: primaryMembershipsData } = useGetMembershipTypesQuery()
 
   const [fetchAllUsers] = useLazyGetUsersQuery()
 
-  const membershipTypeSet = useMemo(
-    () => new Set<string>(membershipTypesData?.data ?? []),
-    [membershipTypesData]
+  const primaryMembershipSet = useMemo(
+    () => new Set<string>(primaryMembershipsData?.data ?? []),
+    [primaryMembershipsData]
   )
 
-  const userColumns = useMemo(() => createUserColumns(membershipTypeSet), [membershipTypeSet])
+  const userColumns = useMemo(() => createUserColumns(primaryMembershipSet), [primaryMembershipSet])
 
   const companyMap = useMemo(() => {
     if (!companiesData?.data?.companies) return new Map<string, string>()
@@ -69,7 +69,7 @@ export function AdminUsersPage() {
   const handleFilterChange = (columnId: string, value: string | undefined) => {
     setPage(0)
     if (columnId === "companyName") setCompanyId(value)
-    else if (columnId === "membershipType") setMembershipType(value)
+    else if (columnId === "primaryMembership") setMembershipType(value)
     else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
     else if (columnId === "emailVerified") setEmailVerified(value as 'true' | 'false' | undefined)
     else if (columnId === "portalAccess") setPortalAccess(value as 'true' | 'false' | undefined)
@@ -83,16 +83,16 @@ export function AdminUsersPage() {
 
   const filters: FilterConfig[] = useMemo(() => {
     const companyOptions = [...(companiesData?.data?.companies ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map(c => ({ value: c.id, label: c.name }))
-    const membershipOptions = [...(membershipTypesData?.data ?? [])].sort((a, b) => a.localeCompare(b)).map(t => ({ value: t, label: t }))
+    const membershipOptions = [...(primaryMembershipsData?.data ?? [])].sort((a, b) => a.localeCompare(b)).map(t => ({ value: t, label: t }))
     return [
       { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
-      { columnId: "membershipType", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
+      { columnId: "primaryMembership", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
       { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription" }, { value: "membership", label: "Member" }], width: "w-36" },
       { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
       { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
     ]
-  }, [companiesData, membershipTypesData])
+  }, [companiesData, primaryMembershipsData])
 
   const handleExport = async () => {
     setExporting(true)
@@ -102,7 +102,7 @@ export function AdminUsersPage() {
         offset: 0,
         search: search || undefined,
         companyId,
-        membershipType,
+        primaryMembership,
         active,
         emailVerified,
         portalAccess,
@@ -113,7 +113,7 @@ export function AdminUsersPage() {
         u.name,
         u.email,
         companyMap.get(u.companyId) || '',
-        u.membershipType ?? '',
+        u.primaryMembership ?? '',
         u.active ? 'true' : 'false',
         u.emailVerified ? 'true' : 'false',
         u.phone ?? '',

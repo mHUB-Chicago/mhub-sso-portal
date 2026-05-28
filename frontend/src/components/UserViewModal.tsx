@@ -34,8 +34,18 @@ export function UserViewModal({ user, open, onClose }: Props) {
             <p className="font-medium">{user.companyName || '—'}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">Membership</p>
-            <p className="font-medium">{user.membershipType || '—'}</p>
+            <p className="text-muted-foreground">Primary Membership</p>
+            <p className="font-medium">{user.primaryMembership || '—'}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Add-ons</p>
+            {(() => {
+              let addOns: string[] = []
+              try { addOns = JSON.parse(user.addOns) } catch {}
+              return addOns.length > 0
+                ? <div className="flex flex-wrap gap-1 mt-0.5">{addOns.map(a => <Badge key={a} variant="outline" className="text-xs text-purple-700 border-purple-300 bg-purple-50">{a}</Badge>)}</div>
+                : <p className="font-medium">—</p>
+            })()}
           </div>
           <div>
             <p className="text-muted-foreground">Status</p>

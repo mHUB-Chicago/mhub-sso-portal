@@ -11,7 +11,8 @@ export interface User {
   active: boolean
   emailVerified: boolean
   mustResetPassword: boolean
-  membershipType: string | null
+  primaryMembership: string | null
+  addOns: string
   profilePhoto: string | null
   phone: string | null
   address: string | null
@@ -56,7 +57,7 @@ interface GetUsersRequest {
   role?: 'USER' | 'ADMIN'
   search?: string
   companyId?: string
-  membershipType?: string
+  primaryMembership?: string
   active?: 'true' | 'false'
   emailVerified?: 'true' | 'false'
   portalAccess?: 'true' | 'false'
@@ -122,7 +123,7 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role, search, companyId, membershipType, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly }) => ({
         url: '/user',
         params: {
           limit,
@@ -130,7 +131,7 @@ export const userApi = createApi({
           ...(role && { role }),
           ...(search && { search }),
           ...(companyId && { companyId }),
-          ...(membershipType && { membershipType }),
+          ...(primaryMembership && { primaryMembership }),
           ...(active !== undefined && { active }),
           ...(emailVerified !== undefined && { emailVerified }),
           ...(portalAccess !== undefined && { portalAccess }),
@@ -161,7 +162,7 @@ export const userApi = createApi({
 
     importUsers: builder.mutation<
       { success: boolean; data: { created: number; updated: number; skipped: number; errors: string[] } },
-      { name: string; email: string; companyName?: string; membershipType?: string; active?: boolean; emailVerified?: boolean }[]
+      { name: string; email: string; companyName?: string; primaryMembership?: string; active?: boolean; emailVerified?: boolean }[]
     >({
       query: (body) => ({ url: '/user/import', method: 'POST', body }),
       invalidatesTags: ['Users'],
