@@ -726,7 +726,7 @@ export const syncPhaseUsers = async (
     const pvUserActive = (customer.pvActive ?? true) && (
       isMember
         ? companyQualifiesForFreeMember(company)
-        : ((company.active !== false) && (isSubscriber || !!company.peopleVineId))
+        : ((company.active !== false) && (isSubscriber || activePVSubscriberIds.has(company.peopleVineId ?? '')))
     );
     const memberSource = isSubscriber ? 'subscription' : 'membership';
 
@@ -879,7 +879,8 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const dbCompanies = await prisma.company.findMany();
     await runConcurrent(dbCompanies, 20, async (co) => {
       if (activatedCompanyIds.has(co.id)) return;
-      if (co.peopleVineId && !activePVCompanySet.has(co.peopleVineId) && !activePVSubscriberIds.has(co.peopleVineId)) await deactivateCompany(c, co.id);
+      if (!co.peopleVineId) { await deactivateCompany(c, co.id); return; }
+      if (!activePVCompanySet.has(co.peopleVineId) && !activePVSubscriberIds.has(co.peopleVineId)) await deactivateCompany(c, co.id);
     }, () => checkCancelled(prisma, sessionId));
   }
 
