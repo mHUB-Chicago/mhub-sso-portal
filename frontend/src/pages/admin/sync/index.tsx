@@ -961,9 +961,9 @@ export function AdminSyncPage() {
   const session = data?.data ?? null
   const isRunning = session?.status === 'running' || session?.status === 'pending'
 
-  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
-  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1, offset: 0, noEmail: 'true', active: 'true' })
-  const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0)
+  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', active: 'true' })
+  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', active: 'true' })
+  const attentionCount = (noEmailUsersCount?.data?.users?.length ?? 0) + (noEmailCompaniesCount?.data?.companies?.length ?? 0)
 
   useEffect(() => {
     if (isRunning) {
