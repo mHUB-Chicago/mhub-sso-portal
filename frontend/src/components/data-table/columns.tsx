@@ -143,7 +143,8 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     size: 120,
     cell: ({ row }) => {
       const primaryMembership = row.original.primaryMembership
-      const hasAccess = !!primaryMembership && portalAccessTypes.has(primaryMembership)
+      const active = row.original.active
+      const hasAccess = !!active && !!primaryMembership && portalAccessTypes.has(primaryMembership)
       return (
         <Badge variant={hasAccess ? "default" : "outline"} className={hasAccess ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100" : "text-gray-400"}>
           {hasAccess ? "Yes" : "No"}
