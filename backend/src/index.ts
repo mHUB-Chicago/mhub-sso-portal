@@ -407,6 +407,33 @@ app.delete("/api/config/free-member-exclusion-types/:name", async (c) => {
   return c.json({ success: true });
 });
 
+app.get("/api/config/portal-access-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db');
+  const types = await prisma.portalAccessType.findMany({ orderBy: { name: 'asc' } });
+  return c.json({ success: true, data: types.map(t => t.name) });
+});
+
+app.post("/api/config/portal-access-types", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) return c.json({ success: false, error: 'Name is required' }, 400);
+  const prisma = c.get('db');
+  await prisma.portalAccessType.upsert({ where: { name: name.trim() }, create: { name: name.trim() }, update: {} });
+  return c.json({ success: true });
+});
+
+app.delete("/api/config/portal-access-types/:name", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const name = decodeURIComponent(c.req.param('name'));
+  const prisma = c.get('db');
+  await prisma.portalAccessType.delete({ where: { name } }).catch(() => {});
+  return c.json({ success: true });
+});
+
 
 app.post("/__internal/sync", async (c) => {
   const auth = c.req.header("authorization") ?? "";

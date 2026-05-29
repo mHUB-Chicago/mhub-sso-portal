@@ -48,7 +48,7 @@ export const syncApi = createApi({
       return headers
     },
   }),
-  tagTypes: ['SyncStatus', 'MembershipTypes', 'PrimarySubscriptionTypes', 'AddonSubscriptionTypes', 'FreeMemberExclusionTypes'],
+  tagTypes: ['SyncStatus', 'MembershipTypes', 'PrimarySubscriptionTypes', 'AddonSubscriptionTypes', 'FreeMemberExclusionTypes', 'PortalAccessTypes'],
   endpoints: (builder) => ({
     getSyncStatus: builder.query<SyncStatusResponse, void>({
       query: () => '/sync/status',
@@ -135,7 +135,19 @@ export const syncApi = createApi({
       query: (name) => ({ url: `/config/free-member-exclusion-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
       invalidatesTags: ['FreeMemberExclusionTypes'],
     }),
+    getPortalAccessTypes: builder.query<{ success: boolean; data: string[] }, void>({
+      query: () => '/config/portal-access-types',
+      providesTags: ['PortalAccessTypes'],
+    }),
+    addPortalAccessType: builder.mutation<{ success: boolean }, { name: string }>({
+      query: (body) => ({ url: '/config/portal-access-types', method: 'POST', body }),
+      invalidatesTags: ['PortalAccessTypes'],
+    }),
+    removePortalAccessType: builder.mutation<{ success: boolean }, string>({
+      query: (name) => ({ url: `/config/portal-access-types/${encodeURIComponent(name)}`, method: 'DELETE' }),
+      invalidatesTags: ['PortalAccessTypes'],
+    }),
   }),
 })
 
-export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation } = syncApi
+export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi

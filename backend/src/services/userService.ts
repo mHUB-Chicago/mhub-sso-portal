@@ -75,12 +75,24 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
   const prisma: PrismaClient = c.get("db");
 
   const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
+  const portalTypeNames = (await prisma.portalAccessType.findMany({ select: { name: true } })).map(t => t.name);
 
   let membershipTypeFilter: any = undefined;
+  let portalAccessCondition: any = undefined;
   if (input.primaryMembership) {
     membershipTypeFilter = input.primaryMembership;
   } else if (input.portalAccess !== undefined) {
-    membershipTypeFilter = input.portalAccess === 'true' ? { in: cmtNames } : { notIn: cmtNames };
+    if (input.portalAccess === 'true') {
+      portalAccessCondition = { OR: [
+        { primaryMembership: { in: portalTypeNames } },
+        ...portalTypeNames.map(name => ({ addOns: { contains: `"${name}"` } })),
+      ]};
+    } else {
+      portalAccessCondition = { AND: [
+        { OR: [{ primaryMembership: null }, { primaryMembership: { notIn: portalTypeNames } }] },
+        ...portalTypeNames.map(name => ({ NOT: { addOns: { contains: `"${name}"` } } })),
+      ]};
+    }
   } else if (input.cmtOnly !== 'false') {
     membershipTypeFilter = { in: cmtNames };
   }
@@ -98,6 +110,7 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
   };
 
   const andConditions: any[] = [];
+  if (portalAccessCondition) andConditions.push(portalAccessCondition);
   if (input.search) {
     andConditions.push({ OR: [
       { name: { contains: input.search } },

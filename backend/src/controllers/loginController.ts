@@ -15,7 +15,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     if (!user) {
       throw new Error("User not found");
     }
-    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.primaryMembership))) {
+    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
       throw new Error("No portal access");
     }
     if (user.email.endsWith('@noemail.mhub')) {
@@ -89,7 +89,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     if (!user) {
       throw new Error("User not found");
     }
-    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.primaryMembership))) {
+    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
       throw new Error("No portal access");
     }
     const sessionId = await createSession(c, loginRequest.userId);

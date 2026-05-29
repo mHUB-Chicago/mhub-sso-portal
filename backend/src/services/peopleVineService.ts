@@ -12,11 +12,16 @@ const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) => Prom
 
 const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 
-export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined): Promise<boolean> => {
-  if (!primaryMembership) return false;
+export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined, addOnsJson?: string | null): Promise<boolean> => {
   const prisma: PrismaClient = c.get('db');
-  const type = await prisma.companyMembershipType.findUnique({ where: { name: primaryMembership.trim() } });
-  return type !== null;
+  const candidates: string[] = [];
+  if (primaryMembership) candidates.push(primaryMembership.trim());
+  if (addOnsJson) {
+    try { candidates.push(...(JSON.parse(addOnsJson) as string[]).map(a => a.trim())); } catch {}
+  }
+  if (candidates.length === 0) return false;
+  const count = await prisma.portalAccessType.count({ where: { name: { in: candidates } } });
+  return count > 0;
 };
 
 interface RequestOptions {
@@ -680,7 +685,8 @@ export const syncPhaseUsers = async (
 
   const getPrimaryType = (co: { membershipTypes: string }): string | null => {
     const types = JSON.parse(co.membershipTypes || '[]') as string[];
-    return types.find(t => primaryTypeSet.has(t)) ?? types.find(t => portalTypeSet.has(t)) ?? types[0] ?? null;
+    const nonAddon = types.filter(t => !addonTypeSet.has(t));
+    return types.find(t => primaryTypeSet.has(t)) ?? nonAddon.find(t => portalTypeSet.has(t)) ?? nonAddon[0] ?? null;
   };
   const getAddonTypes = (co: { membershipTypes: string }): string[] => {
     const types = JSON.parse(co.membershipTypes || '[]') as string[];

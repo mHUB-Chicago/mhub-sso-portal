@@ -5,7 +5,7 @@ import { Download, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useGetUsersQuery, useLazyGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
-import { useGetMembershipTypesQuery } from "@/store/api/syncApi"
+import { useGetMembershipTypesQuery, useGetPortalAccessTypesQuery } from "@/store/api/syncApi"
 import { useMemo, useState } from "react"
 import { toCsv, downloadCsv } from "@/utils/csv"
 import { toast } from "sonner"
@@ -38,15 +38,16 @@ export function AdminUsersPage() {
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
   const { data: primaryMembershipsData } = useGetMembershipTypesQuery()
+  const { data: portalAccessTypesData } = useGetPortalAccessTypesQuery()
 
   const [fetchAllUsers] = useLazyGetUsersQuery()
 
-  const primaryMembershipSet = useMemo(
-    () => new Set<string>(primaryMembershipsData?.data ?? []),
-    [primaryMembershipsData]
+  const portalAccessTypeSet = useMemo(
+    () => new Set<string>(portalAccessTypesData?.data ?? []),
+    [portalAccessTypesData]
   )
 
-  const userColumns = useMemo(() => createUserColumns(primaryMembershipSet), [primaryMembershipSet])
+  const userColumns = useMemo(() => createUserColumns(portalAccessTypeSet), [portalAccessTypeSet])
 
   const companyMap = useMemo(() => {
     if (!companiesData?.data?.companies) return new Map<string, string>()
