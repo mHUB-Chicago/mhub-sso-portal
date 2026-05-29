@@ -494,14 +494,22 @@ const getCustomers = async (
 };
 
 const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
-  const customer: PeopleVineCustomer = await apiRequest(c, {
-    tokenType: PeopleVineTokenType.USER_COMPANY,
-    endpoint: `/customers/${peopleVineId}`,
-    method: 'GET',
-  });
-  const normalizedCustomers = normalizeCustomers([customer]);
-  if (normalizedCustomers.length === 0) return null;
-  return normalizedCustomers[0];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const customer = await apiRequest(c, {
+        tokenType: PeopleVineTokenType.USER_COMPANY,
+        endpoint: `/customers/${peopleVineId}`,
+        method: 'GET',
+      });
+      if (!customer || typeof customer !== 'object') return null;
+      return normalizeCustomers([customer])[0] ?? null;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) await sleep(1000 * (attempt + 1));
+    }
+  }
+  throw lastErr;
 };
 
 export const getSubscriptionSample = async (c: Context): Promise<{ subKeys: string[]; sub: any; customerKeys: string[]; customer: any }> => {
@@ -1005,8 +1013,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         peopleVineId: pvId,
       });
       if (wasInactive && pvActive) {
-        console.log(`Reactivating users for company ${companyForRepOps.name}.`);
-        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { active: true } });
+        console.log(`Reactivating subscribers for company ${companyForRepOps.name}.`);
+        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id, memberSource: 'subscription' }, data: { active: true } });
       }
       const typesChanged = JSON.stringify([...newMembershipTypes].sort()) !== JSON.stringify([...existingTypes].sort());
       if (hasSubInfo && typesChanged) {
