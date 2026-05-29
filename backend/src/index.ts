@@ -413,10 +413,20 @@ app.post("/__internal/sync", async (c) => {
   if (auth !== `Bearer ${c.env.SEED_TOKEN}`) return c.json({ success: false }, 401);
   let type = 'ALL';
   try { const body = await c.req.json(); type = body?.type === 'CONTINUE' ? 'CONTINUE' : 'ALL'; } catch {}
+  const prisma = c.get('db') as PrismaClient;
+  const session = await prisma.syncSession.create({
+    data: {
+      type,
+      status: 'pending',
+      step: 'Queued',
+      logs: JSON.stringify([{ time: new Date().toISOString(), level: 'info', message: 'Scheduled sync queued' }]),
+      metadata: JSON.stringify({ includeFreeMembers: true }),
+    },
+  });
   await c.env.QUEUE.send({
     jobId: crypto.randomUUID(),
     jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
-    payload: { type },
+    payload: { type, sessionId: session.id },
   });
   return c.json({ success: true, message: `Sync ${type === 'CONTINUE' ? 'continue' : 'all'} queued` });
 });

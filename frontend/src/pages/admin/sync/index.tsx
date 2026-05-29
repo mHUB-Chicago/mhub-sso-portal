@@ -4,6 +4,7 @@ import { RefreshCw, Play, Loader2, CheckCircle2, XCircle, Clock, StopCircle, Ale
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
 import { toCsv, downloadCsv } from '@/utils/csv'
@@ -756,6 +757,7 @@ function AuditLogsTab() {
 function NeedsAttentionTab() {
   const [search, setSearch] = useState('')
   const [primaryMembership, setPrimaryMembership] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'true' | 'false' | ''>('')
   const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true' })
@@ -769,11 +771,13 @@ function NeedsAttentionTab() {
   const q = search.toLowerCase().trim()
   const noEmailUsers = allNoEmailUsers.filter(u =>
     (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-    (!primaryMembership || u.primaryMembership === primaryMembership)
+    (!primaryMembership || u.primaryMembership === primaryMembership) &&
+    (activeFilter === '' || String(u.active) === activeFilter)
   )
   const noEmailCompanies = allNoEmailCompanies.filter(co =>
     (!q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q)) &&
-    (!primaryMembership || co.membershipTypes?.includes(primaryMembership))
+    (!primaryMembership || co.membershipTypes?.includes(primaryMembership)) &&
+    (activeFilter === '' || String(co.active) === activeFilter)
   )
 
   const showUsers = view === 'all' || view === 'users'
@@ -829,22 +833,33 @@ function NeedsAttentionTab() {
             )
           })}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by name or email…"
-            className="w-56 h-9 text-sm"
+            className="w-56 h-10 text-sm"
           />
-          <select
-            value={primaryMembership}
-            onChange={e => setPrimaryMembership(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">All Memberships</option>
-            {membershipTypes.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <Button variant="outline" size="sm" onClick={handleExport} disabled={totalIssues === 0}>
+          <Select value={primaryMembership || 'all'} onValueChange={v => setPrimaryMembership(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-10 w-48 text-sm">
+              <SelectValue placeholder="All Memberships" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Memberships</SelectItem>
+              {membershipTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={activeFilter || 'all'} onValueChange={v => setActiveFilter(v === 'all' ? '' : v as 'true' | 'false')}>
+            <SelectTrigger className="h-10 w-36 text-sm">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="true">Active</SelectItem>
+              <SelectItem value="false">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" className="h-10" onClick={handleExport} disabled={totalIssues === 0}>
             <Download className="h-4 w-4 mr-2" />Export
           </Button>
         </div>

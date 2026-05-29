@@ -1185,6 +1185,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         state: customer.state ?? null,
         zipCode: customer.zipCode ?? null,
         cardStatus: customer.cardStatus ?? null,
+        memberSource,
       });
     } catch (e) {
       if (isUniqueConstraintError(e)) return;
