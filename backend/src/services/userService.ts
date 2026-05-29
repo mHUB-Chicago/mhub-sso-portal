@@ -94,7 +94,10 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
       ]};
     }
   } else if (input.cmtOnly !== 'false') {
-    membershipTypeFilter = { in: cmtNames };
+    portalAccessCondition = { OR: [
+      { primaryMembership: { in: cmtNames } },
+      ...cmtNames.map(name => ({ addOns: { contains: `"${name}"` } })),
+    ]};
   }
 
   const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];
