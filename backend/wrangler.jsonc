@@ -28,8 +28,11 @@
       }
     ]
   },
+  "routes": [
+    { "pattern": "sso.mhubsso.com/webhook/*", "zone_name": "mhubsso.com" }
+  ],
   "triggers": {
-    "crons": ["0 2 * * *"]
+    "crons": []
   },
   "observability": {
     "enabled": true,
