@@ -754,10 +754,9 @@ function AuditLogsTab() {
 }
 
 
-function NeedsAttentionTab() {
+function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 'true' | 'false' | ''; setActiveFilter: (v: 'true' | 'false' | '') => void }) {
   const [search, setSearch] = useState('')
   const [primaryMembership, setPrimaryMembership] = useState('')
-  const [activeFilter, setActiveFilter] = useState<'true' | 'false' | ''>('')
   const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true' })
@@ -966,6 +965,7 @@ export function AdminSyncPage() {
   const [activeTab, setActiveTab] = useState<'ALL' | 'CONTINUE' | 'FRESH' | 'LOGS' | 'ATTENTION'>('ALL')
   const [pollingInterval, setPollingInterval] = useState<number | false>(false)
   const [syncConfirm, setSyncConfirm] = useState<SyncConfirm>(null)
+  const [attentionActiveFilter, setAttentionActiveFilter] = useState<'true' | 'false' | ''>('')
 
   const { data, refetch } = useGetSyncStatusQuery(undefined, {
     pollingInterval: pollingInterval || undefined,
@@ -976,8 +976,8 @@ export function AdminSyncPage() {
   const session = data?.data ?? null
   const isRunning = session?.status === 'running' || session?.status === 'pending'
 
-  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true' })
-  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true' })
+  const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
+  const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
   const attentionCount = (noEmailUsersCount?.data?.users?.length ?? 0) + (noEmailCompaniesCount?.data?.companies?.length ?? 0)
 
   useEffect(() => {
@@ -1129,7 +1129,7 @@ export function AdminSyncPage() {
         )}
         {activeTab === 'FRESH' && <FreshSyncTab />}
         {activeTab === 'LOGS' && <AuditLogsTab />}
-        {activeTab === 'ATTENTION' && <NeedsAttentionTab />}
+        {activeTab === 'ATTENTION' && <NeedsAttentionTab activeFilter={attentionActiveFilter} setActiveFilter={setAttentionActiveFilter} />}
       </div>
     </div>
   )
