@@ -72,10 +72,16 @@ export const createLoginRequest = async (c: Context, createLoginRequestInput: Cr
   if (!user) {
     throw new Error("User not found");
   }
-  const activeLoginRequest = await getActiveLoginRequestByUserId(c, user.id);
-  if (activeLoginRequest) {
-    return activeLoginRequest;
+  const needsOtp = user.passwordHashed === null || !user.emailVerified || user.mustResetPassword;
+
+  // Reuse active request only if OTP is not needed (password login path)
+  if (!needsOtp) {
+    const activeLoginRequest = await getActiveLoginRequestByUserId(c, user.id);
+    if (activeLoginRequest) {
+      return activeLoginRequest;
+    }
   }
+
   let loginRequest = await prisma.loginRequest.create({
     data: {
       userId: user.id,
@@ -83,8 +89,7 @@ export const createLoginRequest = async (c: Context, createLoginRequestInput: Cr
     },
   });
 
-  // If no password is set, user email is not verified, or user must reset password, generate and send OTP
-  if (user.passwordHashed === null || !user.emailVerified || user.mustResetPassword) {
+  if (needsOtp) {
     const oneTimePassword = generateOneTimePassword();
     const otpHashed = await hashPassword(oneTimePassword);
     loginRequest = await prisma.loginRequest.update({

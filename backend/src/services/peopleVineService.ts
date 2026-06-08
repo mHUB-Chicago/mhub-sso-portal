@@ -572,6 +572,8 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
   log('info', 'Syncing companies');
 
   const activatedCompanyIds = new Set<string>();
+  const auditCompaniesCreated: { id: string; name: string; pvId: string }[] = [];
+  const auditCompaniesUpdated: { id: string; name: string; pvId: string; changes: { field: string; before: string; after: string }[] }[] = [];
 
   await runConcurrent(Array.from(companyProfilesMap.values()), 20, async (customer) => {
     const pvId = customer.id.toString();
@@ -599,9 +601,17 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
         }
       }
       if (isActive) activatedCompanyIds.add(existing.id);
+      const coChanges: { field: string; before: string; after: string }[] = [];
+      const existingMTypes = JSON.parse(existing.membershipTypes || '[]') as string[];
+      if (existing.name !== customer.company_name) coChanges.push({ field: 'name', before: existing.name, after: customer.company_name });
+      if (existing.active !== isActive) coChanges.push({ field: 'active', before: String(existing.active), after: String(isActive) });
+      if (JSON.stringify([...existingMTypes].sort()) !== JSON.stringify([...membershipTypes].sort())) coChanges.push({ field: 'membershipTypes', before: existingMTypes.join('; '), after: membershipTypes.join('; ') });
+      if ((existing.isPersonal ?? false) !== isPersonal) coChanges.push({ field: 'isPersonal', before: String(existing.isPersonal), after: String(isPersonal) });
+      auditCompaniesUpdated.push({ id: existing.id, name: customer.company_name, pvId, changes: coChanges });
     } else {
       const created = await createCompany(c, { name: customer.company_name, peopleVineId: pvId, active: isActive, email: customer.email.toLowerCase(), membershipTypes, isPersonal });
       if (isActive && created) activatedCompanyIds.add(created.id);
+      if (created) auditCompaniesCreated.push({ id: created.id, name: created.name, pvId });
     }
   }, () => checkCancelled(prisma, sessionId));
 
@@ -619,6 +629,10 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
     subscriberMemberships,
     lastCustomerPage: 0,
     skippedSubPages,
+    audit: {
+      companiesCreated: auditCompaniesCreated,
+      companiesUpdated: auditCompaniesUpdated,
+    },
   });
   await flush(30, 'Companies synced — queuing user sync');
   log('info', 'Companies sync complete. User sync queued.');
@@ -700,7 +714,10 @@ export const syncPhaseUsers = async (
   await flush(70, 'Syncing users');
   log('info', 'Syncing users');
 
-  await runConcurrent(Array.from(batchCustomersMap.values()), 20, async (customer) => {
+  const auditUsersCreated: { id: string; name: string; email: string; companyId: string }[] = [];
+  const auditUsersUpdated: { id: string; name: string; email: string; companyId: string; changes: { field: string; before: string; after: string }[] }[] = [];
+
+  const processCustomer = async (customer: PeopleVineCustomer) => {
     const pvId = customer.id.toString();
     const isSubscriber = activePVSubscriberIds.has(pvId);
     const isMember = customer.isMember ?? false;
@@ -763,6 +780,25 @@ export const syncPhaseUsers = async (
         existingUser.cardStatus !== (customer.cardStatus ?? null) ||
         existingUser.memberSource !== memberSource;
       if (needsUpdate) {
+        const uChanges: { field: string; before: string; after: string }[] = [];
+        const newEmailLower = customer.email.toLowerCase();
+        const newPrimary = getPrimaryType(company);
+        const newAddOns = JSON.stringify(getAddonTypes(company));
+        const newUsername = customer.username ? customer.username.trim().toLowerCase() : null;
+        if (existingUser.name !== customer.full_name) uChanges.push({ field: 'name', before: existingUser.name, after: customer.full_name });
+        if (existingUser.email !== newEmailLower) uChanges.push({ field: 'email', before: existingUser.email, after: newEmailLower });
+        if (existingUser.active !== pvUserActive) uChanges.push({ field: 'active', before: String(existingUser.active), after: String(pvUserActive) });
+        if (existingUser.companyId !== company.id) uChanges.push({ field: 'company', before: existingUser.companyId, after: company.id });
+        if (existingUser.primaryMembership !== newPrimary) uChanges.push({ field: 'primaryMembership', before: String(existingUser.primaryMembership), after: String(newPrimary) });
+        if (existingUser.addOns !== newAddOns) uChanges.push({ field: 'addOns', before: existingUser.addOns || '[]', after: newAddOns });
+        if (existingUser.memberSource !== memberSource) uChanges.push({ field: 'memberSource', before: String(existingUser.memberSource), after: memberSource });
+        if (existingUser.username !== newUsername) uChanges.push({ field: 'username', before: String(existingUser.username), after: String(newUsername) });
+        if (existingUser.phone !== (customer.phone ?? null)) uChanges.push({ field: 'phone', before: String(existingUser.phone), after: String(customer.phone ?? null) });
+        if (existingUser.address !== (customer.address ?? null)) uChanges.push({ field: 'address', before: String(existingUser.address), after: String(customer.address ?? null) });
+        if (existingUser.city !== (customer.city ?? null)) uChanges.push({ field: 'city', before: String(existingUser.city), after: String(customer.city ?? null) });
+        if (existingUser.state !== (customer.state ?? null)) uChanges.push({ field: 'state', before: String(existingUser.state), after: String(customer.state ?? null) });
+        if (existingUser.zipCode !== (customer.zipCode ?? null)) uChanges.push({ field: 'zipCode', before: String(existingUser.zipCode), after: String(customer.zipCode ?? null) });
+        if (existingUser.cardStatus !== (customer.cardStatus ?? null)) uChanges.push({ field: 'cardStatus', before: String(existingUser.cardStatus), after: String(customer.cardStatus ?? null) });
         log('info', `Updating user ${customer.full_name} (${customer.email}).`);
         try {
           await updateUser(c, {
@@ -772,7 +808,7 @@ export const syncPhaseUsers = async (
             username: customer.username ?? null,
             companyId: company.id,
             peopleVineId: pvId,
-            primaryMembership: getPrimaryType(company),
+            primaryMembership: newPrimary,
             addOns: getAddonTypes(company),
             profilePhoto: customer.profilePhoto,
             active: pvUserActive,
@@ -784,6 +820,7 @@ export const syncPhaseUsers = async (
             cardStatus: customer.cardStatus ?? null,
             memberSource,
           });
+          auditUsersUpdated.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: company.id, changes: uChanges });
         } catch (e) {
           if (isUniqueConstraintError(e)) return;
           throw e;
@@ -793,7 +830,7 @@ export const syncPhaseUsers = async (
     }
 
     try {
-      await createUser(c, {
+      const createdUser = await createUser(c, {
         name: customer.full_name,
         email: customer.email,
         username: customer.username ?? null,
@@ -812,20 +849,47 @@ export const syncPhaseUsers = async (
         cardStatus: customer.cardStatus ?? null,
         memberSource,
       });
+      auditUsersCreated.push({ id: createdUser.id, name: customer.full_name, email: customer.email.toLowerCase(), companyId: company.id });
     } catch (e) {
       if (isUniqueConstraintError(e)) return;
       throw e;
     }
-  }, () => checkCancelled(prisma, sessionId));
+  };
+
+  await runConcurrent(Array.from(batchCustomersMap.values()), 20, processCustomer, () => checkCancelled(prisma, sessionId));
+
+  // On the last batch, fetch any active subscribers the /customers pages never returned
+  if (!hasMore && activePVSubscriberIds.size > 0) {
+    const allSeenIds = new Set<string>([
+      ...(sessionMeta.activePVUserIds ?? []),
+      ...batchCustomersMap.keys(),
+    ]);
+    const missedIds = Array.from(activePVSubscriberIds).filter(id => !allSeenIds.has(id));
+    if (missedIds.length > 0) {
+      log('info', `Found ${missedIds.length} active subscribers not returned by /customers — fetching individually`);
+      await flush(85, `Syncing ${missedIds.length} missed subscribers`);
+      await runConcurrent(missedIds, 10, async (pvId) => {
+        const customer = await getCustomer(c, pvId);
+        if (!customer) return;
+        await processCustomer(customer);
+      }, () => checkCancelled(prisma, sessionId));
+    }
+  }
 
   if (sessionId) {
     const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
     const meta = session ? JSON.parse(session.metadata ?? '{}') : {};
     const existing: string[] = meta.activePVUserIds ?? [];
+    const existingAudit: Record<string, any> = meta.audit ?? {};
     await saveMeta({
       activePVUserIds: [...existing, ...Array.from(batchCustomersMap.keys())],
       usersDone: !hasMore,
       userHadErrors: hadErrors || (meta.userHadErrors === true),
+      audit: {
+        ...existingAudit,
+        usersCreated: [...(existingAudit.usersCreated ?? []), ...auditUsersCreated],
+        usersUpdated: [...(existingAudit.usersUpdated ?? []), ...auditUsersUpdated],
+      },
     });
   }
 
@@ -837,12 +901,15 @@ export const syncPhaseUsers = async (
 
 export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promise<void> => {
   const prisma: PrismaClient = c.get('db');
-  const { log, flush } = makeSessionFlusher(prisma, sessionId);
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
 
   await flush(92, 'Deactivating removed records');
 
   const session = sessionId ? await prisma.syncSession.findUnique({ where: { id: sessionId } }) : null;
   const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
+  const existingAudit: Record<string, any> = meta.audit ?? {};
+  const auditCompaniesDeactivated: { id: string; name: string }[] = [];
+  const auditUsersDeactivated: { id: string; name: string; email: string }[] = [];
 
   const activePVCompanyIds: string[] = meta.activePVCompanyIds ?? [];
   const activePVSubscriberIds = new Set<string>(meta.activePVSubscriberIds ?? []);
@@ -858,6 +925,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
       const companyPvId = u.company?.peopleVineId;
       if (companyPvId && (activePVCompanySet.has(companyPvId) || activePVSubscriberIds.has(companyPvId))) return;
       log('info', `[deactivate] Deactivating orphaned user: ${u.email}`);
+      auditUsersDeactivated.push({ id: u.id, name: u.name, email: u.email });
       await deactivateUser(c, u.id);
     }, () => checkCancelled(prisma, sessionId));
   } else {
@@ -893,8 +961,8 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const dbCompanies = await prisma.company.findMany();
     await runConcurrent(dbCompanies, 20, async (co) => {
       if (activatedCompanyIds.has(co.id)) return;
-      if (!co.peopleVineId) { await deactivateCompany(c, co.id); return; }
-      if (!activePVCompanySet.has(co.peopleVineId) && !activePVSubscriberIds.has(co.peopleVineId)) await deactivateCompany(c, co.id);
+      if (!co.peopleVineId) { auditCompaniesDeactivated.push({ id: co.id, name: co.name }); await deactivateCompany(c, co.id); return; }
+      if (!activePVCompanySet.has(co.peopleVineId) && !activePVSubscriberIds.has(co.peopleVineId)) { auditCompaniesDeactivated.push({ id: co.id, name: co.name }); await deactivateCompany(c, co.id); }
     }, () => checkCancelled(prisma, sessionId));
   }
 
@@ -908,17 +976,26 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
       if (activePVSubscriberIds.has(u.peopleVineId!)) return;
       if (u.memberSource === 'membership') return;
       if (!activePVUserSet.has(u.peopleVineId!)) {
+        auditUsersDeactivated.push({ id: u.id, name: u.name, email: u.email });
         await deactivateUser(c, u.id);
         return;
       }
       if (u.company && !u.company.active) {
         log('info', `[deactivate] Deactivating user of inactive company: ${u.email}`);
+        auditUsersDeactivated.push({ id: u.id, name: u.name, email: u.email });
         await deactivateUser(c, u.id);
       }
     }, () => checkCancelled(prisma, sessionId));
   }
 
   log('info', 'PeopleVine synchronization complete.');
+  await saveMeta({
+    audit: {
+      ...existingAudit,
+      companiesDeactivated: auditCompaniesDeactivated,
+      usersDeactivated: auditUsersDeactivated,
+    },
+  });
   await flush(100, 'Complete', 'completed');
   if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
 };

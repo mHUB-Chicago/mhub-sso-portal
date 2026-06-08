@@ -91,7 +91,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
 
         } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
           const prisma = context.get('db') as PrismaClient;
-          const { peopleVineId, webhookLogId } = payload;
+          const { peopleVineId, webhookLogId, invalidMembership } = payload;
           const activeBulkSession = await prisma.syncSession.findFirst({
             where: { status: { in: ['running', 'pending'] }, type: { in: ['ALL', 'CONTINUE', 'FILTERED'] } },
           });
@@ -105,7 +105,8 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           }
           await syncOnePeopleVine(context, peopleVineId, webhookLogId);
           if (webhookLogId) {
-            await prisma.webhookLog.update({ where: { id: webhookLogId }, data: { status: 'processed' } }).catch(() => {});
+            const finalStatus = invalidMembership ? 'processed_invalid_membership' : 'processed';
+            await prisma.webhookLog.update({ where: { id: webhookLogId }, data: { status: finalStatus } }).catch(() => {});
           }
 
         } else if (jobType === JobType.SYNC_FILTERED) {

@@ -38,9 +38,31 @@ export const handlePeopleVineWebhook = async (c: Context) => {
     return c.json({ message: "Invalid payload" }, 400);
   }
 
+  // For membership_changed: check if the membership type is in CMT
+  let webhookStatus = "queued";
+  let invalidMembership: string | null = null;
+  if (eventType === 'membership_changed') {
+    const membershipType = (
+      typeof payload.membership_type === 'string' ? payload.membership_type :
+      typeof payload.title === 'string' ? payload.title :
+      typeof payload.subscription_title === 'string' ? payload.subscription_title :
+      typeof payload.plan_name === 'string' ? payload.plan_name :
+      null
+    )?.trim() ?? null;
+
+    if (membershipType) {
+      const validCmt = await prisma.companyMembershipType.findFirst({ where: { name: membershipType } }).catch(() => null);
+      if (!validCmt) {
+        console.warn(`[webhook] membership_changed for customer ${peopleVineId} — type "${membershipType}" is not in CMT. Will sync to deactivate.`);
+        webhookStatus = "invalid_membership";
+        invalidMembership = membershipType;
+      }
+    }
+  }
+
   c.executionCtx.waitUntil(
     prisma.webhookLog.create({
-      data: { id: logId, customerNo: peopleVineId, eventType, payload: rawBody, status: "queued" },
+      data: { id: logId, customerNo: peopleVineId, eventType, payload: rawBody, status: webhookStatus },
     })
   );
 
@@ -48,7 +70,7 @@ export const handlePeopleVineWebhook = async (c: Context) => {
   await c.env.QUEUE.send({
     jobId: `${crypto.randomUUID()}-${Date.now()}`,
     jobType: JobType.SYNC_PEOPLEVINE_CUSTOMER,
-    payload: { peopleVineId, webhookLogId: logId },
+    payload: { peopleVineId, webhookLogId: logId, invalidMembership },
   });
   return c.json({ message: "PeopleVine webhook received" }, 200);
 }

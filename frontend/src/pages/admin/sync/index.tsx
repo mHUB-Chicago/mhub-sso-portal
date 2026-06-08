@@ -629,6 +629,24 @@ const BASE_URL = `${import.meta.env.VITE_API_URL ?? 'http://localhost:8787'}${im
 
 const ESTIMATED_RAW_BYTES = 10 * 1024 * 1024 // 10 MB estimate for progress bar
 
+const downloadAudit = async (sessionId: string) => {
+  const token = localStorage.getItem('authToken')
+  const res = await fetch(`${BASE_URL}/sync/sessions/${sessionId}/audit`, {
+    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) return
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const disposition = res.headers.get('content-disposition') ?? ''
+  const match = disposition.match(/filename="([^"]+)"/)
+  a.download = match?.[1] ?? `sync-audit-${sessionId.slice(0, 8)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function AuditLogsTab() {
   const [selectedSession, setSelectedSession] = useState<SyncSession | null>(null)
   const [dlState, setDlState] = useState<{ active: boolean; bytes: number; done: boolean }>({ active: false, bytes: 0, done: false })
@@ -722,23 +740,36 @@ function AuditLogsTab() {
               key={session.id}
               className="border border-gray-200 rounded-lg overflow-hidden"
             >
-              <button
-                type="button"
-                onClick={() => setSelectedSession(selectedSession?.id === session.id ? null : session)}
-                className="w-full flex items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <StatusBadge status={session.status} />
-                  <span className="text-sm font-medium text-gray-700 shrink-0">
-                    {SYNC_TYPE_LABELS[session.type] ?? session.type}
-                  </span>
-                  <span className="text-xs text-gray-400 truncate">{session.step}</span>
-                </div>
-                <div className="flex items-center gap-4 shrink-0 text-xs text-gray-400">
-                  <span>{new Date(session.startedAt).toLocaleString()}</span>
-                  <span className="font-medium text-gray-600">{session.progress}%</span>
-                </div>
-              </button>
+              <div className="flex items-stretch">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSession(selectedSession?.id === session.id ? null : session)}
+                  className="flex-1 flex items-center justify-between gap-4 px-4 py-3 text-left hover:bg-gray-50 transition-colors min-w-0"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <StatusBadge status={session.status} />
+                    <span className="text-sm font-medium text-gray-700 shrink-0">
+                      {SYNC_TYPE_LABELS[session.type] ?? session.type}
+                    </span>
+                    <span className="text-xs text-gray-400 truncate">{session.step}</span>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 text-xs text-gray-400">
+                    <span>{new Date(session.startedAt).toLocaleString()}</span>
+                    <span className="font-medium text-gray-600">{session.progress}%</span>
+                  </div>
+                </button>
+                {session.status === 'completed' && (session.type === 'ALL' || session.type === 'CONTINUE') && (
+                  <button
+                    type="button"
+                    onClick={() => downloadAudit(session.id)}
+                    title="Download sync audit CSV"
+                    className="shrink-0 flex items-center gap-1.5 px-3 border-l border-gray-100 text-xs font-medium text-brand hover:bg-gray-50 transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Audit
+                  </button>
+                )}
+              </div>
 
               {selectedSession?.id === session.id && session.logs.length > 0 && (
                 <div className="border-t border-gray-200 bg-gray-900 p-4 h-64 overflow-y-auto space-y-1">
@@ -975,6 +1006,25 @@ export function AdminSyncPage() {
 
   const session = data?.data ?? null
   const isRunning = session?.status === 'running' || session?.status === 'pending'
+
+  const prevSessionIdRef = useRef<string | null>(null)
+  const prevStatusRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id = session?.id ?? null
+    const status = session?.status ?? null
+    if (
+      id &&
+      id === prevSessionIdRef.current &&
+      prevStatusRef.current !== 'completed' &&
+      status === 'completed' &&
+      (session?.type === 'ALL' || session?.type === 'CONTINUE')
+    ) {
+      toast.success('Sync complete! Downloading audit summary…', { duration: 4000 })
+      downloadAudit(id)
+    }
+    prevSessionIdRef.current = id
+    prevStatusRef.current = status
+  }, [session?.id, session?.status, session?.type])
 
   const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
   const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })

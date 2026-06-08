@@ -282,6 +282,109 @@ app.get("/api/sync/pv-subscriptions", async (c) => {
 
 
 
+app.get("/api/sync/sessions/:id/audit", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const sessionId = c.req.param('id');
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ success: false, error: 'Session not found' }, 404);
+
+  const meta = JSON.parse(session.metadata ?? '{}');
+  const audit = meta.audit ?? {};
+
+  type AuditChange = { field: string; before: string; after: string };
+  const companiesCreated: { id: string; name: string; pvId: string }[] = audit.companiesCreated ?? [];
+  const companiesUpdated: { id: string; name: string; pvId: string; changes: AuditChange[] }[] = audit.companiesUpdated ?? [];
+  const companiesDeactivated: { id: string; name: string }[] = audit.companiesDeactivated ?? [];
+  const usersCreated: { id: string; name: string; email: string; companyId: string }[] = audit.usersCreated ?? [];
+  const usersUpdated: { id: string; name: string; email: string; companyId: string; changes: AuditChange[] }[] = audit.usersUpdated ?? [];
+  const usersDeactivated: { id: string; name: string; email: string }[] = audit.usersDeactivated ?? [];
+
+  const startedAt = session.startedAt ? new Date(session.startedAt).toISOString() : 'N/A';
+  const completedAt = session.completedAt ? new Date(session.completedAt).toISOString() : 'N/A';
+
+  const esc = (v: string | null | undefined) => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const lines: string[] = [];
+  lines.push('Sync Audit Report');
+  lines.push(`Session ID,${esc(sessionId)}`);
+  lines.push(`Type,${session.type}`);
+  lines.push(`Status,${session.status}`);
+  lines.push(`Started,${startedAt}`);
+  lines.push(`Completed,${completedAt}`);
+  lines.push('');
+
+  lines.push(`Companies Created (${companiesCreated.length})`);
+  lines.push('ID,Name,PeopleVine ID');
+  for (const r of companiesCreated) lines.push([esc(r.id), esc(r.name), esc(r.pvId)].join(','));
+  lines.push('');
+
+  lines.push(`Companies Updated (${companiesUpdated.length})`);
+  lines.push('ID,Name,PeopleVine ID,Changes');
+  for (const r of companiesUpdated) {
+    const changesStr = (r.changes ?? []).map(ch => `${ch.field}: "${ch.before}" → "${ch.after}"`).join(' | ');
+    lines.push([esc(r.id), esc(r.name), esc(r.pvId), esc(changesStr)].join(','));
+  }
+  lines.push('');
+
+  lines.push(`Companies Deactivated (${companiesDeactivated.length})`);
+  lines.push('ID,Name');
+  for (const r of companiesDeactivated) lines.push([esc(r.id), esc(r.name)].join(','));
+  lines.push('');
+
+  lines.push(`Users Created (${usersCreated.length})`);
+  lines.push('ID,Name,Email,Company ID');
+  for (const r of usersCreated) lines.push([esc(r.id), esc(r.name), esc(r.email), esc(r.companyId)].join(','));
+  lines.push('');
+
+  lines.push(`Users Updated (${usersUpdated.length})`);
+  lines.push('ID,Name,Email,Company ID,Changes');
+  for (const r of usersUpdated) {
+    const changesStr = (r.changes ?? []).map(ch => `${ch.field}: "${ch.before}" → "${ch.after}"`).join(' | ');
+    lines.push([esc(r.id), esc(r.name), esc(r.email), esc(r.companyId), esc(changesStr)].join(','));
+  }
+  lines.push('');
+
+  lines.push(`Users Deactivated (${usersDeactivated.length})`);
+  lines.push('ID,Name,Email');
+  for (const r of usersDeactivated) lines.push([esc(r.id), esc(r.name), esc(r.email)].join(','));
+
+  const dateSlug = startedAt !== 'N/A' ? startedAt.slice(0, 10) : 'unknown';
+  const filename = `sync-audit-${dateSlug}-${sessionId.slice(0, 8)}.csv`;
+  return new Response(lines.join('\r\n'), {
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+});
+
+app.get("/api/sync/sessions/:id/audit/summary", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const sessionId = c.req.param('id');
+  const prisma = c.get('db');
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ success: false, error: 'Session not found' }, 404);
+  const meta = JSON.parse(session.metadata ?? '{}');
+  const audit = meta.audit ?? {};
+  return c.json({
+    success: true,
+    data: {
+      companiesCreated: (audit.companiesCreated ?? []).length,
+      companiesUpdated: (audit.companiesUpdated ?? []).length,
+      companiesDeactivated: (audit.companiesDeactivated ?? []).length,
+      usersCreated: (audit.usersCreated ?? []).length,
+      usersUpdated: (audit.usersUpdated ?? []).length,
+      usersDeactivated: (audit.usersDeactivated ?? []).length,
+    },
+  });
+});
+
 app.get("/api/sync/conflicts", async (c) => {
   const user = c.get('user');
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
