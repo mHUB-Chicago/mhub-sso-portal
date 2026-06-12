@@ -70,13 +70,17 @@ const makeSessionFlusher = (prisma: PrismaClient, sessionId: string | undefined)
   const flush = async (progress: number, step: string, status = 'running') => {
     if (!sessionId) return;
     try {
-      const current = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { logs: true } }).catch(() => null);
+      const current = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { logs: true, status: true } }).catch(() => null);
       const existing: LogEntry[] = current?.logs ? JSON.parse(current.logs) : [];
       const merged = [...existing, ...logs];
       logs.length = 0;
+      // Never resurrect a session the user cancelled — flush() callers default
+      // to status: 'running'/'completed' and would otherwise overwrite a
+      // 'cancelled' status that checkCancelled() relies on to stop the job.
+      const nextStatus = current?.status === 'cancelled' ? 'cancelled' : status;
       await prisma.syncSession.update({
         where: { id: sessionId },
-        data: { progress, step, status, logs: JSON.stringify(merged) },
+        data: { progress, step, status: nextStatus, logs: JSON.stringify(merged) },
       });
     } catch (e) {
       console.error('Failed to update sync session:', e);
@@ -96,6 +100,47 @@ const makeSessionFlusher = (prisma: PrismaClient, sessionId: string | undefined)
   };
 
   return { log, flush, saveMeta };
+};
+
+// Persist a large per-customer lookup map once (write in one phase, read in a
+// later phase) as a SyncExportBlob instead of SyncSession.metadata. These maps
+// cover every PV customer/subscriber — if kept in metadata they get re-serialized
+// into the row on every saveMeta() call for the rest of the sync, which can push
+// the row past D1's per-row size limit (logs + metadata together).
+const writeDataBlob = async (prisma: PrismaClient, sessionId: string | undefined, key: string, data: unknown): Promise<void> => {
+  if (!sessionId) return;
+  const serialized = JSON.stringify(data);
+  await prisma.syncExportBlob.upsert({
+    where: { sessionId_key: { sessionId, key } },
+    create: { sessionId, key, data: serialized },
+    update: { data: serialized },
+  });
+};
+
+const readDataBlob = async <T>(prisma: PrismaClient, sessionId: string | undefined, key: string, fallback: T): Promise<T> => {
+  if (!sessionId) return fallback;
+  const blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key } } });
+  return blob ? (JSON.parse(blob.data) as T) : fallback;
+};
+
+// Persist a batch of audit records to its own blob instead of appending to
+// SyncSession.metadata. Appending to metadata means re-writing the entire
+// accumulated array on every batch (O(n^2)), and the final array can itself
+// exceed D1's per-row size limit. Read back via readAuditChunks().
+const appendAuditChunk = async (prisma: PrismaClient, sessionId: string | undefined, category: string, items: unknown[]): Promise<void> => {
+  if (!sessionId || items.length === 0) return;
+  const key = `audit-${category}-${crypto.randomUUID()}.json`;
+  await prisma.syncExportBlob.create({ data: { sessionId, key, data: JSON.stringify(items) } });
+};
+
+export const readAuditChunks = async (prisma: PrismaClient, sessionId: string, category: string): Promise<any[]> => {
+  const blobs = await prisma.syncExportBlob.findMany({
+    where: { sessionId, key: { startsWith: `audit-${category}-` } },
+    select: { data: true },
+  });
+  const items: any[] = [];
+  for (const b of blobs) items.push(...JSON.parse(b.data));
+  return items;
 };
 
 const setToken = async (c: Context, tokenType: PeopleVineTokenType, accessToken: string, refreshToken: string, expiresAt: Date): Promise<PeopleVineToken> => {
@@ -342,41 +387,60 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const SUB_PAGE_SIZE = 100;
 
-const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): Promise<{
+// Groups active membership cards by customer. For each customer, captures:
+//  - ownTypes: titles of cards with parent_card_id === 0 (the holder's own card, not
+//    mirrored/inherited from a parent/company card)
+//  - primaryCardTitle: title of the card PV has marked primary: true (if any), regardless
+//    of parent_card_id — this is the client's "Set as Primary Membership Card" designation
+//  - allCardTypes: titles of every active card (own + sub-member), used for addon-type
+//    detection regardless of parent_card_id
+//  - secondaryProviders: for cards with parent_card_id !== 0, the title plus the
+//    company_name of whoever holds that parent card — used to detect cross-company
+//    memberships (a person receiving a membership from a company other than their own)
+const buildMembershipCardData = (cards: any[]): Record<string, {
+  ownTypes: string[];
+  primaryCardTitle: string | null;
+  primaryCardSourceCompanyName: string | null;
+  allCardTypes: string[];
+  secondaryProviders: { title: string; providingCompanyName: string | null }[];
+}> => {
+  // Pass 1: every card's id -> the company_name of whoever holds it, so sub-member
+  // cards (parent_card_id !== 0) can be traced back to their providing company.
+  const cardCompanyNameById = new Map<number, string | null>();
+  for (const card of cards) {
+    if (card.id != null) cardCompanyNameById.set(card.id, (card.customer_company_name ?? '').trim() || null);
+  }
+
+  const map: Record<string, { ownTypes: string[]; primaryCardTitle: string | null; primaryCardSourceCompanyName: string | null; allCardTypes: string[]; secondaryProviders: { title: string; providingCompanyName: string | null }[] }> = {};
+  for (const card of cards) {
+    const customerId = card.customer_id?.toString();
+    const title = (card.title ?? '').trim();
+    if (!customerId || !title) continue;
+    if (!map[customerId]) map[customerId] = { ownTypes: [], primaryCardTitle: null, primaryCardSourceCompanyName: null, allCardTypes: [], secondaryProviders: [] };
+    const entry = map[customerId];
+    if (!entry.allCardTypes.includes(title)) entry.allCardTypes.push(title);
+    const parentCardId = card.parent_card_id ?? 0;
+    if (parentCardId === 0) {
+      if (!entry.ownTypes.includes(title)) entry.ownTypes.push(title);
+    } else {
+      entry.secondaryProviders.push({ title, providingCompanyName: cardCompanyNameById.get(parentCardId) ?? null });
+    }
+    if (card.primary === true) {
+      entry.primaryCardTitle = title;
+      entry.primaryCardSourceCompanyName = parentCardId === 0
+        ? (cardCompanyNameById.get(card.id) ?? null)
+        : (cardCompanyNameById.get(parentCardId) ?? null);
+    }
+  }
+  return map;
+};
+
+const buildSubscriptionData = async (c: Context, subscriptions: any[], customerNo?: string): Promise<{
   customers: PeopleVineCustomer[];
-  hadErrors: boolean;
-  skippedSubPages: number[];
   subscriptionInfoMap: Map<string, { membershipTypes: string[]; isActive: boolean }>;
   individualSubscriberIds: Set<string>;
   portalAccessTypes: Set<string>;
 }> => {
-  const subscriptions: any[] = [];
-  const skippedSubPages: number[] = [];
-
-  for (let pageNumber = 1; pageNumber <= 500; pageNumber++) {
-    let result: { data: any[]; pagination: PvPagination | null };
-    try {
-      result = await apiRequestWithPagination(c, {
-        tokenType: PeopleVineTokenType.USER_COMPANY,
-        endpoint: '/subscriptions',
-        method: 'GET',
-        queryParams: {
-          Status: 'active',
-          Page_Size: String(SUB_PAGE_SIZE),
-          Page_Number: String(pageNumber),
-          ...(customerNo ? { Customer_Id: customerNo } : {}),
-        },
-      });
-    } catch {
-      console.warn(`[subscriptions] page ${pageNumber} failed, skipping`);
-      skippedSubPages.push(pageNumber);
-      continue;
-    }
-
-    subscriptions.push(...result.data);
-    if (!result.pagination?.has_next_page) break;
-  }
-
   const prisma: PrismaClient = c.get('db');
   const [dbCompanyTypes, dbPortalTypes] = await Promise.all([
     prisma.companyMembershipType.findMany({ select: { name: true } }),
@@ -433,7 +497,54 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): P
     companies.push((dbMatch ?? subs[0]).customer);
   }
 
-  return { customers: normalizeCustomers(companies), hadErrors: skippedSubPages.length > 0, skippedSubPages, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes };
+  return { customers: normalizeCustomers(companies), subscriptionInfoMap, individualSubscriberIds, portalAccessTypes };
+};
+
+const getCustomersFromSubscriptions = async (c: Context, customerNo?: string): Promise<{
+  customers: PeopleVineCustomer[];
+  hadErrors: boolean;
+  skippedSubPages: number[];
+  subscriptionInfoMap: Map<string, { membershipTypes: string[]; isActive: boolean }>;
+  individualSubscriberIds: Set<string>;
+  portalAccessTypes: Set<string>;
+}> => {
+  const subscriptions: any[] = [];
+  const skippedSubPages: number[] = [];
+
+  for (let pageNumber = 1; pageNumber <= 500; pageNumber++) {
+    let result: { data: any[]; pagination: PvPagination | null } | undefined;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        result = await apiRequestWithPagination(c, {
+          tokenType: PeopleVineTokenType.USER_COMPANY,
+          endpoint: '/subscriptions',
+          method: 'GET',
+          queryParams: {
+            Status: 'active',
+            Page_Size: String(SUB_PAGE_SIZE),
+            Page_Number: String(pageNumber),
+            ...(customerNo ? { Customer_Id: customerNo } : {}),
+          },
+        });
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) await sleep(1000 * (attempt + 1));
+      }
+    }
+    if (!result) {
+      console.warn(`[subscriptions] page ${pageNumber} failed after 3 attempts, skipping: ${lastErr}`);
+      skippedSubPages.push(pageNumber);
+      continue;
+    }
+
+    subscriptions.push(...result.data);
+    if (!result.pagination?.has_next_page) break;
+  }
+
+  const data = await buildSubscriptionData(c, subscriptions, customerNo);
+  return { ...data, hadErrors: skippedSubPages.length > 0, skippedSubPages };
 };
 
 const getCustomers = async (
@@ -616,23 +727,37 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
   }, () => checkCancelled(prisma, sessionId));
 
   const subscriberMemberships: Record<string, string | null> = {};
+  const individualMembershipTypes: Record<string, string[]> = {};
   for (const [pvId, info] of subscriptionInfoMap.entries()) {
     const portalType = info.membershipTypes.find(t => portalAccessTypes.has(t));
     subscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? null;
+    individualMembershipTypes[pvId] = info.membershipTypes;
   }
 
-  await saveMeta({
-    companiesDone: true,
+  // Large per-customer lookup maps go to a blob — read back in Phase 2/3 — instead
+  // of metadata, which would otherwise carry these forward (and re-serialize them)
+  // on every saveMeta() call for the rest of the sync.
+  await writeDataBlob(prisma, sessionId, 'phase1-data.json', {
     activePVCompanyIds: Array.from(companyProfilesMap.keys()),
     activePVSubscriberIds: Array.from(individualSubscriberIds),
     activatedCompanyIds: Array.from(activatedCompanyIds),
     subscriberMemberships,
+    individualMembershipTypes,
+  });
+  await appendAuditChunk(prisma, sessionId, 'companiesCreated', auditCompaniesCreated);
+  await appendAuditChunk(prisma, sessionId, 'companiesUpdated', auditCompaniesUpdated);
+
+  const sessionForCounts = sessionId ? await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { metadata: true } }) : null;
+  const metaForCounts: Record<string, any> = sessionForCounts ? JSON.parse(sessionForCounts.metadata ?? '{}') : {};
+  const auditCounts: Record<string, number> = { ...(metaForCounts.auditCounts ?? {}) };
+  auditCounts.companiesCreated = (auditCounts.companiesCreated ?? 0) + auditCompaniesCreated.length;
+  auditCounts.companiesUpdated = (auditCounts.companiesUpdated ?? 0) + auditCompaniesUpdated.length;
+
+  await saveMeta({
+    companiesDone: true,
     lastCustomerPage: 0,
     skippedSubPages,
-    audit: {
-      companiesCreated: auditCompaniesCreated,
-      companiesUpdated: auditCompaniesUpdated,
-    },
+    auditCounts,
   });
   await flush(30, 'Companies synced — queuing user sync');
   log('info', 'Companies sync complete. User sync queued.');
@@ -684,9 +809,16 @@ export const syncPhaseUsers = async (
 
   const sessionForMeta = sessionId ? await prisma.syncSession.findUnique({ where: { id: sessionId } }) : null;
   const sessionMeta: Record<string, any> = sessionForMeta ? JSON.parse(sessionForMeta.metadata ?? '{}') : {};
-  const activePVSubscriberIds = new Set<string>(sessionMeta.activePVSubscriberIds ?? []);
-  const subscriberMemberships: Record<string, string | null> = sessionMeta.subscriberMemberships ?? {};
+  const phase1Data = await readDataBlob(prisma, sessionId, 'phase1-data.json', {
+    activePVSubscriberIds: [] as string[],
+    subscriberMemberships: {} as Record<string, string | null>,
+    individualMembershipTypes: {} as Record<string, string[]>,
+  });
+  const activePVSubscriberIds = new Set<string>(phase1Data.activePVSubscriberIds);
+  const subscriberMemberships: Record<string, string | null> = phase1Data.subscriberMemberships;
+  const individualMembershipTypes: Record<string, string[]> = phase1Data.individualMembershipTypes;
   const includeFreeMembers: boolean = sessionMeta.includeFreeMembers !== false;
+  const activePVUserIds = await readDataBlob(prisma, sessionId, 'phase2-activePVUserIds.json', [] as string[]);
 
   const dbPortalTypes = await prisma.companyMembershipType.findMany({ select: { name: true } });
   const portalTypeSet = new Set(dbPortalTypes.map(t => t.name));
@@ -761,13 +893,24 @@ export const syncPhaseUsers = async (
     );
     const memberSource = isSubscriber ? 'subscription' : 'membership';
 
+    // Primary membership / add-ons reflect the individual's own active subscription(s),
+    // not the company's plan — staff/interns under a subscriber company shouldn't
+    // inherit that company's membership type until they have their own subscription.
+    // Note: this pass is subscription-only (no membership card data). Phase 4
+    // (syncPhaseCorrectionUsers / buildMembershipCardData) runs right after and is the
+    // card-aware authoritative pass — it reconciles primaryMembership/addOns using PV's
+    // membership cards, including the "primary:true" card flag.
+    const ownMembershipTypesJson = JSON.stringify(individualMembershipTypes[pvId] ?? []);
+    const newPrimary = getPrimaryType({ membershipTypes: ownMembershipTypesJson });
+    const newAddOns = getAddonTypes({ membershipTypes: ownMembershipTypesJson });
+
     if (existingUser) {
       const needsUpdate =
         existingUser.name !== customer.full_name ||
         existingUser.email !== customer.email.toLowerCase() ||
         existingUser.companyId !== company.id ||
-        existingUser.primaryMembership !== getPrimaryType(company) ||
-        existingUser.addOns !== JSON.stringify(getAddonTypes(company)) ||
+        existingUser.primaryMembership !== newPrimary ||
+        existingUser.addOns !== JSON.stringify(newAddOns) ||
         existingUser.active !== pvUserActive ||
         existingUser.profilePhoto !== (customer.profilePhoto ?? null) ||
         existingUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
@@ -782,15 +925,14 @@ export const syncPhaseUsers = async (
       if (needsUpdate) {
         const uChanges: { field: string; before: string; after: string }[] = [];
         const newEmailLower = customer.email.toLowerCase();
-        const newPrimary = getPrimaryType(company);
-        const newAddOns = JSON.stringify(getAddonTypes(company));
+        const newAddOnsJson = JSON.stringify(newAddOns);
         const newUsername = customer.username ? customer.username.trim().toLowerCase() : null;
         if (existingUser.name !== customer.full_name) uChanges.push({ field: 'name', before: existingUser.name, after: customer.full_name });
         if (existingUser.email !== newEmailLower) uChanges.push({ field: 'email', before: existingUser.email, after: newEmailLower });
         if (existingUser.active !== pvUserActive) uChanges.push({ field: 'active', before: String(existingUser.active), after: String(pvUserActive) });
         if (existingUser.companyId !== company.id) uChanges.push({ field: 'company', before: existingUser.companyId, after: company.id });
         if (existingUser.primaryMembership !== newPrimary) uChanges.push({ field: 'primaryMembership', before: String(existingUser.primaryMembership), after: String(newPrimary) });
-        if (existingUser.addOns !== newAddOns) uChanges.push({ field: 'addOns', before: existingUser.addOns || '[]', after: newAddOns });
+        if (existingUser.addOns !== newAddOnsJson) uChanges.push({ field: 'addOns', before: existingUser.addOns || '[]', after: newAddOnsJson });
         if (existingUser.memberSource !== memberSource) uChanges.push({ field: 'memberSource', before: String(existingUser.memberSource), after: memberSource });
         if (existingUser.username !== newUsername) uChanges.push({ field: 'username', before: String(existingUser.username), after: String(newUsername) });
         if (existingUser.phone !== (customer.phone ?? null)) uChanges.push({ field: 'phone', before: String(existingUser.phone), after: String(customer.phone ?? null) });
@@ -809,7 +951,7 @@ export const syncPhaseUsers = async (
             companyId: company.id,
             peopleVineId: pvId,
             primaryMembership: newPrimary,
-            addOns: getAddonTypes(company),
+            addOns: newAddOns,
             profilePhoto: customer.profilePhoto,
             active: pvUserActive,
             phone: customer.phone ?? null,
@@ -837,8 +979,8 @@ export const syncPhaseUsers = async (
         peopleVineId: pvId,
         role: Role.USER,
         companyId: company.id,
-        primaryMembership: getPrimaryType(company),
-        addOns: getAddonTypes(company),
+        primaryMembership: newPrimary,
+        addOns: newAddOns,
         profilePhoto: customer.profilePhoto,
         active: pvUserActive,
         phone: customer.phone ?? null,
@@ -861,7 +1003,7 @@ export const syncPhaseUsers = async (
   // On the last batch, fetch any active subscribers the /customers pages never returned
   if (!hasMore && activePVSubscriberIds.size > 0) {
     const allSeenIds = new Set<string>([
-      ...(sessionMeta.activePVUserIds ?? []),
+      ...activePVUserIds,
       ...batchCustomersMap.keys(),
     ]);
     const missedIds = Array.from(activePVSubscriberIds).filter(id => !allSeenIds.has(id));
@@ -877,19 +1019,20 @@ export const syncPhaseUsers = async (
   }
 
   if (sessionId) {
-    const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+    await writeDataBlob(prisma, sessionId, 'phase2-activePVUserIds.json', [...activePVUserIds, ...Array.from(batchCustomersMap.keys())]);
+    await appendAuditChunk(prisma, sessionId, 'usersCreated', auditUsersCreated);
+    await appendAuditChunk(prisma, sessionId, 'usersUpdated', auditUsersUpdated);
+
+    const session = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { metadata: true } });
     const meta = session ? JSON.parse(session.metadata ?? '{}') : {};
-    const existing: string[] = meta.activePVUserIds ?? [];
-    const existingAudit: Record<string, any> = meta.audit ?? {};
+    const auditCounts: Record<string, number> = { ...(meta.auditCounts ?? {}) };
+    auditCounts.usersCreated = (auditCounts.usersCreated ?? 0) + auditUsersCreated.length;
+    auditCounts.usersUpdated = (auditCounts.usersUpdated ?? 0) + auditUsersUpdated.length;
+
     await saveMeta({
-      activePVUserIds: [...existing, ...Array.from(batchCustomersMap.keys())],
       usersDone: !hasMore,
       userHadErrors: hadErrors || (meta.userHadErrors === true),
-      audit: {
-        ...existingAudit,
-        usersCreated: [...(existingAudit.usersCreated ?? []), ...auditUsersCreated],
-        usersUpdated: [...(existingAudit.usersUpdated ?? []), ...auditUsersUpdated],
-      },
+      auditCounts,
     });
   }
 
@@ -907,12 +1050,16 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
 
   const session = sessionId ? await prisma.syncSession.findUnique({ where: { id: sessionId } }) : null;
   const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
-  const existingAudit: Record<string, any> = meta.audit ?? {};
   const auditCompaniesDeactivated: { id: string; name: string }[] = [];
   const auditUsersDeactivated: { id: string; name: string; email: string }[] = [];
 
-  const activePVCompanyIds: string[] = meta.activePVCompanyIds ?? [];
-  const activePVSubscriberIds = new Set<string>(meta.activePVSubscriberIds ?? []);
+  const phase1Data = await readDataBlob(prisma, sessionId, 'phase1-data.json', {
+    activePVCompanyIds: [] as string[],
+    activePVSubscriberIds: [] as string[],
+    activatedCompanyIds: [] as string[],
+  });
+  const activePVCompanyIds: string[] = phase1Data.activePVCompanyIds;
+  const activePVSubscriberIds = new Set<string>(phase1Data.activePVSubscriberIds);
   const activePVCompanySet = new Set(activePVCompanyIds);
 
   if (activePVCompanyIds.length > 0) {
@@ -945,8 +1092,8 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     log('warn', `[sync] Subscription page(s) [${skippedSubPages.join(', ')}] failed but proceeding with deactivation.`);
   }
 
-  const activePVUserIds: string[] = meta.activePVUserIds ?? [];
-  const activatedCompanyIds = new Set<string>(meta.activatedCompanyIds ?? []);
+  const activePVUserIds = await readDataBlob(prisma, sessionId, 'phase2-activePVUserIds.json', [] as string[]);
+  const activatedCompanyIds = new Set<string>(phase1Data.activatedCompanyIds);
 
   if (activePVCompanyIds.length === 0 && activePVUserIds.length === 0) {
     log('warn', '[sync] No active PV IDs in session metadata, skipping deactivation.');
@@ -989,15 +1136,523 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
   }
 
   log('info', 'PeopleVine synchronization complete.');
-  await saveMeta({
-    audit: {
-      ...existingAudit,
-      companiesDeactivated: auditCompaniesDeactivated,
-      usersDeactivated: auditUsersDeactivated,
-    },
-  });
+  await appendAuditChunk(prisma, sessionId, 'companiesDeactivated', auditCompaniesDeactivated);
+  await appendAuditChunk(prisma, sessionId, 'usersDeactivated', auditUsersDeactivated);
+  if (sessionId) {
+    const auditCounts: Record<string, number> = { ...(meta.auditCounts ?? {}) };
+    auditCounts.companiesDeactivated = (auditCounts.companiesDeactivated ?? 0) + auditCompaniesDeactivated.length;
+    auditCounts.usersDeactivated = (auditCounts.usersDeactivated ?? 0) + auditUsersDeactivated.length;
+    await saveMeta({ auditCounts });
+  }
   await flush(100, 'Complete', 'completed');
   if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
+};
+
+// --- Phase 4: post-sync verification / correction pass ---------------------
+// Runs automatically right after syncPhaseDeactivate, all the way through to
+// completion. Exports a fresh PV snapshot to R2, matches it against the DB,
+// and UPDATES discrepancies (active status, primaryMembership, addOns, etc).
+// UPDATE-ONLY: never creates new Company or User records.
+
+export const cleanupCorrectionExport = async (c: Context, sessionId: string): Promise<void> => {
+  const prisma: PrismaClient = c.get('db');
+  // Keep audit-*.json chunks — they're read by /api/sync/sessions/:id/audit after completion.
+  await prisma.syncExportBlob.deleteMany({ where: { sessionId, NOT: { key: { startsWith: 'audit-' } } } });
+};
+
+export const syncPhaseCorrectionExport = async (
+  c: Context,
+  sessionId?: string,
+  startPage = 1,
+): Promise<{ hadErrors: boolean; hasMore: boolean; lastPage: number }> => {
+  const prisma: PrismaClient = c.get('db');
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
+
+  if (startPage === 1) {
+    if (sessionId) {
+      await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: null } }).catch(() => {});
+    }
+    await flush(94, 'Verifying against PeopleVine — exporting subscriptions', 'running');
+    log('info', 'Starting post-sync verification pass');
+
+    const { subscriptions, skippedSubPages } = await fetchAllPvData(c);
+    if (sessionId) {
+      const data = JSON.stringify({ subscriptions, skippedSubPages });
+      await prisma.syncExportBlob.upsert({
+        where: { sessionId_key: { sessionId, key: 'subscriptions.json' } },
+        create: { sessionId, key: 'subscriptions.json', data },
+        update: { data },
+      });
+    }
+
+    const { cards: membershipCards, skippedPages: skippedCardPages } = await fetchAllMembershipCards(c);
+    if (sessionId) {
+      // Removing the Type=id filter roughly doubles card volume, so chunk the export
+      // the same way customers are batched below — keeps each blob comfortably under
+      // D1's per-value size limit.
+      const CARD_CHUNK_SIZE = 2000;
+      const membershipCardChunkKeys: string[] = [];
+      for (let i = 0; i < membershipCards.length || i === 0; i += CARD_CHUNK_SIZE) {
+        const chunk = membershipCards.slice(i, i + CARD_CHUNK_SIZE);
+        const key = `membership-cards-${String(membershipCardChunkKeys.length).padStart(6, '0')}.json`;
+        const data = JSON.stringify(i === 0 ? { cards: chunk, skippedCardPages } : { cards: chunk });
+        await prisma.syncExportBlob.upsert({
+          where: { sessionId_key: { sessionId, key } },
+          create: { sessionId, key, data },
+          update: { data },
+        });
+        membershipCardChunkKeys.push(key);
+        if (membershipCards.length === 0) break;
+      }
+      await saveMeta({ membershipCardChunkKeys });
+    }
+
+    await saveMeta({ correctionExportBatchKeys: [] });
+  }
+
+  await flush(95, `Exporting customers for verification (page ${startPage}+)`, 'running');
+  const { customers, hadErrors, lastPage, hasMore } = await getCustomers(c, startPage, BATCH_PAGES);
+
+  if (sessionId && customers.length > 0) {
+    const key = `customers-${String(startPage).padStart(6, '0')}.json`;
+    const data = JSON.stringify(customers);
+    await prisma.syncExportBlob.upsert({
+      where: { sessionId_key: { sessionId, key } },
+      create: { sessionId, key, data },
+      update: { data },
+    });
+    const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+    const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
+    const existingKeys: string[] = meta.correctionExportBatchKeys ?? [];
+    await saveMeta({ correctionExportBatchKeys: [...existingKeys, key], correctionExportLastPage: lastPage });
+  }
+
+  await flush(hasMore ? 96 : 97, hasMore ? `Verification export — fetched through page ${lastPage}` : 'Verification export complete', 'running');
+  log('info', hasMore ? `Export batch done (pages ${startPage}–${lastPage}). Continuing from page ${lastPage + 1}.` : 'Verification export complete.');
+
+  return { hadErrors, hasMore, lastPage };
+};
+
+export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: string): Promise<void> => {
+  const prisma: PrismaClient = c.get('db');
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
+
+  await flush(98, 'Verifying companies against PeopleVine', 'running');
+
+  if (!sessionId) {
+    await flush(98, 'Companies verified — verifying users', 'running');
+    return;
+  }
+
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
+
+  const subsBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: 'subscriptions.json' } } });
+  const { subscriptions } = subsBlob ? JSON.parse(subsBlob.data) as { subscriptions: any[] } : { subscriptions: [] as any[] };
+
+  const membershipCardChunkKeys: string[] = meta.membershipCardChunkKeys ?? [];
+  const membershipCards: any[] = [];
+  for (const key of membershipCardChunkKeys) {
+    const chunkBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key } } });
+    const { cards } = chunkBlob ? JSON.parse(chunkBlob.data) as { cards: any[] } : { cards: [] as any[] };
+    membershipCards.push(...cards);
+  }
+  const correctionIndividualMembershipCardData = buildMembershipCardData(membershipCards);
+
+  const { customers: companyProfiles, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes } = await buildSubscriptionData(c, subscriptions);
+
+  const dbCompanies = await prisma.company.findMany();
+  const dbCompaniesMap = new Map<string, Company>();
+  const dbCompaniesByName = new Map<string, Company>();
+  for (const co of dbCompanies) {
+    if (co.peopleVineId) dbCompaniesMap.set(co.peopleVineId, co);
+    dbCompaniesByName.set(co.name.trim().toLowerCase(), co);
+  }
+
+  const auditCorrectionsCompanies: { id: string; name: string; pvId: string; changes: { field: string; before: string; after: string }[] }[] = [];
+
+  await runConcurrent(companyProfiles, 20, async (customer) => {
+    const pvId = customer.id.toString();
+    const subInfo = subscriptionInfoMap.get(pvId);
+    const membershipTypes = subInfo?.membershipTypes ?? [];
+    const isPersonal = customer.isPersonal ?? false;
+    const isActive = subInfo?.isActive ?? false;
+    const existingById = dbCompaniesMap.get(pvId);
+    const existingByName = dbCompaniesByName.get(customer.company_name.trim().toLowerCase());
+    const existing = existingById ?? existingByName;
+    if (!existing) return; // update-only — never create a company here
+
+    const coChanges: { field: string; before: string; after: string }[] = [];
+    const existingMTypes = JSON.parse(existing.membershipTypes || '[]') as string[];
+    if (existing.name !== customer.company_name) coChanges.push({ field: 'name', before: existing.name, after: customer.company_name });
+    if (existing.active !== isActive) coChanges.push({ field: 'active', before: String(existing.active), after: String(isActive) });
+    if (JSON.stringify([...existingMTypes].sort()) !== JSON.stringify([...membershipTypes].sort())) coChanges.push({ field: 'membershipTypes', before: existingMTypes.join('; '), after: membershipTypes.join('; ') });
+    if ((existing.isPersonal ?? false) !== isPersonal) coChanges.push({ field: 'isPersonal', before: String(existing.isPersonal), after: String(isPersonal) });
+    if (coChanges.length === 0) return;
+
+    await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: existing.peopleVineId || pvId });
+    auditCorrectionsCompanies.push({ id: existing.id, name: customer.company_name, pvId, changes: coChanges });
+  }, () => checkCancelled(prisma, sessionId));
+
+  const correctionSubscriberMemberships: Record<string, string | null> = {};
+  const correctionIndividualMembershipTypes: Record<string, string[]> = {};
+  for (const [pvId, info] of subscriptionInfoMap.entries()) {
+    const portalType = info.membershipTypes.find(t => portalAccessTypes.has(t));
+    correctionSubscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? null;
+    correctionIndividualMembershipTypes[pvId] = info.membershipTypes;
+  }
+
+  // Large per-customer lookup maps go to a blob — read back per-batch in
+  // syncPhaseCorrectionUsers — instead of metadata, which would otherwise carry
+  // these forward (and re-serialize them) on every saveMeta() call across all
+  // correction-user batches.
+  await writeDataBlob(prisma, sessionId, 'phase4-data.json', {
+    correctionIndividualMembershipTypes,
+    correctionIndividualMembershipCardData,
+    correctionSubscriberMemberships,
+    correctionActivePVSubscriberIds: Array.from(individualSubscriberIds),
+  });
+  await appendAuditChunk(prisma, sessionId, 'correctionsCompanies', auditCorrectionsCompanies);
+
+  const auditCounts: Record<string, number> = { ...(meta.auditCounts ?? {}) };
+  auditCounts.correctionsCompanies = (auditCounts.correctionsCompanies ?? 0) + auditCorrectionsCompanies.length;
+  await saveMeta({ auditCounts });
+
+  await flush(98, 'Companies verified — verifying users', 'running');
+  log('info', `Verification: ${auditCorrectionsCompanies.length} compan${auditCorrectionsCompanies.length === 1 ? 'y' : 'ies'} corrected.`);
+};
+
+export const syncPhaseCorrectionUsers = async (
+  c: Context,
+  sessionId?: string,
+  startBatch = 0,
+): Promise<{ hasMore: boolean; nextBatch: number }> => {
+  const prisma: PrismaClient = c.get('db');
+  const { log, flush, saveMeta } = makeSessionFlusher(prisma, sessionId);
+
+  const finish = async () => {
+    if (sessionId) {
+      await cleanupCorrectionExport(c, sessionId);
+      await saveMeta({
+        correctionExportBatchKeys: undefined,
+        correctionExportLastPage: undefined,
+        membershipCardChunkKeys: undefined,
+      });
+    }
+    await flush(100, 'Done', 'completed');
+    if (sessionId) await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => {});
+  };
+
+  if (!sessionId) {
+    await finish();
+    return { hasMore: false, nextBatch: startBatch };
+  }
+
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
+  const batchKeys: string[] = meta.correctionExportBatchKeys ?? [];
+
+  if (batchKeys.length === 0 || startBatch >= batchKeys.length) {
+    await finish();
+    return { hasMore: false, nextBatch: startBatch };
+  }
+
+  // phase4-data.json is written once by syncPhaseCorrectionCompanies before any
+  // batch runs. If it's missing here (e.g. a redelivered/duplicate queue message
+  // arriving after cleanup), readDataBlob's fallback would silently look like "no
+  // cards/subscriptions for anyone" and Phase 4 would overwrite every customer's
+  // primaryMembership/addOns with null/[]. Fail loudly instead of corrupting data.
+  const phase4Blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: 'phase4-data.json' } } });
+  if (!phase4Blob) {
+    throw new Error('phase4-data.json blob is missing — aborting correction batch to avoid writing incorrect primaryMembership/addOns from empty data');
+  }
+  const phase4Data = JSON.parse(phase4Blob.data) as {
+    correctionIndividualMembershipTypes: Record<string, string[]>;
+    correctionIndividualMembershipCardData: Record<string, { ownTypes: string[]; primaryCardTitle: string | null; primaryCardSourceCompanyName: string | null; allCardTypes: string[]; secondaryProviders: { title: string; providingCompanyName: string | null }[] }>;
+    correctionActivePVSubscriberIds: string[];
+  };
+  const correctionIndividualMembershipTypes = phase4Data.correctionIndividualMembershipTypes;
+  const correctionIndividualMembershipCardData = phase4Data.correctionIndividualMembershipCardData;
+  const correctionActivePVSubscriberIds = new Set<string>(phase4Data.correctionActivePVSubscriberIds);
+
+  await flush(98, `Verifying users (batch ${startBatch + 1}/${batchKeys.length})`, 'running');
+
+  const dbCompanies = await prisma.company.findMany();
+  const companiesByNameMap = new Map<string, Company>();
+  for (const co of dbCompanies) {
+    const existing = companiesByNameMap.get(co.name);
+    if (existing) {
+      if (!existing.peopleVineId && co.peopleVineId) companiesByNameMap.set(co.name, co);
+    } else {
+      companiesByNameMap.set(co.name, co);
+    }
+  }
+
+  const existingUsers = await prisma.user.findMany();
+  const byPvId = new Map<string, User>();
+  const byEmail = new Map<string, User>();
+  for (const u of existingUsers) {
+    if (u.peopleVineId) byPvId.set(u.peopleVineId, u);
+    byEmail.set(u.email, u);
+  }
+
+  const dbPortalTypes = await prisma.companyMembershipType.findMany({ select: { name: true } });
+  const portalTypeSet = new Set(dbPortalTypes.map(t => t.name));
+  const dbPrimaryTypes = await prisma.primarySubscriptionType.findMany({ select: { name: true } });
+  const primaryTypeSet = new Set(dbPrimaryTypes.map(t => t.name));
+  const dbAddonTypes = await prisma.addonSubscriptionType.findMany({ select: { name: true } });
+  const addonTypeSet = new Set(dbAddonTypes.map(t => t.name));
+  const dbFreeMemberExclusions = await prisma.freeMemberExclusionType.findMany({ select: { name: true } });
+  const freeMemberExclusionSet = new Set(dbFreeMemberExclusions.map(t => t.name));
+
+  const getAddonTypes = (co: { membershipTypes: string }): string[] => {
+    const types = JSON.parse(co.membershipTypes || '[]') as string[];
+    return types.filter(t => addonTypeSet.has(t));
+  };
+  const companyQualifiesForFreeMember = (co: { membershipTypes: string }): boolean => {
+    const types = JSON.parse(co.membershipTypes || '[]') as string[];
+    return types.some(t => (portalTypeSet.has(t) || primaryTypeSet.has(t)) && !freeMemberExclusionSet.has(t));
+  };
+
+  const blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: batchKeys[startBatch] } } });
+  const customers: PeopleVineCustomer[] = blob ? JSON.parse(blob.data) : [];
+
+  const auditCorrectionsUsers: { id: string; name: string; email: string; companyId: string; changes: { field: string; before: string; after: string }[] }[] = [];
+  const auditMembershipTypeMismatches: {
+    id: string; name: string; email: string; pvId: string;
+    primaryMembership: string | null; addOns: string[];
+    primaryCardFlagTitle: string | null; unmatchedCardTypes: string[];
+  }[] = [];
+  const auditSecondaryMemberships: {
+    id: string; name: string; email: string; pvId: string;
+    ownCompanyName: string; providingCompanyName: string; cardTitles: string[];
+  }[] = [];
+  const auditNotOnboarded: {
+    id: string; name: string; email: string; pvId: string;
+    companyName: string; active: boolean; primaryMembership: string | null;
+  }[] = [];
+  const auditNoPrimaryFlagged: {
+    id: string; name: string; email: string; pvId: string;
+    companyName: string; active: boolean; addOns: string[]; candidateTypes: string[];
+  }[] = [];
+
+  await runConcurrent(customers, 20, async (customer) => {
+    const pvId = customer.id.toString();
+    const isSubscriber = correctionActivePVSubscriberIds.has(pvId);
+    const isMember = customer.isMember ?? false;
+
+    const company = companiesByNameMap.get(customer.company_name);
+    if (!company) return; // update-only — never create a company here
+
+    const existingUser = byPvId.get(pvId) ?? byEmail.get(customer.email.toLowerCase());
+    if (!existingUser) return; // update-only — never create a user here
+
+    const memberSource = isSubscriber ? 'subscription' : 'membership';
+    const cardData = correctionIndividualMembershipCardData[pvId] ?? { ownTypes: [], primaryCardTitle: null, primaryCardSourceCompanyName: null, allCardTypes: [], secondaryProviders: [] };
+
+    const ownCompanyNameLower = company.name.trim().toLowerCase();
+    const externalProviders = cardData.secondaryProviders.filter(
+      sp => sp.providingCompanyName && sp.providingCompanyName.trim().toLowerCase() !== ownCompanyNameLower
+    );
+
+    let pvUserActive = (customer.pvActive ?? true) && (
+      isMember
+        ? companyQualifiesForFreeMember(company)
+        : ((company.active !== false) && isSubscriber)
+    );
+
+    if (!pvUserActive && (customer.pvActive ?? true)) {
+      for (const sp of externalProviders) {
+        const sponsor = companiesByNameMap.get(sp.providingCompanyName!);
+        if (sponsor && sponsor.active !== false && companyQualifiesForFreeMember(sponsor)) {
+          pvUserActive = true;
+          break;
+        }
+      }
+    }
+
+    const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
+
+    let newPrimary: string | null = null;
+    const primaryCardTitle = cardData.primaryCardTitle;
+    if (primaryCardTitle && !addonTypeSet.has(primaryCardTitle) &&
+        (primaryTypeSet.has(primaryCardTitle) || portalTypeSet.has(primaryCardTitle))) {
+      newPrimary = primaryCardTitle;
+    }
+
+    const newMemberSourceCompany = newPrimary !== null
+      ? (cardData.primaryCardSourceCompanyName ?? company.name)
+      : company.name;
+
+    // newAddOns: subscription-based addons, plus ANY card (own or sub-member) whose title
+    // is an addon type — addon benefits (community access, mentorship) follow the person
+    // regardless of who technically pays for the underlying card.
+    const subscriptionAddOns = getAddonTypes({ membershipTypes: ownMembershipTypesJson });
+    const cardAddOns = cardData.allCardTypes.filter(t => addonTypeSet.has(t));
+    const newAddOns = Array.from(new Set([...subscriptionAddOns, ...cardAddOns]));
+
+    const recognizedTypes = new Set([...portalTypeSet, ...primaryTypeSet, ...addonTypeSet]);
+    const primaryCandidateTypes = new Set([...portalTypeSet, ...primaryTypeSet]);
+    const reflectedTypes = new Set([newPrimary, ...newAddOns].filter((t): t is string => !!t));
+    const unmatchedCardTypes = cardData.allCardTypes.filter(t => {
+      if (!recognizedTypes.has(t) || reflectedTypes.has(t)) return false;
+      if (newPrimary === null && primaryCandidateTypes.has(t)) return false;
+      return true;
+    });
+    if (unmatchedCardTypes.length > 0) {
+      auditMembershipTypeMismatches.push({
+        id: existingUser.id,
+        name: customer.full_name,
+        email: customer.email.toLowerCase(),
+        pvId,
+        primaryMembership: newPrimary,
+        addOns: newAddOns,
+        primaryCardFlagTitle: cardData.primaryCardTitle,
+        unmatchedCardTypes,
+      });
+    }
+
+    if (externalProviders.length > 0) {
+      const titlesByProvider = new Map<string, string[]>();
+      for (const sp of externalProviders) {
+        const key = sp.providingCompanyName!;
+        if (!titlesByProvider.has(key)) titlesByProvider.set(key, []);
+        const titles = titlesByProvider.get(key)!;
+        if (!titles.includes(sp.title)) titles.push(sp.title);
+      }
+      for (const [providingCompanyName, cardTitles] of titlesByProvider) {
+        auditSecondaryMemberships.push({
+          id: existingUser.id,
+          name: customer.full_name,
+          email: customer.email.toLowerCase(),
+          pvId,
+          ownCompanyName: company.name,
+          providingCompanyName,
+          cardTitles,
+        });
+      }
+    }
+
+    const subscriptionTypes = correctionIndividualMembershipTypes[pvId] ?? [];
+    const hasMembershipData = cardData.allCardTypes.length > 0 || subscriptionTypes.length > 0;
+
+    if (!hasMembershipData) {
+      auditNotOnboarded.push({
+        id: existingUser.id,
+        name: customer.full_name,
+        email: customer.email.toLowerCase(),
+        pvId,
+        companyName: company.name,
+        active: pvUserActive,
+        primaryMembership: newPrimary,
+      });
+    } else if (newPrimary === null) {
+      const candidateTypes = Array.from(new Set([
+        ...cardData.allCardTypes.filter(t => !addonTypeSet.has(t) && (primaryTypeSet.has(t) || portalTypeSet.has(t))),
+        ...subscriptionTypes.filter(t => !addonTypeSet.has(t) && (primaryTypeSet.has(t) || portalTypeSet.has(t))),
+      ]));
+      auditNoPrimaryFlagged.push({
+        id: existingUser.id,
+        name: customer.full_name,
+        email: customer.email.toLowerCase(),
+        pvId,
+        companyName: company.name,
+        active: pvUserActive,
+        addOns: newAddOns,
+        candidateTypes,
+      });
+    }
+
+    const needsUpdate =
+      existingUser.name !== customer.full_name ||
+      existingUser.email !== customer.email.toLowerCase() ||
+      existingUser.companyId !== company.id ||
+      existingUser.primaryMembership !== newPrimary ||
+      existingUser.addOns !== JSON.stringify(newAddOns) ||
+      existingUser.active !== pvUserActive ||
+      existingUser.profilePhoto !== (customer.profilePhoto ?? null) ||
+      existingUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
+      existingUser.phone !== (customer.phone ?? null) ||
+      existingUser.address !== (customer.address ?? null) ||
+      existingUser.city !== (customer.city ?? null) ||
+      existingUser.state !== (customer.state ?? null) ||
+      existingUser.zipCode !== (customer.zipCode ?? null) ||
+      existingUser.cardStatus !== (customer.cardStatus ?? null) ||
+      existingUser.memberSource !== memberSource ||
+      existingUser.memberSourceCompany !== newMemberSourceCompany;
+    if (!needsUpdate) return;
+
+    const uChanges: { field: string; before: string; after: string }[] = [];
+    const newEmailLower = customer.email.toLowerCase();
+    const newAddOnsJson = JSON.stringify(newAddOns);
+    const newUsername = customer.username ? customer.username.trim().toLowerCase() : null;
+    if (existingUser.name !== customer.full_name) uChanges.push({ field: 'name', before: existingUser.name, after: customer.full_name });
+    if (existingUser.email !== newEmailLower) uChanges.push({ field: 'email', before: existingUser.email, after: newEmailLower });
+    if (existingUser.active !== pvUserActive) uChanges.push({ field: 'active', before: String(existingUser.active), after: String(pvUserActive) });
+    if (existingUser.companyId !== company.id) uChanges.push({ field: 'company', before: existingUser.companyId, after: company.id });
+    if (existingUser.primaryMembership !== newPrimary) uChanges.push({ field: 'primaryMembership', before: String(existingUser.primaryMembership), after: String(newPrimary) });
+    if (existingUser.addOns !== newAddOnsJson) uChanges.push({ field: 'addOns', before: existingUser.addOns || '[]', after: newAddOnsJson });
+    if (existingUser.memberSource !== memberSource) uChanges.push({ field: 'memberSource', before: String(existingUser.memberSource), after: memberSource });
+    if (existingUser.memberSourceCompany !== newMemberSourceCompany) uChanges.push({ field: 'memberSourceCompany', before: String(existingUser.memberSourceCompany), after: newMemberSourceCompany });
+    if (existingUser.username !== newUsername) uChanges.push({ field: 'username', before: String(existingUser.username), after: String(newUsername) });
+    if (existingUser.phone !== (customer.phone ?? null)) uChanges.push({ field: 'phone', before: String(existingUser.phone), after: String(customer.phone ?? null) });
+    if (existingUser.address !== (customer.address ?? null)) uChanges.push({ field: 'address', before: String(existingUser.address), after: String(customer.address ?? null) });
+    if (existingUser.city !== (customer.city ?? null)) uChanges.push({ field: 'city', before: String(existingUser.city), after: String(customer.city ?? null) });
+    if (existingUser.state !== (customer.state ?? null)) uChanges.push({ field: 'state', before: String(existingUser.state), after: String(customer.state ?? null) });
+    if (existingUser.zipCode !== (customer.zipCode ?? null)) uChanges.push({ field: 'zipCode', before: String(existingUser.zipCode), after: String(customer.zipCode ?? null) });
+    if (existingUser.cardStatus !== (customer.cardStatus ?? null)) uChanges.push({ field: 'cardStatus', before: String(existingUser.cardStatus), after: String(customer.cardStatus ?? null) });
+
+    try {
+      await updateUser(c, {
+        id: existingUser.id,
+        name: customer.full_name,
+        email: customer.email,
+        username: customer.username ?? null,
+        companyId: company.id,
+        peopleVineId: pvId,
+        primaryMembership: newPrimary,
+        addOns: newAddOns,
+        profilePhoto: customer.profilePhoto,
+        active: pvUserActive,
+        phone: customer.phone ?? null,
+        address: customer.address ?? null,
+        city: customer.city ?? null,
+        state: customer.state ?? null,
+        zipCode: customer.zipCode ?? null,
+        cardStatus: customer.cardStatus ?? null,
+        memberSource,
+        memberSourceCompany: newMemberSourceCompany,
+      });
+      auditCorrectionsUsers.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: company.id, changes: uChanges });
+    } catch (e) {
+      if (!isUniqueConstraintError(e)) throw e;
+    }
+  }, () => checkCancelled(prisma, sessionId));
+
+  await appendAuditChunk(prisma, sessionId, 'correctionsUsers', auditCorrectionsUsers);
+  await appendAuditChunk(prisma, sessionId, 'membershipTypeMismatches', auditMembershipTypeMismatches);
+  await appendAuditChunk(prisma, sessionId, 'secondaryMemberships', auditSecondaryMemberships);
+  await appendAuditChunk(prisma, sessionId, 'notOnboarded', auditNotOnboarded);
+  await appendAuditChunk(prisma, sessionId, 'noPrimaryFlagged', auditNoPrimaryFlagged);
+
+  const auditCounts: Record<string, number> = { ...(meta.auditCounts ?? {}) };
+  auditCounts.correctionsUsers = (auditCounts.correctionsUsers ?? 0) + auditCorrectionsUsers.length;
+  auditCounts.membershipTypeMismatches = (auditCounts.membershipTypeMismatches ?? 0) + auditMembershipTypeMismatches.length;
+  auditCounts.secondaryMemberships = (auditCounts.secondaryMemberships ?? 0) + auditSecondaryMemberships.length;
+  auditCounts.notOnboarded = (auditCounts.notOnboarded ?? 0) + auditNotOnboarded.length;
+  auditCounts.noPrimaryFlagged = (auditCounts.noPrimaryFlagged ?? 0) + auditNoPrimaryFlagged.length;
+  await saveMeta({ auditCounts });
+
+  log('info', `Verification batch ${startBatch + 1}/${batchKeys.length}: ${auditCorrectionsUsers.length} user(s) corrected.`);
+
+  const nextBatch = startBatch + 1;
+  if (nextBatch < batchKeys.length) {
+    await flush(98, `Verifying users (batch ${nextBatch + 1}/${batchKeys.length})`, 'running');
+    return { hasMore: true, nextBatch };
+  }
+
+  await finish();
+  return { hasMore: false, nextBatch };
 };
 
 export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: string): Promise<void> => {
@@ -1043,6 +1698,9 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const primaryTypeSetSync = new Set(dbPrimaryTypesSync.map(t => t.name));
   const addonTypeSetSync = new Set(dbAddonTypesSync.map(t => t.name));
   const freeMemberExclusionSetSync = new Set(dbFreeMemberExclusionsSync.map(t => t.name));
+  // Subscription-only, like Phase 2 — the next nightly Phase 4 correction pass
+  // (syncPhaseCorrectionUsers / buildMembershipCardData) reconciles primaryMembership/addOns
+  // using PV's membership cards, including the "primary:true" card flag.
   const pickBest = (types: string[]): string | null =>
     types.find(t => primaryTypeSetSync.has(t)) ?? types.find(t => portalAccessTypes.has(t)) ?? types[0] ?? null;
   const pickAddons = (types: string[]): string[] => types.filter(t => addonTypeSetSync.has(t));
@@ -1101,8 +1759,12 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       }
       const typesChanged = JSON.stringify([...newMembershipTypes].sort()) !== JSON.stringify([...existingTypes].sort());
       if (hasSubInfo && typesChanged) {
-        console.log(`Cascading membership type change to all users of company ${companyForRepOps.name}.`);
-        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id }, data: { primaryMembership: pickBest(newMembershipTypes), addOns: JSON.stringify(pickAddons(newMembershipTypes)) } });
+        // Only cascade to users with no subscription of their own — members with
+        // memberSource: 'subscription' have their own personal subscription/cards
+        // and their primaryMembership/addOns must not be overwritten by the
+        // company's plan (the next nightly Phase 4 pass remains authoritative for them).
+        console.log(`Cascading membership type change to non-subscriber members of company ${companyForRepOps.name}.`);
+        await prisma.user.updateMany({ where: { companyId: companyForRepOps.id, memberSource: 'membership' }, data: { primaryMembership: pickBest(newMembershipTypes), addOns: JSON.stringify(pickAddons(newMembershipTypes)) } });
       }
     }
   }
@@ -1145,9 +1807,11 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const memberSource = isCompanyRep ? 'subscription' : 'membership';
   const freeMemberAllowed = isCompanyRep ? true : companyQualifiesForFreeMemberSync(associatedCompany);
   const userPvActive = pvActive && (associatedCompany.active !== false) && freeMemberAllowed;
-  const companyTypes = JSON.parse(associatedCompany.membershipTypes || '[]') as string[];
-  const userPrimaryMembership = membershipType ?? pickBest(companyTypes);
-  const userAddOns = pickAddons(membershipTypes.length > 0 ? membershipTypes : companyTypes);
+  // Primary membership / add-ons reflect the individual's own active subscription(s),
+  // not the company's plan — staff/interns under a subscriber company shouldn't
+  // inherit that company's membership type until they have their own subscription.
+  const userPrimaryMembership = membershipType;
+  const userAddOns = pickAddons(membershipTypes);
 
   const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
   const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
@@ -1558,4 +2222,50 @@ export const fetchAllPvData = async (c: Context): Promise<{
 
   console.log(`[fetchAllPvData] fetched ${subscriptions.length} subscriptions, skipped pages: [${skippedSubPages.join(',')}]`);
   return { subscriptions, skippedSubPages };
+};
+
+export const fetchAllMembershipCards = async (c: Context): Promise<{
+  cards: any[];
+  skippedPages: number[];
+}> => {
+  const cards: any[] = [];
+  const skippedPages: number[] = [];
+
+  for (let page = 1; page <= 500; page++) {
+    let result: { data: any[]; pagination: PvPagination | null };
+    try {
+      result = await apiRequestWithPagination(c, {
+        tokenType: PeopleVineTokenType.USER_COMPANY,
+        endpoint: '/memberships/members',
+        method: 'GET',
+        // No `Type` filter — we need both "id" cards (e.g. "mHUB Community") and
+        // "subscription" cards (e.g. "Office - Small"), since either kind can be
+        // marked `primary: true` by the client in PV ("Set as Primary Membership Card").
+        queryParams: { Status: 'active', Page_Size: String(SUB_PAGE_SIZE), Page_Number: String(page) },
+      });
+    } catch {
+      skippedPages.push(page);
+      continue;
+    }
+
+    // Keep only the fields buildMembershipCardData needs — these cards exist for every
+    // active member, so the full raw objects would balloon memory/storage size.
+    // `id` + `customer_company_name` let us trace a sub-member card's parent_card_id
+    // back to its providing company (for the secondary/cross-company membership audit).
+    for (const card of result.data) {
+      cards.push({
+        id: card.id,
+        customer_id: card.customer_id,
+        title: card.title,
+        parent_card_id: card.parent_card_id,
+        primary: card.primary ?? false,
+        type: card.type,
+        customer_company_name: card.customer?.company_name ?? null,
+      });
+    }
+    if (!result.pagination?.has_next_page) break;
+  }
+
+  console.log(`[fetchAllMembershipCards] fetched ${cards.length} cards, skipped pages: [${skippedPages.join(',')}]`);
+  return { cards, skippedPages };
 };

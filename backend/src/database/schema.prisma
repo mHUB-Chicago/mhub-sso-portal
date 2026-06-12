@@ -67,6 +67,7 @@ model User {
   zipCode              String?
   cardStatus           String?
   memberSource         String                @default("subscription")
+  memberSourceCompany  String?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]
@@ -182,6 +183,15 @@ model SyncSession {
   startedAt   DateTime  @default(now())
   completedAt DateTime?
   updatedAt   DateTime  @updatedAt
+}
+
+model SyncExportBlob {
+  sessionId String
+  key       String
+  data      String
+  createdAt DateTime @default(now())
+
+  @@id([sessionId, key])
 }
 
 model WebhookLog {

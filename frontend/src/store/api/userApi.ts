@@ -21,6 +21,7 @@ export interface User {
   zipCode: string | null
   cardStatus: string | null
   memberSource: string
+  memberSourceCompany: string | null
   createdAt: string
   updatedAt: string
 }
@@ -62,6 +63,9 @@ interface GetUsersRequest {
   emailVerified?: 'true' | 'false'
   portalAccess?: 'true' | 'false'
   noEmail?: 'true' | 'false'
+  noPrimary?: 'true' | 'false'
+  directPersonal?: 'true' | 'false'
+  unresolved?: 'true' | 'false'
   memberSource?: 'subscription' | 'membership'
   cmtOnly?: 'true' | 'false'
 }
@@ -123,7 +127,7 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, memberSource, cmtOnly }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, noPrimary, directPersonal, unresolved, memberSource, cmtOnly }) => ({
         url: '/user',
         params: {
           limit,
@@ -136,6 +140,9 @@ export const userApi = createApi({
           ...(emailVerified !== undefined && { emailVerified }),
           ...(portalAccess !== undefined && { portalAccess }),
           ...(noEmail !== undefined && { noEmail }),
+          ...(noPrimary !== undefined && { noPrimary }),
+          ...(directPersonal !== undefined && { directPersonal }),
+          ...(unresolved !== undefined && { unresolved }),
           ...(memberSource && { memberSource }),
           ...(cmtOnly !== undefined && { cmtOnly }),
         },

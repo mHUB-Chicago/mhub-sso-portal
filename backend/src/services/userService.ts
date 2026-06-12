@@ -15,6 +15,9 @@ export interface GetPaginatedUsersInput {
   emailVerified?: 'true' | 'false';
   portalAccess?: 'true' | 'false';
   noEmail?: 'true' | 'false';
+  noPrimary?: 'true' | 'false';
+  directPersonal?: 'true' | 'false';
+  unresolved?: 'true' | 'false';
   memberSource?: 'subscription' | 'membership';
   cmtOnly?: 'true' | 'false';
 }
@@ -45,6 +48,7 @@ export interface CreateUserInput {
   cardStatus?: string | null;
   active?: boolean;
   memberSource?: string;
+  memberSourceCompany?: string | null;
 }
 
 export interface UpdateUserInput {
@@ -69,6 +73,7 @@ export interface UpdateUserInput {
   cardStatus?: string | null;
   active?: boolean;
   memberSource?: string;
+  memberSourceCompany?: string | null;
 }
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
@@ -97,6 +102,7 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     portalAccessCondition = { OR: [
       { primaryMembership: { in: cmtNames } },
       { primaryMembership: null, addOns: { not: '[]' } },
+      { primaryMembership: null, company: { membershipTypes: { not: '[]' } } },
     ]};
   }
 
@@ -126,6 +132,24 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     andConditions.push({ OR: placeholderFilter });
   } else if (input.noEmail === 'false') {
     andConditions.push({ NOT: { OR: placeholderFilter } });
+  }
+  const hasMembershipDataCondition = { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] };
+  if (input.noPrimary === 'true') {
+    andConditions.push({ primaryMembership: null, ...hasMembershipDataCondition });
+  } else if (input.noPrimary === 'false') {
+    andConditions.push({ NOT: { AND: [{ primaryMembership: null }, hasMembershipDataCondition] } });
+  }
+  const directPersonalCondition = { memberSource: 'subscription', company: { isPersonal: true } };
+  if (input.directPersonal === 'true') {
+    andConditions.push(directPersonalCondition);
+  } else if (input.directPersonal === 'false') {
+    andConditions.push({ NOT: { AND: [{ memberSource: directPersonalCondition.memberSource }, { company: directPersonalCondition.company }] } });
+  }
+  const unresolvedCondition = { primaryMembership: null, addOns: '[]', company: { membershipTypes: '[]' } };
+  if (input.unresolved === 'true') {
+    andConditions.push(unresolvedCondition);
+  } else if (input.unresolved === 'false') {
+    andConditions.push({ NOT: { AND: [{ primaryMembership: unresolvedCondition.primaryMembership }, { addOns: unresolvedCondition.addOns }, { company: unresolvedCondition.company }] } });
   }
   if (andConditions.length > 0) whereClause.AND = andConditions;
 
@@ -164,7 +188,7 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = createUserInput;
+  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
   const existingUser = await prisma.user.findFirst({
@@ -196,6 +220,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       cardStatus: cardStatus ?? null,
       active: active ?? true,
       memberSource: memberSource ?? 'subscription',
+      memberSourceCompany: memberSourceCompany ?? null,
     },
   });
   if (!createdUser) {
@@ -217,7 +242,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource } = updateUserInput;
+  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   return prisma.user.update({
@@ -243,6 +268,7 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       cardStatus,
       active,
       memberSource,
+      memberSourceCompany,
     },
   });
 }

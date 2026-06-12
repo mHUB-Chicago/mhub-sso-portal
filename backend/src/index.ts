@@ -16,7 +16,7 @@ import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
 import { Role } from "@prisma/client";
-import { fetchAllPvData, fetchPvPage } from "@/services/peopleVineService";
+import { fetchAllPvData, fetchPvPage, readAuditChunks } from "@/services/peopleVineService";
 
 
 type Bindings = {
@@ -69,6 +69,8 @@ app.route("/webhook", webhookRoutes);
 
 app.use("/saml/*", corsMiddleware, databaseMiddleware);
 app.route("/saml", samlRoutes);
+
+app.use("/__internal/*", databaseMiddleware);
 
 // app.route("/__internal/seed", seedRoute);
 
@@ -290,16 +292,19 @@ app.get("/api/sync/sessions/:id/audit", async (c) => {
   const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
   if (!session) return c.json({ success: false, error: 'Session not found' }, 404);
 
-  const meta = JSON.parse(session.metadata ?? '{}');
-  const audit = meta.audit ?? {};
-
   type AuditChange = { field: string; before: string; after: string };
-  const companiesCreated: { id: string; name: string; pvId: string }[] = audit.companiesCreated ?? [];
-  const companiesUpdated: { id: string; name: string; pvId: string; changes: AuditChange[] }[] = audit.companiesUpdated ?? [];
-  const companiesDeactivated: { id: string; name: string }[] = audit.companiesDeactivated ?? [];
-  const usersCreated: { id: string; name: string; email: string; companyId: string }[] = audit.usersCreated ?? [];
-  const usersUpdated: { id: string; name: string; email: string; companyId: string; changes: AuditChange[] }[] = audit.usersUpdated ?? [];
-  const usersDeactivated: { id: string; name: string; email: string }[] = audit.usersDeactivated ?? [];
+  const companiesCreated: { id: string; name: string; pvId: string }[] = await readAuditChunks(prisma, sessionId, 'companiesCreated');
+  const companiesUpdated: { id: string; name: string; pvId: string; changes: AuditChange[] }[] = await readAuditChunks(prisma, sessionId, 'companiesUpdated');
+  const companiesDeactivated: { id: string; name: string }[] = await readAuditChunks(prisma, sessionId, 'companiesDeactivated');
+  const usersCreated: { id: string; name: string; email: string; companyId: string }[] = await readAuditChunks(prisma, sessionId, 'usersCreated');
+  const usersUpdated: { id: string; name: string; email: string; companyId: string; changes: AuditChange[] }[] = await readAuditChunks(prisma, sessionId, 'usersUpdated');
+  const usersDeactivated: { id: string; name: string; email: string }[] = await readAuditChunks(prisma, sessionId, 'usersDeactivated');
+  const correctionsCompanies: { id: string; name: string; pvId: string; changes: AuditChange[] }[] = await readAuditChunks(prisma, sessionId, 'correctionsCompanies');
+  const correctionsUsers: { id: string; name: string; email: string; companyId: string; changes: AuditChange[] }[] = await readAuditChunks(prisma, sessionId, 'correctionsUsers');
+  const membershipTypeMismatches: { id: string; name: string; email: string; pvId: string; primaryMembership: string | null; addOns: string[]; primaryCardFlagTitle: string | null; unmatchedCardTypes: string[] }[] = await readAuditChunks(prisma, sessionId, 'membershipTypeMismatches');
+  const secondaryMemberships: { id: string; name: string; email: string; pvId: string; ownCompanyName: string; providingCompanyName: string; cardTitles: string[] }[] = await readAuditChunks(prisma, sessionId, 'secondaryMemberships');
+  const notOnboarded: { id: string; name: string; email: string; pvId: string; companyName: string; active: boolean; primaryMembership: string | null }[] = await readAuditChunks(prisma, sessionId, 'notOnboarded');
+  const noPrimaryFlagged: { id: string; name: string; email: string; pvId: string; companyName: string; active: boolean; addOns: string[]; candidateTypes: string[] }[] = await readAuditChunks(prisma, sessionId, 'noPrimaryFlagged');
 
   const startedAt = session.startedAt ? new Date(session.startedAt).toISOString() : 'N/A';
   const completedAt = session.completedAt ? new Date(session.completedAt).toISOString() : 'N/A';
@@ -352,6 +357,63 @@ app.get("/api/sync/sessions/:id/audit", async (c) => {
   lines.push(`Users Deactivated (${usersDeactivated.length})`);
   lines.push('ID,Name,Email');
   for (const r of usersDeactivated) lines.push([esc(r.id), esc(r.name), esc(r.email)].join(','));
+  lines.push('');
+
+  lines.push(`Companies Corrected (Verification Pass) (${correctionsCompanies.length})`);
+  lines.push('ID,Name,PeopleVine ID,Changes');
+  for (const r of correctionsCompanies) {
+    const changesStr = (r.changes ?? []).map(ch => `${ch.field}: "${ch.before}" → "${ch.after}"`).join(' | ');
+    lines.push([esc(r.id), esc(r.name), esc(r.pvId), esc(changesStr)].join(','));
+  }
+  lines.push('');
+
+  lines.push(`Users Corrected (Verification Pass) (${correctionsUsers.length})`);
+  lines.push('ID,Name,Email,Company ID,Changes');
+  for (const r of correctionsUsers) {
+    const changesStr = (r.changes ?? []).map(ch => `${ch.field}: "${ch.before}" → "${ch.after}"`).join(' | ');
+    lines.push([esc(r.id), esc(r.name), esc(r.email), esc(r.companyId), esc(changesStr)].join(','));
+  }
+  lines.push('');
+
+  lines.push(`Membership Type Mismatches (${membershipTypeMismatches.length})`);
+  lines.push('ID,Name,Email,PeopleVine ID,Primary Membership,Add-Ons,PV primary:true Card,Unmatched Card Types');
+  for (const r of membershipTypeMismatches) {
+    lines.push([
+      esc(r.id), esc(r.name), esc(r.email), esc(r.pvId),
+      esc(r.primaryMembership), esc((r.addOns ?? []).join('; ')),
+      esc(r.primaryCardFlagTitle), esc((r.unmatchedCardTypes ?? []).join('; ')),
+    ].join(','));
+  }
+  lines.push('');
+
+  lines.push(`Secondary Memberships - Cross-Company Cards (${secondaryMemberships.length})`);
+  lines.push('ID,Name,Email,PeopleVine ID,Own Company,Providing Company,Card Titles');
+  for (const r of secondaryMemberships) {
+    lines.push([
+      esc(r.id), esc(r.name), esc(r.email), esc(r.pvId),
+      esc(r.ownCompanyName), esc(r.providingCompanyName), esc((r.cardTitles ?? []).join('; ')),
+    ].join(','));
+  }
+  lines.push('');
+
+  lines.push(`Not Yet Onboarded - No Membership Card or Subscription (${notOnboarded.length})`);
+  lines.push('ID,Name,Email,PeopleVine ID,Company,Active,Primary Membership');
+  for (const r of notOnboarded) {
+    lines.push([
+      esc(r.id), esc(r.name), esc(r.email), esc(r.pvId),
+      esc(r.companyName), esc(String(r.active)), esc(r.primaryMembership),
+    ].join(','));
+  }
+  lines.push('');
+
+  lines.push(`No Primary Membership Flagged (${noPrimaryFlagged.length})`);
+  lines.push('ID,Name,Email,PeopleVine ID,Company,Active,Add-Ons,Candidate Types');
+  for (const r of noPrimaryFlagged) {
+    lines.push([
+      esc(r.id), esc(r.name), esc(r.email), esc(r.pvId),
+      esc(r.companyName), esc(String(r.active)), esc((r.addOns ?? []).join('; ')), esc((r.candidateTypes ?? []).join('; ')),
+    ].join(','));
+  }
 
   const dateSlug = startedAt !== 'N/A' ? startedAt.slice(0, 10) : 'unknown';
   const filename = `sync-audit-${dateSlug}-${sessionId.slice(0, 8)}.csv`;
@@ -371,16 +433,20 @@ app.get("/api/sync/sessions/:id/audit/summary", async (c) => {
   const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
   if (!session) return c.json({ success: false, error: 'Session not found' }, 404);
   const meta = JSON.parse(session.metadata ?? '{}');
-  const audit = meta.audit ?? {};
+  const auditCounts = meta.auditCounts ?? {};
   return c.json({
     success: true,
     data: {
-      companiesCreated: (audit.companiesCreated ?? []).length,
-      companiesUpdated: (audit.companiesUpdated ?? []).length,
-      companiesDeactivated: (audit.companiesDeactivated ?? []).length,
-      usersCreated: (audit.usersCreated ?? []).length,
-      usersUpdated: (audit.usersUpdated ?? []).length,
-      usersDeactivated: (audit.usersDeactivated ?? []).length,
+      companiesCreated: auditCounts.companiesCreated ?? 0,
+      companiesUpdated: auditCounts.companiesUpdated ?? 0,
+      companiesDeactivated: auditCounts.companiesDeactivated ?? 0,
+      usersCreated: auditCounts.usersCreated ?? 0,
+      usersUpdated: auditCounts.usersUpdated ?? 0,
+      usersDeactivated: auditCounts.usersDeactivated ?? 0,
+      membershipTypeMismatches: auditCounts.membershipTypeMismatches ?? 0,
+      secondaryMemberships: auditCounts.secondaryMemberships ?? 0,
+      notOnboarded: auditCounts.notOnboarded ?? 0,
+      noPrimaryFlagged: auditCounts.noPrimaryFlagged ?? 0,
     },
   });
 });

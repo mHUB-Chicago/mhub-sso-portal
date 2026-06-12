@@ -30,8 +30,12 @@ export function UserViewModal({ user, open, onClose }: Props) {
 
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm pt-2">
           <div>
-            <p className="text-muted-foreground">Company</p>
+            <p className="text-muted-foreground">Affiliated Company</p>
             <p className="font-medium">{user.companyName || '—'}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Member Source Company</p>
+            <p className="font-medium">{user.memberSourceCompany || user.companyName || '—'}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Primary Membership</p>

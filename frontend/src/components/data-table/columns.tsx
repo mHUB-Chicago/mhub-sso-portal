@@ -84,9 +84,18 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   },
   {
     accessorKey: "companyName",
-    header: "Company",
+    header: "Affiliated Company",
     size: 200,
     cell: ({ row }) => <span>{row.original.companyName || '-'}</span>,
+  },
+  {
+    accessorKey: "memberSourceCompany",
+    header: "Member Source Company",
+    size: 200,
+    cell: ({ row }) => {
+      const value = row.original.memberSourceCompany || row.original.companyName
+      return <span>{value || '-'}</span>
+    },
   },
   {
     accessorKey: "primaryMembership",

@@ -789,14 +789,26 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
   const [search, setSearch] = useState('')
   const [primaryMembership, setPrimaryMembership] = useState('')
   const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
+  const [category, setCategory] = useState<'all' | 'noEmail' | 'noPrimary' | 'directPersonal' | 'unresolved'>('all')
+
+  const handleViewChange = (v: 'all' | 'companies' | 'users') => {
+    setView(v)
+    setCategory('all')
+  }
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true' })
   const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true' })
+  const { data: noPrimaryUsersData, isLoading: loadingNoPrimaryUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noPrimary: 'true' })
+  const { data: directPersonalUsersData, isLoading: loadingDirectPersonalUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', directPersonal: 'true' })
+  const { data: unresolvedUsersData, isLoading: loadingUnresolvedUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', unresolved: 'true' })
   const { data: membershipTypesData } = useGetMembershipTypesQuery()
   const membershipTypes = membershipTypesData?.data ?? []
 
   const allNoEmailUsers = noEmailUsersData?.data?.users ?? []
   const allNoEmailCompanies = noEmailCompaniesData?.data?.companies ?? []
+  const allNoPrimaryUsers = noPrimaryUsersData?.data?.users ?? []
+  const allDirectPersonalUsers = directPersonalUsersData?.data?.users ?? []
+  const allUnresolvedUsers = unresolvedUsersData?.data?.users ?? []
 
   const q = search.toLowerCase().trim()
   const noEmailUsers = allNoEmailUsers.filter(u =>
@@ -809,6 +821,18 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
     (!primaryMembership || co.membershipTypes?.includes(primaryMembership)) &&
     (activeFilter === '' || String(co.active) === activeFilter)
   )
+  const noPrimaryUsers = allNoPrimaryUsers.filter(u =>
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+    (activeFilter === '' || String(u.active) === activeFilter)
+  )
+  const directPersonalUsers = allDirectPersonalUsers.filter(u =>
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+    (activeFilter === '' || String(u.active) === activeFilter)
+  )
+  const unresolvedUsers = allUnresolvedUsers.filter(u =>
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+    (activeFilter === '' || String(u.active) === activeFilter)
+  )
 
   const showUsers = view === 'all' || view === 'users'
   const showCompanies = view === 'all' || view === 'companies'
@@ -816,16 +840,27 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
   const getIssue = (email: string) =>
     email.endsWith('@placeholder.invalid') ? 'Not Linked to PV' : 'No Email in PV'
 
+  const getAddOns = (addOns: string): string[] => {
+    try {
+      return JSON.parse(addOns) as string[]
+    } catch {
+      return []
+    }
+  }
+
   const handleExport = () => {
     const headers = ['Type', 'Name', 'PV Email', 'Membership Type', 'Issue']
     const rows = [
       ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', getIssue(u.email)]) : []),
       ...(showCompanies ? noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getIssue(co.email)]) : []),
+      ...(showUsers ? noPrimaryUsers.map(u => ['User', u.name, u.email, getAddOns(u.addOns).join(', '), 'No Primary Membership Flagged']) : []),
+      ...(showUsers ? directPersonalUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Direct Personal Subscription']) : []),
+      ...(showUsers ? unresolvedUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Unresolved Classification']) : []),
     ]
     downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
   }
 
-  const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies
+  const isLoading = loadingNoEmailUsers || loadingNoEmailCompanies || loadingNoPrimaryUsers || loadingDirectPersonalUsers || loadingUnresolvedUsers
 
   if (isLoading) {
     return (
@@ -835,7 +870,23 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
     )
   }
 
-  const totalIssues = noEmailUsers.length + noEmailCompanies.length
+  const totalIssues = noEmailUsers.length + noEmailCompanies.length + noPrimaryUsers.length + directPersonalUsers.length + unresolvedUsers.length
+
+  const categories: { key: 'all' | 'noEmail' | 'noPrimary' | 'directPersonal' | 'unresolved'; label: string; count: number }[] =
+    view === 'users'
+      ? [
+          { key: 'all', label: 'All', count: noEmailUsers.length + noPrimaryUsers.length + directPersonalUsers.length + unresolvedUsers.length },
+          { key: 'noEmail', label: 'Missing Valid Email', count: noEmailUsers.length },
+          { key: 'directPersonal', label: 'Direct Personal Subscription', count: directPersonalUsers.length },
+          { key: 'noPrimary', label: 'No Primary Membership Flagged', count: noPrimaryUsers.length },
+          { key: 'unresolved', label: 'Unresolved Classification', count: unresolvedUsers.length },
+        ]
+      : view === 'companies'
+        ? [
+            { key: 'all', label: 'All', count: noEmailCompanies.length },
+            { key: 'noEmail', label: 'Missing Valid Email', count: noEmailCompanies.length },
+          ]
+        : []
 
   if (totalIssues === 0) {
     return (
@@ -850,11 +901,11 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
           {(['all', 'companies', 'users'] as const).map(v => {
-            const count = v === 'all' ? totalIssues : v === 'companies' ? noEmailCompanies.length : noEmailUsers.length
+            const count = v === 'all' ? totalIssues : v === 'companies' ? noEmailCompanies.length : noEmailUsers.length + noPrimaryUsers.length + directPersonalUsers.length + unresolvedUsers.length
             return (
               <button
                 key={v}
-                onClick={() => setView(v)}
+                onClick={() => handleViewChange(v)}
                 className={`px-3 py-1 rounded text-sm font-medium transition-colors ${view === v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 {v.charAt(0).toUpperCase() + v.slice(1)}
@@ -895,10 +946,25 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
         </div>
       </div>
 
+      {view !== 'all' && (
+        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1 w-fit">
+          {categories.map(cat => (
+            <button
+              key={cat.key}
+              onClick={() => setCategory(cat.key)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${category === cat.key ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {cat.label}
+              <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${category === cat.key ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-500'}`}>{cat.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-4">
-        {showUsers && (
+        {showUsers && (category === 'all' || category === 'noEmail') && (
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Users ({noEmailUsers.length})</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Valid Email — Users ({noEmailUsers.length})</p>
             {noEmailUsers.length > 0 ? (
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
@@ -941,9 +1007,9 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
           </div>
         )}
 
-        {showCompanies && (
+        {showCompanies && (category === 'all' || category === 'noEmail') && (
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Email — Companies ({noEmailCompanies.length})</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Valid Email — Companies ({noEmailCompanies.length})</p>
             {noEmailCompanies.length > 0 ? (
               <div className="border border-gray-200 rounded-lg overflow-hidden">
                 <table className="w-full text-sm">
@@ -975,6 +1041,123 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                         <td className="px-4 py-2">
                           <Badge variant={co.active ? 'default' : 'outline'} className={co.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
                             {co.active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+          </div>
+        )}
+
+        {showUsers && (category === 'all' || category === 'noPrimary') && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Primary Membership Flagged — Users ({noPrimaryUsers.length})</p>
+            {noPrimaryUsers.length > 0 ? (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <colgroup>
+                    <col className="w-40" />
+                    <col className="w-56" />
+                    <col className="w-48" />
+                    <col className="w-24" />
+                  </colgroup>
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Add-Ons</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {noPrimaryUsers.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{getAddOns(u.addOns).join(', ') || '—'}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
+                            {u.active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+          </div>
+        )}
+
+        {showUsers && (category === 'all' || category === 'directPersonal') && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Direct Personal Subscription — Users ({directPersonalUsers.length})</p>
+            {directPersonalUsers.length > 0 ? (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <colgroup>
+                    <col className="w-40" />
+                    <col className="w-56" />
+                    <col className="w-48" />
+                    <col className="w-24" />
+                  </colgroup>
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {directPersonalUsers.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{u.primaryMembership ?? '—'}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
+                            {u.active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
+          </div>
+        )}
+
+        {showUsers && (category === 'all' || category === 'unresolved') && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unresolved Classification — Users ({unresolvedUsers.length})</p>
+            {unresolvedUsers.length > 0 ? (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <colgroup>
+                    <col className="w-40" />
+                    <col className="w-56" />
+                    <col className="w-24" />
+                  </colgroup>
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {unresolvedUsers.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2">
+                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
+                            {u.active ? 'Active' : 'Inactive'}
                           </Badge>
                         </td>
                       </tr>
@@ -1028,7 +1211,10 @@ export function AdminSyncPage() {
 
   const { data: noEmailUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
   const { data: noEmailCompaniesCount } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
-  const attentionCount = (noEmailUsersCount?.data?.users?.length ?? 0) + (noEmailCompaniesCount?.data?.companies?.length ?? 0)
+  const { data: noPrimaryUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noPrimary: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
+  const { data: directPersonalUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', directPersonal: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
+  const { data: unresolvedUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', unresolved: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
+  const attentionCount = (noEmailUsersCount?.data?.users?.length ?? 0) + (noEmailCompaniesCount?.data?.companies?.length ?? 0) + (noPrimaryUsersCount?.data?.users?.length ?? 0) + (directPersonalUsersCount?.data?.users?.length ?? 0) + (unresolvedUsersCount?.data?.users?.length ?? 0)
 
   useEffect(() => {
     if (isRunning) {

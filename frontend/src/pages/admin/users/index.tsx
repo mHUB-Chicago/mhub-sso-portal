@@ -10,7 +10,7 @@ import { useMemo, useState } from "react"
 import { toCsv, downloadCsv } from "@/utils/csv"
 import { toast } from "sonner"
 
-const USER_HEADERS = ["Full Name", "Email", "Company Name", "Membership Type", "Active", "Email Verified", "Phone", "Address", "City", "State", "Zip Code", "Card Status"]
+const USER_HEADERS = ["Full Name", "Email", "Affiliated Company", "Member Source Company", "Membership Type", "Active", "Email Verified", "Phone", "Address", "City", "State", "Zip Code", "Card Status"]
 
 export function AdminUsersPage() {
   const [page, setPage] = useState(0)
@@ -114,6 +114,7 @@ export function AdminUsersPage() {
         u.name,
         u.email,
         companyMap.get(u.companyId) || '',
+        u.memberSourceCompany || companyMap.get(u.companyId) || '',
         u.primaryMembership ?? '',
         u.active ? 'true' : 'false',
         u.emailVerified ? 'true' : 'false',

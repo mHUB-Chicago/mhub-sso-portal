@@ -2,6 +2,10 @@ import {
   syncPhaseCompanies,
   syncPhaseUsers,
   syncPhaseDeactivate,
+  syncPhaseCorrectionExport,
+  syncPhaseCorrectionCompanies,
+  syncPhaseCorrectionUsers,
+  cleanupCorrectionExport,
   syncFiltered,
   syncFilteredMembers,
   syncOne as syncOnePeopleVine,
@@ -22,6 +26,9 @@ export const enum JobType {
   SYNC_PEOPLEVINE_CUSTOMER = "SYNC_PEOPLEVINE_CUSTOMER",
   SYNC_PHASE_USERS = "SYNC_PHASE_USERS",
   SYNC_PHASE_DEACTIVATE = "SYNC_PHASE_DEACTIVATE",
+  SYNC_PHASE_CORRECTION_EXPORT = "SYNC_PHASE_CORRECTION_EXPORT",
+  SYNC_PHASE_CORRECTION_COMPANIES = "SYNC_PHASE_CORRECTION_COMPANIES",
+  SYNC_PHASE_CORRECTION_USERS = "SYNC_PHASE_CORRECTION_USERS",
   SYNC_FILTERED = "SYNC_FILTERED",
   SYNC_FILTERED_MEMBERS = "SYNC_FILTERED_MEMBERS",
 }
@@ -88,6 +95,51 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
         } else if (jobType === JobType.SYNC_PHASE_DEACTIVATE) {
           const { sessionId } = payload ?? {};
           await syncPhaseDeactivate(context, sessionId);
+          await env.QUEUE.send({
+            jobId: crypto.randomUUID(),
+            jobType: JobType.SYNC_PHASE_CORRECTION_EXPORT,
+            payload: { sessionId, startPage: 1 },
+          });
+
+        } else if (jobType === JobType.SYNC_PHASE_CORRECTION_EXPORT) {
+          const { sessionId, startPage = 1 } = payload ?? {};
+          const { hasMore, lastPage } = await syncPhaseCorrectionExport(context, sessionId, startPage);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          if (hasMore) {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_PHASE_CORRECTION_EXPORT,
+              payload: { sessionId, startPage: lastPage + 1 },
+            });
+          } else {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_PHASE_CORRECTION_COMPANIES,
+              payload: { sessionId },
+            });
+          }
+
+        } else if (jobType === JobType.SYNC_PHASE_CORRECTION_COMPANIES) {
+          const { sessionId } = payload ?? {};
+          await syncPhaseCorrectionCompanies(context, sessionId);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          await env.QUEUE.send({
+            jobId: crypto.randomUUID(),
+            jobType: JobType.SYNC_PHASE_CORRECTION_USERS,
+            payload: { sessionId, startBatch: 0 },
+          });
+
+        } else if (jobType === JobType.SYNC_PHASE_CORRECTION_USERS) {
+          const { sessionId, startBatch = 0 } = payload ?? {};
+          const { hasMore, nextBatch } = await syncPhaseCorrectionUsers(context, sessionId, startBatch);
+          if (hasMore) {
+            await checkCancelled(context.get('db') as PrismaClient, sessionId);
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_PHASE_CORRECTION_USERS,
+              payload: { sessionId, startBatch: nextBatch },
+            });
+          }
 
         } else if (jobType === JobType.SYNC_PEOPLEVINE_CUSTOMER) {
           const prisma = context.get('db') as PrismaClient;
@@ -143,6 +195,21 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
     } catch (err) {
       if (err instanceof SyncCancelledError) {
         console.log(`Job ${jobId} (${jobType}) cancelled — acknowledging without retry.`);
+        // Only clean up export blobs if cancellation happened before
+        // phase4-data.json existed (export/companies phases). Once
+        // SYNC_PHASE_CORRECTION_USERS has started, phase4-data.json is required
+        // by every batch — deleting it here and having a duplicate/redelivered
+        // message for an earlier batch read it afterward would silently zero out
+        // primaryMembership/addOns for that batch's customers. Cancelled sessions
+        // are never resumed, so leaving these blobs behind is harmless.
+        const correctionJobTypes: JobType[] = [
+          JobType.SYNC_PHASE_CORRECTION_EXPORT,
+          JobType.SYNC_PHASE_CORRECTION_COMPANIES,
+        ];
+        if (correctionJobTypes.includes(jobType)) {
+          const { sessionId } = payload ?? {};
+          if (sessionId) await cleanupCorrectionExport(context, sessionId).catch(() => {});
+        }
         await msg.ack();
         continue;
       }
