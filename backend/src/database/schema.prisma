@@ -39,6 +39,7 @@ model Company {
   isPersonal              Boolean                  @default(false)
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
+  subscriptions           Subscription[]
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
 }
@@ -208,6 +209,28 @@ model WebhookLog {
 model CompanyMembershipType {
   name      String   @id
   createdAt DateTime @default(now())
+}
+
+// Subscription rate/pricing snapshot from PeopleVine, refreshed by syncPhaseRevenue
+// (Phase 4, alongside the company/user correction pass) for financial reporting.
+model Subscription {
+  id             String    @id @default(uuid())
+  peopleVineId   String    @unique
+  pvCustomerId   String
+  companyId      String?
+  company        Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  title          String
+  status         String
+  currency       String?
+  rate           Float?
+  frequency      String?
+  pricing        String?
+  lastDate       DateTime?
+  nextDate       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([companyId])
 }
 
 model PortalAccessType {

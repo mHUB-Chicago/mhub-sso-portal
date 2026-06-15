@@ -650,6 +650,13 @@ const isUniqueConstraintError = (e: unknown): boolean => {
   return msg.includes('already exists') || msg.includes('unique constraint') || (e as any)?.code === 'P2002';
 };
 
+// PV uses "1900-01-01T00:00:00" as a sentinel for "no date set".
+const parsePvDate = (value: string | null | undefined): Date | null => {
+  if (!value || value.startsWith('1900-01-01')) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 export class SyncCancelledError extends Error {
   constructor() { super('SYNC_CANCELLED'); this.name = 'SyncCancelledError'; }
 }
@@ -1294,6 +1301,36 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
     auditCorrectionsCompanies.push({ id: existing.id, name: customer.company_name, pvId, changes: coChanges });
   }, () => checkCancelled(prisma, sessionId));
 
+  // Mirror PV subscription/revenue data into the Subscription table (1:1, literal mirror —
+  // same "always tugma sa PV" approach as Primary Membership in syncPhaseCorrectionUsers).
+  const auditRevenueSynced: { peopleVineId: string; title: string; companyName: string | null; status: string }[] = [];
+  await runConcurrent(subscriptions, 20, async (sub) => {
+    const pvId = sub.id?.toString();
+    if (!pvId) return;
+    const customerCompanyName = (sub.customer?.company_name ?? '').trim().toLowerCase();
+    const matchedCompany = customerCompanyName ? dbCompaniesByName.get(customerCompanyName) : undefined;
+
+    const data = {
+      pvCustomerId: sub.customer?.id?.toString() ?? '',
+      companyId: matchedCompany?.id ?? null,
+      title: sub.title ?? '',
+      status: sub.status ?? '',
+      currency: sub.currency ?? null,
+      rate: sub.rate != null ? Number(sub.rate) : null,
+      frequency: sub.frequency ?? null,
+      pricing: sub.pricing ? JSON.stringify(sub.pricing) : null,
+      lastDate: parsePvDate(sub.last_date),
+      nextDate: parsePvDate(sub.next_date),
+    };
+
+    await prisma.subscription.upsert({
+      where: { peopleVineId: pvId },
+      create: { peopleVineId: pvId, ...data },
+      update: data,
+    });
+    auditRevenueSynced.push({ peopleVineId: pvId, title: data.title, companyName: matchedCompany?.name ?? null, status: data.status });
+  }, () => checkCancelled(prisma, sessionId));
+
   const correctionSubscriberMemberships: Record<string, string | null> = {};
   const correctionIndividualMembershipTypes: Record<string, string[]> = {};
   for (const [pvId, info] of subscriptionInfoMap.entries()) {
@@ -1313,13 +1350,16 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
     correctionActivePVSubscriberIds: Array.from(individualSubscriberIds),
   });
   await appendAuditChunk(prisma, sessionId, 'correctionsCompanies', auditCorrectionsCompanies);
+  await appendAuditChunk(prisma, sessionId, 'revenueSynced', auditRevenueSynced);
 
   const auditCounts: Record<string, number> = { ...(meta.auditCounts ?? {}) };
   auditCounts.correctionsCompanies = (auditCounts.correctionsCompanies ?? 0) + auditCorrectionsCompanies.length;
+  auditCounts.revenueSynced = (auditCounts.revenueSynced ?? 0) + auditRevenueSynced.length;
   await saveMeta({ auditCounts });
 
   await flush(98, 'Companies verified — verifying users', 'running');
   log('info', `Verification: ${auditCorrectionsCompanies.length} compan${auditCorrectionsCompanies.length === 1 ? 'y' : 'ies'} corrected.`);
+  log('info', `Revenue: ${auditRevenueSynced.length} subscription${auditRevenueSynced.length === 1 ? '' : 's'} mirrored.`);
 };
 
 export const syncPhaseCorrectionUsers = async (
@@ -1475,8 +1515,7 @@ export const syncPhaseCorrectionUsers = async (
 
     let newPrimary: string | null = null;
     const primaryCardTitle = cardData.primaryCardTitle;
-    if (primaryCardTitle && !addonTypeSet.has(primaryCardTitle) &&
-        (primaryTypeSet.has(primaryCardTitle) || portalTypeSet.has(primaryCardTitle))) {
+    if (primaryCardTitle && (primaryTypeSet.has(primaryCardTitle) || portalTypeSet.has(primaryCardTitle))) {
       newPrimary = primaryCardTitle;
     }
 
@@ -1486,10 +1525,11 @@ export const syncPhaseCorrectionUsers = async (
 
     // newAddOns: subscription-based addons, plus ANY card (own or sub-member) whose title
     // is an addon type — addon benefits (community access, mentorship) follow the person
-    // regardless of who technically pays for the underlying card.
+    // regardless of who technically pays for the underlying card. Excludes the title
+    // already reflected as primaryMembership so it isn't listed twice.
     const subscriptionAddOns = getAddonTypes({ membershipTypes: ownMembershipTypesJson });
-    const cardAddOns = cardData.allCardTypes.filter(t => addonTypeSet.has(t));
-    const newAddOns = Array.from(new Set([...subscriptionAddOns, ...cardAddOns]));
+    const cardAddOns = cardData.allCardTypes.filter(t => addonTypeSet.has(t) && t !== newPrimary);
+    const newAddOns = Array.from(new Set([...subscriptionAddOns, ...cardAddOns].filter(t => t !== newPrimary)));
 
     const recognizedTypes = new Set([...portalTypeSet, ...primaryTypeSet, ...addonTypeSet]);
     const primaryCandidateTypes = new Set([...portalTypeSet, ...primaryTypeSet]);
