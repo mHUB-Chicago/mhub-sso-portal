@@ -575,7 +575,7 @@ app.get("/api/reports", async (c) => {
       select: { primaryMembership: true, addOns: true, active: true, companyId: true, memberSourceCompany: true },
     }),
     prisma.company.findMany({
-      where: { isPersonal: false },
+      where: { isPersonal: false, NOT: { email: { contains: 'placeholder.invalid' } } },
       select: { id: true, name: true, active: true },
     }),
     prisma.session.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
@@ -601,7 +601,7 @@ app.get("/api/reports", async (c) => {
 
   const byTitleMap = new Map<string, { count: number; mrr: number }>();
   for (const s of payingSubs) {
-    const t = s.title || 'Unknown';
+    const t = (s.title || 'Unknown').trim();
     const prev = byTitleMap.get(t) ?? { count: 0, mrr: 0 };
     byTitleMap.set(t, { count: prev.count + 1, mrr: prev.mrr + toMonthly(s.rate!, s.frequency ?? '') });
   }
@@ -647,9 +647,11 @@ app.get("/api/reports", async (c) => {
   const coUserMap = new Map<string, number>();
   for (const u of users) coUserMap.set(u.companyId, (coUserMap.get(u.companyId) ?? 0) + 1);
 
+  const coIdSet = new Set(companies.map(c => c.id));
+
   const coSubMap = new Map<string, { count: number; mrr: number }>();
   for (const s of payingSubs) {
-    if (!s.companyId) continue;
+    if (!s.companyId || !coIdSet.has(s.companyId)) continue; // skip personal companies
     const prev = coSubMap.get(s.companyId) ?? { count: 0, mrr: 0 };
     coSubMap.set(s.companyId, { count: prev.count + 1, mrr: prev.mrr + toMonthly(s.rate!, s.frequency ?? '') });
   }
