@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   RefreshCw,
   Webhook,
+  BarChart2,
   X
 } from 'lucide-react'
 
@@ -123,6 +124,22 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
                 : 'text-gray-500'
             }`} />
             IDP Management
+          </Link>
+          <Link
+            to="/admin/reports"
+            onClick={handleLinkClick}
+            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+              location.pathname.startsWith('/admin/reports')
+                ? 'bg-brand text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <BarChart2 className={`h-5 w-5 ${
+              location.pathname.startsWith('/admin/reports')
+                ? 'text-white'
+                : 'text-gray-500'
+            }`} />
+            Reports
           </Link>
           {syncEnabled && (
             <>

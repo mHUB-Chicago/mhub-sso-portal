@@ -1,21 +1,21 @@
 import { AppType } from "..";
 
 // America/Chicago is UTC-5 (CDT) or UTC-6 (CST) depending on daylight saving.
-// Two crons are registered (05:00 UTC and 06:00 UTC) to cover both — only the
-// one matching the current Chicago offset (i.e. local midnight) proceeds.
-const isChicagoMidnightCron = (cron: string, now: Date): boolean => {
+// Two crons are registered (06:00 UTC and 07:00 UTC) to cover both — only the
+// one matching the current Chicago offset (i.e. local 1am) proceeds.
+const isChicago1amCron = (cron: string, now: Date): boolean => {
   const offsetPart = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago',
     timeZoneName: 'shortOffset',
   }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value ?? 'GMT-6';
   const isCDT = offsetPart === 'GMT-5';
-  return cron === (isCDT ? '0 5 * * *' : '0 6 * * *');
+  return cron === (isCDT ? '0 6 * * *' : '0 7 * * *');
 };
 
 export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: ExecutionContext) => {
   console.log(`Scheduled job triggered: ${event.cron}`);
-  if (!isChicagoMidnightCron(event.cron, new Date(event.scheduledTime))) {
-    console.log(`Skipping ${event.cron} — does not match current Chicago midnight offset`);
+  if (!isChicago1amCron(event.cron, new Date(event.scheduledTime))) {
+    console.log(`Skipping ${event.cron} — does not match current Chicago 1am offset`);
     return;
   }
   console.log(`Triggering PeopleVine sync via HTTP`);

@@ -549,6 +549,200 @@ app.delete("/api/config/addon-subscription-types/:name", async (c) => {
   return c.json({ success: true });
 });
 
+app.get("/api/reports", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db') as PrismaClient;
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
+
+  const cmtWhere = {
+    OR: [
+      { primaryMembership: { in: cmtNames } },
+      { primaryMembership: null, addOns: { not: '[]' } },
+      { primaryMembership: null, company: { membershipTypes: { not: '[]' } } },
+    ],
+  };
+
+  const [subs, users, companies, loginsCount, ssoCount, serviceProviders, recentSessions] = await Promise.all([
+    prisma.subscription.findMany({
+      select: { title: true, rate: true, frequency: true, companyId: true },
+    }),
+    prisma.user.findMany({
+      where: { role: Role.USER, ...cmtWhere },
+      select: { primaryMembership: true, addOns: true, active: true, companyId: true, memberSourceCompany: true },
+    }),
+    prisma.company.findMany({
+      where: { isPersonal: false },
+      select: { id: true, name: true, active: true },
+    }),
+    prisma.session.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.samlAuthRequest.count({ where: { completedAt: { not: null }, createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.serviceProvider.findMany({ where: { active: true }, select: { id: true, name: true, logo: true } }),
+    prisma.session.findMany({
+      where: { createdAt: { gte: thirtyDaysAgo } },
+      select: { userId: true, createdAt: true, user: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    }),
+  ]);
+
+  const toMonthly = (rate: number, frequency: string) => {
+    const f = frequency.toLowerCase();
+    if (f.includes('annual')) return rate / 12;
+    if (f.includes('quarter')) return rate / 3;
+    return rate;
+  };
+
+  const payingSubs = subs.filter(s => s.rate != null && s.rate > 0);
+  const mrr = payingSubs.reduce((sum, s) => sum + toMonthly(s.rate!, s.frequency ?? ''), 0);
+
+  const byTitleMap = new Map<string, { count: number; mrr: number }>();
+  for (const s of payingSubs) {
+    const t = s.title || 'Unknown';
+    const prev = byTitleMap.get(t) ?? { count: 0, mrr: 0 };
+    byTitleMap.set(t, { count: prev.count + 1, mrr: prev.mrr + toMonthly(s.rate!, s.frequency ?? '') });
+  }
+  const byTitle = [...byTitleMap.entries()]
+    .map(([title, v]) => ({ title, count: v.count, mrr: Math.round(v.mrr) }))
+    .sort((a, b) => b.mrr - a.mrr)
+    .slice(0, 15);
+
+  const byFreqMap = new Map<string, number>();
+  for (const s of subs) {
+    const f = s.frequency || 'Unknown';
+    byFreqMap.set(f, (byFreqMap.get(f) ?? 0) + 1);
+  }
+  const byFrequency = [...byFreqMap.entries()]
+    .map(([frequency, count]) => ({ frequency, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const activeUsers = users.filter(u => u.active).length;
+
+  const byPrimaryMap = new Map<string, number>();
+  for (const u of users) {
+    if (!u.primaryMembership) continue;
+    byPrimaryMap.set(u.primaryMembership, (byPrimaryMap.get(u.primaryMembership) ?? 0) + 1);
+  }
+  const byPrimaryMembership = [...byPrimaryMap.entries()]
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
+
+  const byAddonMap = new Map<string, number>();
+  for (const u of users) {
+    try {
+      const addons: string[] = JSON.parse(u.addOns || '[]');
+      for (const a of addons) byAddonMap.set(a, (byAddonMap.get(a) ?? 0) + 1);
+    } catch {}
+  }
+  const byAddOn = [...byAddonMap.entries()]
+    .map(([addon, count]) => ({ addon, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // affiliated: users whose companyId points to this company
+  const coUserMap = new Map<string, number>();
+  for (const u of users) coUserMap.set(u.companyId, (coUserMap.get(u.companyId) ?? 0) + 1);
+
+  const coSubMap = new Map<string, { count: number; mrr: number }>();
+  for (const s of payingSubs) {
+    if (!s.companyId) continue;
+    const prev = coSubMap.get(s.companyId) ?? { count: 0, mrr: 0 };
+    coSubMap.set(s.companyId, { count: prev.count + 1, mrr: prev.mrr + toMonthly(s.rate!, s.frequency ?? '') });
+  }
+
+  const coIdMap = new Map(companies.map(c => [c.id, c.name]));
+  // name → id lookup for memberSourceCompany matching (case-insensitive)
+  const coNameToIdMap = new Map(companies.map(c => [c.name.trim().toLowerCase(), c.id]));
+
+  // sponsored: users where memberSourceCompany points to a DIFFERENT company than their affiliated one
+  const coSponsoredMap = new Map<string, number>();
+  let crossCompanyCount = 0;
+  for (const u of users) {
+    if (!u.memberSourceCompany) continue;
+    const srcId = coNameToIdMap.get(u.memberSourceCompany.trim().toLowerCase());
+    if (!srcId || srcId === u.companyId) continue;
+    crossCompanyCount++;
+    coSponsoredMap.set(srcId, (coSponsoredMap.get(srcId) ?? 0) + 1);
+  }
+
+  const topByMembers = companies
+    .map(c => ({
+      name: c.name,
+      affiliated: coUserMap.get(c.id) ?? 0,
+      sponsored: coSponsoredMap.get(c.id) ?? 0,
+    }))
+    .sort((a, b) => (b.affiliated + b.sponsored) - (a.affiliated + a.sponsored))
+    .slice(0, 10);
+
+  const topByRevenue = [...coSubMap.entries()]
+    .map(([id, v]) => ({ name: coIdMap.get(id) ?? id, subCount: v.count, mrr: Math.round(v.mrr) }))
+    .sort((a, b) => b.mrr - a.mrr)
+    .slice(0, 10);
+
+  const withSubs = companies.filter(c => coSubMap.has(c.id)).length;
+  const avgMrrPerCo = withSubs > 0 ? Math.round(mrr / withSubs) : 0;
+  const avgMembersPerCo = companies.length > 0 ? Math.round((users.length / companies.length) * 10) / 10 : 0;
+
+  const sizeCounts = { '1 member': 0, '2–3 members': 0, '4–9 members': 0, '10+ members': 0 };
+  for (const c of companies) {
+    const n = coUserMap.get(c.id) ?? 0;
+    if (n === 1) sizeCounts['1 member']++;
+    else if (n <= 3) sizeCounts['2–3 members']++;
+    else if (n <= 9) sizeCounts['4–9 members']++;
+    else sizeCounts['10+ members']++;
+  }
+  const bySize = Object.entries(sizeCounts).map(([label, count]) => ({ label, count }));
+
+  const activeUsersLast30d = new Set(recentSessions.map(s => s.userId)).size;
+
+  return c.json({
+    success: true,
+    data: {
+      revenue: {
+        mrr: Math.round(mrr),
+        arr: Math.round(mrr * 12),
+        totalSubs: subs.length,
+        payingSubs: payingSubs.length,
+        avgPerSub: payingSubs.length > 0 ? Math.round(mrr / payingSubs.length) : 0,
+        byTitle,
+        byFrequency,
+      },
+      membership: {
+        totalUsers: users.length,
+        activeUsers,
+        inactiveUsers: users.length - activeUsers,
+        byPrimaryMembership,
+        byAddOn,
+        companies: {
+          total: companies.length,
+          withSubs,
+          avgMembersPerCo,
+          avgMrrPerCo,
+          crossCompanyCount,
+          topByMembers,
+          topByRevenue,
+          bySize,
+        },
+      },
+      engagement: {
+        loginsLast30d: loginsCount,
+        ssoLast30d: ssoCount,
+        activeUsersLast30d,
+        serviceProviders,
+        recentSessions: recentSessions.map(s => ({
+          userId: s.userId,
+          userName: (s.user as any)?.name ?? 'Unknown',
+          createdAt: s.createdAt,
+        })),
+      },
+    },
+  });
+});
+
 app.get("/api/config/free-member-exclusion-types", async (c) => {
   const user = c.get('user');
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
