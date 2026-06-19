@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { RefreshCw, Play, Loader2, CheckCircle2, XCircle, Clock, StopCircle, AlertCircle, Upload, X, Plus, Download } from 'lucide-react'
+import { RefreshCw, Play, Loader2, CheckCircle2, XCircle, Clock, StopCircle, AlertCircle, Upload, X, Plus, Download, MailX, BookX, UserCheck, UserX, HelpCircle, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -785,16 +785,36 @@ function AuditLogsTab() {
 }
 
 
+const PAGE_SIZE = 25
+
+type AttentionCategory = 'all' | 'noEmailUser' | 'noEmailCompany' | 'noPrimary' | 'directPersonal' | 'unresolved'
+
+const CATEGORY_META: Record<Exclude<AttentionCategory, 'all'>, {
+  label: string
+  sublabel: string
+  icon: React.ReactNode
+  cardCls: string
+  iconCls: string
+  badgeCls: string
+  badgeLabel: string
+}> = {
+  noEmailUser:     { label: 'Missing Email',        sublabel: 'Users',     icon: <MailX className="h-5 w-5" />,     cardCls: 'border-orange-200 bg-orange-50',   iconCls: 'text-orange-500 bg-orange-100',  badgeCls: 'text-orange-700 border-orange-300 bg-orange-50',    badgeLabel: 'Missing Email' },
+  noEmailCompany:  { label: 'Missing Email',        sublabel: 'Companies', icon: <MailX className="h-5 w-5" />,     cardCls: 'border-amber-200 bg-amber-50',     iconCls: 'text-amber-600 bg-amber-100',    badgeCls: 'text-amber-700 border-amber-300 bg-amber-50',       badgeLabel: 'Missing Email' },
+  noPrimary:       { label: 'No Primary Membership',sublabel: 'Users',     icon: <BookX className="h-5 w-5" />,     cardCls: 'border-yellow-200 bg-yellow-50',   iconCls: 'text-yellow-600 bg-yellow-100',  badgeCls: 'text-yellow-700 border-yellow-300 bg-yellow-50',    badgeLabel: 'No Primary' },
+  directPersonal:  { label: 'Direct Personal Sub',  sublabel: 'Users',     icon: <UserCheck className="h-5 w-5" />, cardCls: 'border-blue-200 bg-blue-50',       iconCls: 'text-blue-600 bg-blue-100',      badgeCls: 'text-blue-700 border-blue-300 bg-blue-50',          badgeLabel: 'Direct Personal' },
+  unresolved:      { label: 'Unresolved',           sublabel: 'Users',     icon: <HelpCircle className="h-5 w-5" />,cardCls: 'border-red-200 bg-red-50',         iconCls: 'text-red-500 bg-red-100',        badgeCls: 'text-red-700 border-red-300 bg-red-50',             badgeLabel: 'Unresolved' },
+}
+
 function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 'true' | 'false' | ''; setActiveFilter: (v: 'true' | 'false' | '') => void }) {
   const [search, setSearch] = useState('')
   const [primaryMembership, setPrimaryMembership] = useState('')
-  const [view, setView] = useState<'all' | 'companies' | 'users'>('all')
-  const [category, setCategory] = useState<'all' | 'noEmail' | 'noPrimary' | 'directPersonal' | 'unresolved'>('all')
+  const [selected, setSelected] = useState<AttentionCategory>('all')
+  const [pages, setPages] = useState<Record<string, number>>({})
 
-  const handleViewChange = (v: 'all' | 'companies' | 'users') => {
-    setView(v)
-    setCategory('all')
-  }
+  const getPage = (key: string) => pages[key] ?? 1
+  const setPage = (key: string, p: number) => setPages(prev => ({ ...prev, [key]: p }))
+
+  useEffect(() => { setPages({}) }, [search, primaryMembership, activeFilter, selected])
 
   const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true' })
   const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true' })
@@ -834,28 +854,31 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
     (activeFilter === '' || String(u.active) === activeFilter)
   )
 
-  const showUsers = view === 'all' || view === 'users'
-  const showCompanies = view === 'all' || view === 'companies'
-
-  const getIssue = (email: string) =>
+  const getEmailIssue = (email: string) =>
     email.endsWith('@placeholder.invalid') ? 'Not Linked to PV' : 'No Email in PV'
 
   const getAddOns = (addOns: string): string[] => {
-    try {
-      return JSON.parse(addOns) as string[]
-    } catch {
-      return []
-    }
+    try { return JSON.parse(addOns) as string[] }
+    catch { return [] }
   }
 
+  const counts: Record<Exclude<AttentionCategory, 'all'>, number> = {
+    noEmailUser:    noEmailUsers.length,
+    noEmailCompany: noEmailCompanies.length,
+    noPrimary:      noPrimaryUsers.length,
+    directPersonal: directPersonalUsers.length,
+    unresolved:     unresolvedUsers.length,
+  }
+  const totalIssues = Object.values(counts).reduce((a, b) => a + b, 0)
+
   const handleExport = () => {
-    const headers = ['Type', 'Name', 'PV Email', 'Membership Type', 'Issue']
+    const headers = ['Type', 'Name', 'PV Email', 'Membership / Add-ons', 'Issue']
     const rows = [
-      ...(showUsers ? noEmailUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', getIssue(u.email)]) : []),
-      ...(showCompanies ? noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getIssue(co.email)]) : []),
-      ...(showUsers ? noPrimaryUsers.map(u => ['User', u.name, u.email, getAddOns(u.addOns).join(', '), 'No Primary Membership Flagged']) : []),
-      ...(showUsers ? directPersonalUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Direct Personal Subscription']) : []),
-      ...(showUsers ? unresolvedUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Unresolved Classification']) : []),
+      ...noEmailUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', getEmailIssue(u.email)]),
+      ...noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getEmailIssue(co.email)]),
+      ...noPrimaryUsers.map(u => ['User', u.name, u.email, getAddOns(u.addOns).join(', '), 'No Primary Membership Flagged']),
+      ...directPersonalUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Direct Personal Subscription']),
+      ...unresolvedUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Unresolved Classification']),
     ]
     downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
   }
@@ -870,304 +893,337 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
     )
   }
 
-  const totalIssues = noEmailUsers.length + noEmailCompanies.length + noPrimaryUsers.length + directPersonalUsers.length + unresolvedUsers.length
-
-  const categories: { key: 'all' | 'noEmail' | 'noPrimary' | 'directPersonal' | 'unresolved'; label: string; count: number }[] =
-    view === 'users'
-      ? [
-          { key: 'all', label: 'All', count: noEmailUsers.length + noPrimaryUsers.length + directPersonalUsers.length + unresolvedUsers.length },
-          { key: 'noEmail', label: 'Missing Valid Email', count: noEmailUsers.length },
-          { key: 'directPersonal', label: 'Direct Personal Subscription', count: directPersonalUsers.length },
-          { key: 'noPrimary', label: 'No Primary Membership Flagged', count: noPrimaryUsers.length },
-          { key: 'unresolved', label: 'Unresolved Classification', count: unresolvedUsers.length },
-        ]
-      : view === 'companies'
-        ? [
-            { key: 'all', label: 'All', count: noEmailCompanies.length },
-            { key: 'noEmail', label: 'Missing Valid Email', count: noEmailCompanies.length },
-          ]
-        : []
-
-  if (totalIssues === 0) {
+  if (totalIssues === 0 && !q && !primaryMembership && activeFilter === '') {
     return (
-      <div className="bg-gray-50 rounded-lg border border-dashed border-gray-200 h-40 flex items-center justify-center">
-        <p className="text-sm text-gray-400">No issues found. All active members have emails and portal access.</p>
+      <div className="bg-green-50 border border-green-200 rounded-xl p-8 flex flex-col items-center gap-3">
+        <CheckCircle2 className="h-8 w-8 text-green-500" />
+        <p className="text-sm font-medium text-green-800">All clear — no issues found</p>
+        <p className="text-xs text-green-600">Every member has a valid email and portal access.</p>
       </div>
     )
   }
 
+  const ActiveBadge = ({ active }: { active: boolean }) => (
+    <Badge variant={active ? 'default' : 'outline'} className={active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
+      {active ? 'Active' : 'Inactive'}
+    </Badge>
+  )
+
+  const NameLink = ({ id, name, type }: { id: string | number; name: string; type: 'user' | 'company' }) => (
+    <Link
+      to={type === 'user' ? `/admin/users/${id}/edit` : `/admin/companies/${id}/edit`}
+      className="font-medium text-gray-900 hover:text-brand hover:underline underline-offset-2 inline-flex items-center gap-1 group"
+    >
+      {name}
+      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
+    </Link>
+  )
+
+  const showNoEmailUsers    = selected === 'all' || selected === 'noEmailUser'
+  const showNoEmailCompanies = selected === 'all' || selected === 'noEmailCompany'
+  const showNoPrimary       = selected === 'all' || selected === 'noPrimary'
+  const showDirectPersonal  = selected === 'all' || selected === 'directPersonal'
+  const showUnresolved      = selected === 'all' || selected === 'unresolved'
+
+  const visibleTotal = (showNoEmailUsers ? noEmailUsers.length : 0)
+    + (showNoEmailCompanies ? noEmailCompanies.length : 0)
+    + (showNoPrimary ? noPrimaryUsers.length : 0)
+    + (showDirectPersonal ? directPersonalUsers.length : 0)
+    + (showUnresolved ? unresolvedUsers.length : 0)
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1">
-          {(['all', 'companies', 'users'] as const).map(v => {
-            const count = v === 'all' ? totalIssues : v === 'companies' ? noEmailCompanies.length : noEmailUsers.length + noPrimaryUsers.length + directPersonalUsers.length + unresolvedUsers.length
-            return (
-              <button
-                key={v}
-                onClick={() => handleViewChange(v)}
-                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${view === v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
-                <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${view === v ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-500'}`}>{count}</span>
-              </button>
-            )
-          })}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
-            className="w-56 h-10 text-sm"
-          />
-          <Select value={primaryMembership || 'all'} onValueChange={v => setPrimaryMembership(v === 'all' ? '' : v)}>
-            <SelectTrigger className="h-10 w-48 text-sm">
-              <SelectValue placeholder="All Memberships" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Memberships</SelectItem>
-              {membershipTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={activeFilter || 'all'} onValueChange={v => setActiveFilter(v === 'all' ? '' : v as 'true' | 'false')}>
-            <SelectTrigger className="h-10 w-36 text-sm">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="true">Active</SelectItem>
-              <SelectItem value="false">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" className="h-10" onClick={handleExport} disabled={totalIssues === 0}>
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {(Object.entries(CATEGORY_META) as [Exclude<AttentionCategory, 'all'>, typeof CATEGORY_META[keyof typeof CATEGORY_META]][]).map(([key, meta]) => {
+          const count = counts[key]
+          const isSelected = selected === key
+          return (
+            <button
+              key={key}
+              onClick={() => setSelected(isSelected ? 'all' : key)}
+              className={`relative text-left rounded-xl border p-4 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+                isSelected
+                  ? `${meta.cardCls} shadow-md ring-2 ring-offset-1 ring-current`
+                  : count === 0
+                  ? 'border-gray-100 bg-gray-50 opacity-60 cursor-default'
+                  : `${meta.cardCls} hover:shadow-sm hover:scale-[1.01]`
+              }`}
+              disabled={count === 0}
+            >
+              <div className={`inline-flex items-center justify-center rounded-lg p-2 mb-3 ${meta.iconCls}`}>
+                {meta.icon}
+              </div>
+              <div className="text-2xl font-bold text-gray-900 leading-none mb-1">{count}</div>
+              <div className="text-xs font-semibold text-gray-700 leading-tight">{meta.label}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{meta.sublabel}</div>
+              {isSelected && (
+                <div className="absolute top-2 right-2">
+                  <X className="h-3.5 w-3.5 text-gray-400" />
+                </div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name or email…"
+          className="w-56 h-9 text-sm"
+        />
+        <Select value={primaryMembership || 'all'} onValueChange={v => setPrimaryMembership(v === 'all' ? '' : v)}>
+          <SelectTrigger className="h-9 w-48 text-sm">
+            <SelectValue placeholder="All Memberships" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Memberships</SelectItem>
+            {membershipTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={activeFilter || 'all'} onValueChange={v => setActiveFilter(v === 'all' ? '' : v as 'true' | 'false')}>
+          <SelectTrigger className="h-9 w-36 text-sm">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="true">Active</SelectItem>
+            <SelectItem value="false">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="ml-auto flex items-center gap-2">
+          {(q || primaryMembership || activeFilter) && (
+            <span className="text-xs text-gray-400">{visibleTotal} result{visibleTotal !== 1 ? 's' : ''}</span>
+          )}
+          <Button variant="outline" size="sm" className="h-9" onClick={handleExport} disabled={totalIssues === 0}>
             <Download className="h-4 w-4 mr-2" />Export
           </Button>
         </div>
       </div>
 
-      {view !== 'all' && (
-        <div className="flex items-center gap-1 bg-gray-100 rounded-md p-1 w-fit">
-          {categories.map(cat => (
-            <button
-              key={cat.key}
-              onClick={() => setCategory(cat.key)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${category === cat.key ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              {cat.label}
-              <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${category === cat.key ? 'bg-gray-100 text-gray-600' : 'bg-gray-200 text-gray-500'}`}>{cat.count}</span>
-            </button>
-          ))}
+      {/* Tables */}
+      {visibleTotal === 0 ? (
+        <div className="bg-gray-50 rounded-lg border border-dashed border-gray-200 h-32 flex items-center justify-center">
+          <p className="text-sm text-gray-400">No results match your filters.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {showNoEmailUsers && noEmailUsers.length > 0 && (() => {
+            const p = getPage('noEmailUser')
+            const totalPages = Math.ceil(noEmailUsers.length / PAGE_SIZE)
+            const rows = noEmailUsers.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
+            return (
+              <IssueSection title="Missing Valid Email" subtitle={`${noEmailUsers.length} user${noEmailUsers.length !== 1 ? 's' : ''}`} badgeCls={CATEGORY_META.noEmailUser.badgeCls} page={p} totalPages={totalPages} total={noEmailUsers.length} onPageChange={np => setPage('noEmailUser', np)}>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-40">Issue</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rows.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{u.primaryMembership ?? '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge variant="outline" className={`text-xs whitespace-nowrap ${CATEGORY_META.noEmailUser.badgeCls}`}>{getEmailIssue(u.email)}</Badge>
+                        </td>
+                        <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </IssueSection>
+            )
+          })()}
+
+          {showNoEmailCompanies && noEmailCompanies.length > 0 && (() => {
+            const p = getPage('noEmailCompany')
+            const totalPages = Math.ceil(noEmailCompanies.length / PAGE_SIZE)
+            const rows = noEmailCompanies.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
+            return (
+              <IssueSection title="Missing Valid Email" subtitle={`${noEmailCompanies.length} compan${noEmailCompanies.length !== 1 ? 'ies' : 'y'}`} badgeCls={CATEGORY_META.noEmailCompany.badgeCls} page={p} totalPages={totalPages} total={noEmailCompanies.length} onPageChange={np => setPage('noEmailCompany', np)}>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Company</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-40">Issue</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rows.map(co => (
+                      <tr key={co.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2.5"><NameLink id={co.id} name={co.name} type="company" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={co.email}>{co.email}</td>
+                        <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{co.membershipTypes?.join(', ') || '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge variant="outline" className={`text-xs whitespace-nowrap ${CATEGORY_META.noEmailCompany.badgeCls}`}>{getEmailIssue(co.email)}</Badge>
+                        </td>
+                        <td className="px-4 py-2.5"><ActiveBadge active={co.active} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </IssueSection>
+            )
+          })()}
+
+          {showNoPrimary && noPrimaryUsers.length > 0 && (() => {
+            const p = getPage('noPrimary')
+            const totalPages = Math.ceil(noPrimaryUsers.length / PAGE_SIZE)
+            const rows = noPrimaryUsers.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
+            return (
+              <IssueSection title="No Primary Membership" subtitle={`${noPrimaryUsers.length} user${noPrimaryUsers.length !== 1 ? 's' : ''}`} badgeCls={CATEGORY_META.noPrimary.badgeCls} page={p} totalPages={totalPages} total={noPrimaryUsers.length} onPageChange={np => setPage('noPrimary', np)}>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600">Add-Ons</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rows.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{getAddOns(u.addOns).join(', ') || '—'}</td>
+                        <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </IssueSection>
+            )
+          })()}
+
+          {showDirectPersonal && directPersonalUsers.length > 0 && (() => {
+            const p = getPage('directPersonal')
+            const totalPages = Math.ceil(directPersonalUsers.length / PAGE_SIZE)
+            const rows = directPersonalUsers.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
+            return (
+              <IssueSection title="Direct Personal Subscription" subtitle={`${directPersonalUsers.length} user${directPersonalUsers.length !== 1 ? 's' : ''}`} badgeCls={CATEGORY_META.directPersonal.badgeCls} page={p} totalPages={totalPages} total={directPersonalUsers.length} onPageChange={np => setPage('directPersonal', np)}>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600">Membership</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rows.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{u.primaryMembership ?? '—'}</td>
+                        <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </IssueSection>
+            )
+          })()}
+
+          {showUnresolved && unresolvedUsers.length > 0 && (() => {
+            const p = getPage('unresolved')
+            const totalPages = Math.ceil(unresolvedUsers.length / PAGE_SIZE)
+            const rows = unresolvedUsers.slice((p - 1) * PAGE_SIZE, p * PAGE_SIZE)
+            return (
+              <IssueSection title="Unresolved Classification" subtitle={`${unresolvedUsers.length} user${unresolvedUsers.length !== 1 ? 's' : ''}`} badgeCls={CATEGORY_META.unresolved.badgeCls} page={p} totalPages={totalPages} total={unresolvedUsers.length} onPageChange={np => setPage('unresolved', np)}>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rows.map(u => (
+                      <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
+                        <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </IssueSection>
+            )
+          })()}
         </div>
       )}
+    </div>
+  )
+}
 
-      <div className="space-y-4">
-        {showUsers && (category === 'all' || category === 'noEmail') && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Valid Email — Users ({noEmailUsers.length})</p>
-            {noEmailUsers.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <colgroup>
-                    <col className="w-40" />
-                    <col className="w-56" />
-                    <col className="w-48" />
-                    <col className="w-36" />
-                    <col className="w-24" />
-                  </colgroup>
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Issue</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {noEmailUsers.map(u => (
-                      <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{u.primaryMembership ?? '—'}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50 whitespace-nowrap">{getIssue(u.email)}</Badge>
-                        </td>
-                        <td className="px-4 py-2">
-                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
-                            {u.active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
-          </div>
-        )}
+function PaginationBar({ page, totalPages, total, onPageChange }: {
+  page: number
+  totalPages: number
+  total: number
+  onPageChange: (p: number) => void
+}) {
+  if (totalPages <= 1) return null
+  const start = (page - 1) * PAGE_SIZE + 1
+  const end = Math.min(page * PAGE_SIZE, total)
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-200 bg-gray-50">
+      <span className="text-xs text-gray-500">{start}–{end} of {total}</span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={page === 1}
+          className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4 text-gray-600" />
+        </button>
+        <span className="text-xs text-gray-600 px-2 tabular-nums">{page} / {totalPages}</span>
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={page === totalPages}
+          className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronRight className="h-4 w-4 text-gray-600" />
+        </button>
+      </div>
+    </div>
+  )
+}
 
-        {showCompanies && (category === 'all' || category === 'noEmail') && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Valid Email — Companies ({noEmailCompanies.length})</p>
-            {noEmailCompanies.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <colgroup>
-                    <col className="w-40" />
-                    <col className="w-56" />
-                    <col className="w-48" />
-                    <col className="w-36" />
-                    <col className="w-24" />
-                  </colgroup>
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Company</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Issue</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {noEmailCompanies.map(co => (
-                      <tr key={co.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{co.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={co.email}>{co.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{co.membershipTypes?.join(', ') || '—'}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 bg-orange-50 whitespace-nowrap">{getIssue(co.email)}</Badge>
-                        </td>
-                        <td className="px-4 py-2">
-                          <Badge variant={co.active ? 'default' : 'outline'} className={co.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
-                            {co.active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
-          </div>
-        )}
-
-        {showUsers && (category === 'all' || category === 'noPrimary') && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">No Primary Membership Flagged — Users ({noPrimaryUsers.length})</p>
-            {noPrimaryUsers.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <colgroup>
-                    <col className="w-40" />
-                    <col className="w-56" />
-                    <col className="w-48" />
-                    <col className="w-24" />
-                  </colgroup>
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Add-Ons</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {noPrimaryUsers.map(u => (
-                      <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{getAddOns(u.addOns).join(', ') || '—'}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
-                            {u.active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
-          </div>
-        )}
-
-        {showUsers && (category === 'all' || category === 'directPersonal') && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Direct Personal Subscription — Users ({directPersonalUsers.length})</p>
-            {directPersonalUsers.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <colgroup>
-                    <col className="w-40" />
-                    <col className="w-56" />
-                    <col className="w-48" />
-                    <col className="w-24" />
-                  </colgroup>
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Membership</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {directPersonalUsers.map(u => (
-                      <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
-                        <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-0">{u.primaryMembership ?? '—'}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
-                            {u.active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
-          </div>
-        )}
-
-        {showUsers && (category === 'all' || category === 'unresolved') && (
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Unresolved Classification — Users ({unresolvedUsers.length})</p>
-            {unresolvedUsers.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <colgroup>
-                    <col className="w-40" />
-                    <col className="w-56" />
-                    <col className="w-24" />
-                  </colgroup>
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Name</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">PV Email</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Active</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {unresolvedUsers.map(u => (
-                      <tr key={u.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-900 truncate max-w-0">{u.name}</td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant={u.active ? 'default' : 'outline'} className={u.active ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'text-gray-400'}>
-                            {u.active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="text-sm text-gray-400 pl-1">None</p>}
-          </div>
-        )}
+function IssueSection({ title, subtitle, badgeCls, page, totalPages, total, onPageChange, children }: {
+  title: string
+  subtitle: string
+  badgeCls: string
+  page: number
+  totalPages: number
+  total: number
+  onPageChange: (p: number) => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${badgeCls}`}>{subtitle}</span>
+      </div>
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        {children}
+        <PaginationBar page={page} totalPages={totalPages} total={total} onPageChange={onPageChange} />
       </div>
     </div>
   )
