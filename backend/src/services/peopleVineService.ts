@@ -628,6 +628,31 @@ const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVine
   throw lastErr;
 };
 
+// The bulk /customers list endpoint sometimes returns a blank/wrong company_name (and
+// sometimes email) for a customer that the individual /customers/{id} endpoint has full,
+// correct data for — e.g. pvId 9182741 (Atreya Systems): bulk list returns a stale
+// company_name, individual fetch has the real one. A placeholder email on the bulk record
+// is just the trigger to flag "this record's bulk data looks incomplete" — some customers
+// (e.g. pvId 9238867: company_name "EasyBlot") have a genuinely blank email in PV even on
+// the individual endpoint, so a successful individual fetch is trusted unconditionally
+// once made — its other fields (company_name, full_name) are still more authoritative than
+// the bulk listing regardless of whether email itself resolved.
+const resolvePlaceholderEmails = async (c: Context, customers: PeopleVineCustomer[]): Promise<PeopleVineCustomer[]> => {
+  const resolved = [...customers];
+  const placeholderIndices = resolved
+    .map((cu, i) => (cu.email.endsWith('@noemail.mhub') ? i : -1))
+    .filter(i => i >= 0);
+  if (placeholderIndices.length > 0) {
+    await runConcurrent(placeholderIndices, 5, async (idx) => {
+      const individual = await getCustomer(c, resolved[idx].id.toString()).catch(() => null);
+      if (individual) {
+        resolved[idx] = individual;
+      }
+    });
+  }
+  return resolved;
+};
+
 export const getSubscriptionSample = async (c: Context): Promise<{ subKeys: string[]; sub: any; customerKeys: string[]; customer: any }> => {
   const subs = await apiRequest(c, {
     tokenType: PeopleVineTokenType.USER_COMPANY,
@@ -798,11 +823,18 @@ export const syncPhaseUsers = async (
       companiesByNameMap.set(co.name, co);
     }
   }
+  // Two customers newly sharing the same company_name (no existing company row yet) can be
+  // processed concurrently within the same runConcurrent batch below — both would pass the
+  // `findFirst` check before either create() commits, producing duplicate company rows
+  // (there's no unique constraint on Company.name). This in-flight map lets the second one
+  // await the first one's creation instead of racing it.
+  const pendingCompanyCreations = new Map<string, Promise<Company | undefined>>();
 
   log('info', `Retrieving customers from PeopleVine (pages ${startPage}–${startPage + BATCH_PAGES - 1})`);
-  const { customers: batchCustomers, hadErrors, lastPage, hasMore } = await getCustomers(
+  const { customers: rawBatchCustomers, hadErrors, lastPage, hasMore } = await getCustomers(
     c, startPage, BATCH_PAGES, (page) => saveMeta({ lastCustomerPage: page }),
   );
+  const batchCustomers = await resolvePlaceholderEmails(c, rawBatchCustomers);
   const batchCustomersMap = new Map<string, PeopleVineCustomer>();
   for (const cu of batchCustomers) batchCustomersMap.set(cu.id.toString(), cu);
 
@@ -861,6 +893,18 @@ export const syncPhaseUsers = async (
     const isSubscriber = activePVSubscriberIds.has(pvId);
     const isMember = customer.isMember ?? false;
 
+    const existingByPvId = byPvId.get(pvId);
+    const existingByEmail = byEmail.get(customer.email.toLowerCase());
+    // Only fall back to an email match for an existing DB user that has no peopleVineId yet
+    // (a local account waiting to be linked). PV sometimes gives two distinct customer
+    // records the same derived email — e.g. a company's own "shadow" contact record with a
+    // blank email whose username happens to equal a real member's email (pvId 9279535
+    // "Coleman Racing" vs pvId 9279154 "Patrick Coleman", both resolving to
+    // patrick.coleman155@gmail.com). Accepting that match here would silently steal an
+    // already-linked user's identity — overwrite their real peopleVineId and name with this
+    // unrelated customer's data.
+    const existingUser = existingByPvId ?? (existingByEmail && !existingByEmail.peopleVineId ? existingByEmail : undefined);
+
     let company = companiesByNameMap.get(customer.company_name);
     const hadExistingCompany = !!company;
 
@@ -869,30 +913,41 @@ export const syncPhaseUsers = async (
     }
 
     if (!company) {
-      if (!isSubscriber && (!isMember || !includeFreeMembers)) return;
+      // A brand-new, never-seen customer with no subscription/membership isn't worth
+      // creating a company for. But an EXISTING user whose company_name now resolves to
+      // something new (e.g. corrected PV data that no longer matches their old company)
+      // still needs to be re-matched/created here, or their record is stuck pointing at
+      // the wrong company forever with no way to self-correct.
+      if (!existingUser && !isSubscriber && (!isMember || !includeFreeMembers)) return;
       const companyName = customer.company_name || `${customer.full_name}'s Company`;
       company = await prisma.company.findFirst({ where: { name: companyName } }) ?? undefined;
       if (!company) {
-        const membershipType = subscriberMemberships[pvId] ?? null;
-        try {
-          company = await createCompany(c, {
-            name: companyName,
-            peopleVineId: pvId,
-            active: true,
-            email: customer.email.toLowerCase(),
-            membershipTypes: membershipType ? [membershipType] : [],
-            isPersonal: true,
-          });
-        } catch {
-          company = await prisma.company.findFirst({ where: { OR: [{ peopleVineId: pvId }, { name: companyName }] } }) ?? undefined;
-          if (!company) return;
+        if (pendingCompanyCreations.has(companyName)) {
+          company = await pendingCompanyCreations.get(companyName);
+        } else {
+          const creation = (async (): Promise<Company | undefined> => {
+            const membershipType = subscriberMemberships[pvId] ?? null;
+            try {
+              return await createCompany(c, {
+                name: companyName,
+                peopleVineId: pvId,
+                active: true,
+                email: customer.email.toLowerCase(),
+                membershipTypes: membershipType ? [membershipType] : [],
+                isPersonal: !customer.company_name,
+              });
+            } catch {
+              return await prisma.company.findFirst({ where: { OR: [{ peopleVineId: pvId }, { name: companyName }] } }) ?? undefined;
+            }
+          })();
+          pendingCompanyCreations.set(companyName, creation);
+          company = await creation;
         }
+        if (!company) return;
+        companiesByNameMap.set(companyName, company);
       }
     }
 
-    const existingByPvId = byPvId.get(pvId);
-    const existingByEmail = byEmail.get(customer.email.toLowerCase());
-    const existingUser = existingByPvId ?? existingByEmail;
     const pvUserActive = (customer.pvActive ?? true) && (
       isMember
         ? companyQualifiesForFreeMember(company)
@@ -1128,12 +1183,17 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     });
     await runConcurrent(existingUsers, 20, async (u) => {
       if (activePVSubscriberIds.has(u.peopleVineId!)) return;
-      if (u.memberSource === 'membership') return;
+      // activePVUserSet is every pvId seen anywhere in the full /customers crawl, so this
+      // catches membership-sourced users too — a customer PV no longer returns at all is
+      // gone regardless of memberSource. Only the company-inactive cascade below is
+      // subscription-specific (a membership/comp member shouldn't lose access just because
+      // their linked company's paid subscription lapsed).
       if (!activePVUserSet.has(u.peopleVineId!)) {
         auditUsersDeactivated.push({ id: u.id, name: u.name, email: u.email });
         await deactivateUser(c, u.id);
         return;
       }
+      if (u.memberSource === 'membership') return;
       if (u.company && !u.company.active) {
         log('info', `[deactivate] Deactivating user of inactive company: ${u.email}`);
         auditUsersDeactivated.push({ id: u.id, name: u.name, email: u.email });
@@ -1218,7 +1278,8 @@ export const syncPhaseCorrectionExport = async (
   }
 
   await flush(95, `Exporting customers for verification (page ${startPage}+)`, 'running');
-  const { customers, hadErrors, lastPage, hasMore } = await getCustomers(c, startPage, BATCH_PAGES);
+  const { customers: bulkCustomers, hadErrors, lastPage, hasMore } = await getCustomers(c, startPage, BATCH_PAGES);
+  const customers = await resolvePlaceholderEmails(c, bulkCustomers);
 
   if (sessionId && customers.length > 0) {
     const key = `customers-${String(startPage).padStart(6, '0')}.json`;
@@ -1513,20 +1574,12 @@ export const syncPhaseCorrectionUsers = async (
 
     const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
 
-    let newPrimary: string | null = null;
-    const primaryCardTitle = cardData.primaryCardTitle;
-    if (primaryCardTitle && (primaryTypeSet.has(primaryCardTitle) || portalTypeSet.has(primaryCardTitle))) {
-      newPrimary = primaryCardTitle;
-    }
+    const newPrimary: string | null = cardData.primaryCardTitle ?? null;
 
     const newMemberSourceCompany = newPrimary !== null
       ? (cardData.primaryCardSourceCompanyName ?? company.name)
       : company.name;
 
-    // newAddOns: subscription-based addons, plus ANY card (own or sub-member) whose title
-    // is an addon type — addon benefits (community access, mentorship) follow the person
-    // regardless of who technically pays for the underlying card. Excludes the title
-    // already reflected as primaryMembership so it isn't listed twice.
     const subscriptionAddOns = getAddonTypes({ membershipTypes: ownMembershipTypesJson });
     const cardAddOns = cardData.allCardTypes.filter(t => addonTypeSet.has(t) && t !== newPrimary);
     const newAddOns = Array.from(new Set([...subscriptionAddOns, ...cardAddOns].filter(t => t !== newPrimary)));

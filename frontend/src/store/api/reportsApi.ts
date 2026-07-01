@@ -9,6 +9,15 @@ export interface CompanyByMembers { name: string; affiliated: number; sponsored:
 export interface CompanyByRevenue { name: string; subCount: number; mrr: number }
 export interface RecentSession { userId: string; userName: string; createdAt: string }
 export interface ReportServiceProvider { id: string; name: string; logo: string }
+export interface GrowthPoint {
+  period: string
+  totalMembers: number
+  totalCompanies: number
+  mrr: number
+  memberChange: number
+  companyChange: number
+  mrrChange: number
+}
 
 export interface ReportsData {
   revenue: {
@@ -43,6 +52,10 @@ export interface ReportsData {
     activeUsersLast30d: number
     serviceProviders: ReportServiceProvider[]
     recentSessions: RecentSession[]
+  }
+  growth: {
+    weekly: GrowthPoint[]
+    monthly: GrowthPoint[]
   }
 }
 

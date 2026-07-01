@@ -566,17 +566,17 @@ app.get("/api/reports", async (c) => {
     ],
   };
 
-  const [subs, users, companies, loginsCount, ssoCount, serviceProviders, recentSessions] = await Promise.all([
+  const [subs, users, companies, loginsCount, ssoCount, serviceProviders, recentSessions, activeSessionUsers] = await Promise.all([
     prisma.subscription.findMany({
-      select: { title: true, rate: true, frequency: true, companyId: true },
+      select: { title: true, rate: true, frequency: true, companyId: true, createdAt: true },
     }),
     prisma.user.findMany({
       where: { role: Role.USER, ...cmtWhere },
-      select: { primaryMembership: true, addOns: true, active: true, companyId: true, memberSourceCompany: true },
+      select: { primaryMembership: true, addOns: true, active: true, companyId: true, memberSourceCompany: true, createdAt: true },
     }),
     prisma.company.findMany({
       where: { isPersonal: false, NOT: { email: { contains: 'placeholder.invalid' } } },
-      select: { id: true, name: true, active: true },
+      select: { id: true, name: true, active: true, membershipTypes: true, createdAt: true },
     }),
     prisma.session.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
     prisma.samlAuthRequest.count({ where: { completedAt: { not: null }, createdAt: { gte: thirtyDaysAgo } } }),
@@ -587,7 +587,26 @@ app.get("/api/reports", async (c) => {
       orderBy: { createdAt: 'desc' },
       take: 10,
     }),
+    // Separate from recentSessions (which is capped at 10 for the UI list) — this needs the
+    // full 30-day set to get an accurate distinct-user count, not just the 10 newest rows.
+    prisma.session.findMany({
+      where: { createdAt: { gte: thirtyDaysAgo } },
+      select: { userId: true },
+      distinct: ['userId'],
+    }),
   ]);
+
+  // Match the same "CMT rules" scoping /admin/companies applies by default: a company only
+  // counts here if it has at least one membershipType recognized as a CompanyMembershipType.
+  const cmtNameSet = new Set(cmtNames);
+  const cmtCompanies = companies.filter(co => {
+    try {
+      const types: string[] = JSON.parse(co.membershipTypes || '[]');
+      return types.some(t => cmtNameSet.has(t));
+    } catch {
+      return false;
+    }
+  });
 
   const toMonthly = (rate: number, frequency: string) => {
     const f = frequency.toLowerCase();
@@ -598,6 +617,53 @@ app.get("/api/reports", async (c) => {
 
   const payingSubs = subs.filter(s => s.rate != null && s.rate > 0);
   const mrr = payingSubs.reduce((sum, s) => sum + toMonthly(s.rate!, s.frequency ?? ''), 0);
+
+  // How membership & MRR have shifted over time: cumulative totals as of each period's end
+  // (based on record createdAt — the best signal we have; there's no historical snapshot
+  // table, so this can't reflect churn that happened before a record's current state, only
+  // the trajectory of what's currently on file), plus the delta vs the previous period.
+  const buildShiftSeries = (unit: 'week' | 'month', count: number) => {
+    const now = new Date();
+    const periodEnds: { end: Date; period: string }[] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      let end: Date, period: string;
+      if (unit === 'week') {
+        end = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+        period = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } else {
+        end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+        period = new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      }
+      periodEnds.push({ end, period });
+    }
+    let prevMembers = 0;
+    let prevCompanies = 0;
+    let prevMrr = 0;
+    return periodEnds.map(({ end, period }) => {
+      const totalMembers = users.filter(u => u.createdAt < end).length;
+      const totalCompanies = cmtCompanies.filter(co => co.createdAt < end).length;
+      const totalMrr = Math.round(
+        payingSubs.filter(s => s.createdAt < end).reduce((sum, s) => sum + toMonthly(s.rate!, s.frequency ?? ''), 0)
+      );
+      const point = {
+        period,
+        totalMembers,
+        totalCompanies,
+        mrr: totalMrr,
+        memberChange: totalMembers - prevMembers,
+        companyChange: totalCompanies - prevCompanies,
+        mrrChange: totalMrr - prevMrr,
+      };
+      prevMembers = totalMembers;
+      prevCompanies = totalCompanies;
+      prevMrr = totalMrr;
+      return point;
+    });
+  };
+  const growth = {
+    weekly: buildShiftSeries('week', 12),
+    monthly: buildShiftSeries('month', 12),
+  };
 
   const byTitleMap = new Map<string, { count: number; mrr: number }>();
   for (const s of payingSubs) {
@@ -647,7 +713,7 @@ app.get("/api/reports", async (c) => {
   const coUserMap = new Map<string, number>();
   for (const u of users) coUserMap.set(u.companyId, (coUserMap.get(u.companyId) ?? 0) + 1);
 
-  const coIdSet = new Set(companies.map(c => c.id));
+  const coIdSet = new Set(cmtCompanies.map(c => c.id));
 
   const coSubMap = new Map<string, { count: number; mrr: number }>();
   for (const s of payingSubs) {
@@ -656,9 +722,9 @@ app.get("/api/reports", async (c) => {
     coSubMap.set(s.companyId, { count: prev.count + 1, mrr: prev.mrr + toMonthly(s.rate!, s.frequency ?? '') });
   }
 
-  const coIdMap = new Map(companies.map(c => [c.id, c.name]));
+  const coIdMap = new Map(cmtCompanies.map(c => [c.id, c.name]));
   // name → id lookup for memberSourceCompany matching (case-insensitive)
-  const coNameToIdMap = new Map(companies.map(c => [c.name.trim().toLowerCase(), c.id]));
+  const coNameToIdMap = new Map(cmtCompanies.map(c => [c.name.trim().toLowerCase(), c.id]));
 
   // sponsored: users where memberSourceCompany points to a DIFFERENT company than their affiliated one
   const coSponsoredMap = new Map<string, number>();
@@ -671,7 +737,7 @@ app.get("/api/reports", async (c) => {
     coSponsoredMap.set(srcId, (coSponsoredMap.get(srcId) ?? 0) + 1);
   }
 
-  const topByMembers = companies
+  const topByMembers = cmtCompanies
     .map(c => ({
       name: c.name,
       affiliated: coUserMap.get(c.id) ?? 0,
@@ -685,12 +751,12 @@ app.get("/api/reports", async (c) => {
     .sort((a, b) => b.mrr - a.mrr)
     .slice(0, 10);
 
-  const withSubs = companies.filter(c => coSubMap.has(c.id)).length;
+  const withSubs = cmtCompanies.filter(c => coSubMap.has(c.id)).length;
   const avgMrrPerCo = withSubs > 0 ? Math.round(mrr / withSubs) : 0;
-  const avgMembersPerCo = companies.length > 0 ? Math.round((users.length / companies.length) * 10) / 10 : 0;
+  const avgMembersPerCo = cmtCompanies.length > 0 ? Math.round((users.length / cmtCompanies.length) * 10) / 10 : 0;
 
   const sizeCounts = { '1 member': 0, '2–3 members': 0, '4–9 members': 0, '10+ members': 0 };
-  for (const c of companies) {
+  for (const c of cmtCompanies) {
     const n = coUserMap.get(c.id) ?? 0;
     if (n === 1) sizeCounts['1 member']++;
     else if (n <= 3) sizeCounts['2–3 members']++;
@@ -699,7 +765,7 @@ app.get("/api/reports", async (c) => {
   }
   const bySize = Object.entries(sizeCounts).map(([label, count]) => ({ label, count }));
 
-  const activeUsersLast30d = new Set(recentSessions.map(s => s.userId)).size;
+  const activeUsersLast30d = activeSessionUsers.length;
 
   return c.json({
     success: true,
@@ -720,7 +786,7 @@ app.get("/api/reports", async (c) => {
         byPrimaryMembership,
         byAddOn,
         companies: {
-          total: companies.length,
+          total: cmtCompanies.length,
           withSubs,
           avgMembersPerCo,
           avgMrrPerCo,
@@ -741,6 +807,7 @@ app.get("/api/reports", async (c) => {
           createdAt: s.createdAt,
         })),
       },
+      growth,
     },
   });
 });

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 type LoginStep = 'email' | 'password'
 
@@ -37,7 +37,16 @@ export function LoginPage() {
   const emailForm = useForm<EmailFormData>()
   const passwordForm = useForm<PasswordFormData>()
 
+  // `isVerifying`/`isStartingLogin` from RTK Query only flip true after the mutation is
+  // dispatched — a fast double-click or Enter+click landing in the same tick can slip a
+  // second submit in before React re-renders the disabled button. These refs are set
+  // synchronously, so the second call is blocked immediately regardless of render timing.
+  const isSubmittingEmailRef = useRef(false)
+  const isSubmittingPasswordRef = useRef(false)
+
   const handleEmailSubmit = async (data: EmailFormData) => {
+    if (isSubmittingEmailRef.current) return
+    isSubmittingEmailRef.current = true
     try {
       const result = await startLogin({ email: data.email }).unwrap()
       if (!result.data) {
@@ -49,10 +58,14 @@ export function LoginPage() {
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
       toast.error(err.data?.message || 'Something went wrong. Please try again.')
+    } finally {
+      isSubmittingEmailRef.current = false
     }
   }
 
   const handlePasswordSubmit = async (data: PasswordFormData) => {
+    if (isSubmittingPasswordRef.current) return
+    isSubmittingPasswordRef.current = true
     try {
       const result = await verifyLogin({
         request_id: requestId,
@@ -102,6 +115,8 @@ export function LoginPage() {
     } catch (error: unknown) {
       const err = error as { data?: { message?: string }; message?: string }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
+    } finally {
+      isSubmittingPasswordRef.current = false
     }
   }
 

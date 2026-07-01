@@ -99,10 +99,11 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
       ]};
     }
   } else if (input.cmtOnly !== 'false') {
+    const noRealPrimaryForCmt = { OR: [{ primaryMembership: null }, { primaryMembership: '' }] };
     portalAccessCondition = { OR: [
       { primaryMembership: { in: cmtNames } },
-      { primaryMembership: null, addOns: { not: '[]' } },
-      { primaryMembership: null, company: { membershipTypes: { not: '[]' } } },
+      { AND: [noRealPrimaryForCmt, { addOns: { not: '[]' } }] },
+      { AND: [noRealPrimaryForCmt, { company: { membershipTypes: { not: '[]' } } }] },
     ]};
   }
 
@@ -134,10 +135,11 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     andConditions.push({ NOT: { OR: placeholderFilter } });
   }
   const hasMembershipDataCondition = { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] };
+  const noRealPrimary = { OR: [{ primaryMembership: null }, { primaryMembership: '' }] };
   if (input.noPrimary === 'true') {
-    andConditions.push({ primaryMembership: null, ...hasMembershipDataCondition });
+    andConditions.push({ AND: [noRealPrimary, hasMembershipDataCondition] });
   } else if (input.noPrimary === 'false') {
-    andConditions.push({ NOT: { AND: [{ primaryMembership: null }, hasMembershipDataCondition] } });
+    andConditions.push({ NOT: { AND: [noRealPrimary, hasMembershipDataCondition] } });
   }
   const directPersonalCondition = { memberSource: 'subscription', company: { isPersonal: true } };
   if (input.directPersonal === 'true') {
@@ -145,11 +147,11 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
   } else if (input.directPersonal === 'false') {
     andConditions.push({ NOT: { AND: [{ memberSource: directPersonalCondition.memberSource }, { company: directPersonalCondition.company }] } });
   }
-  const unresolvedCondition = { primaryMembership: null, addOns: '[]', company: { membershipTypes: '[]' } };
+  const unresolvedCondition = { AND: [noRealPrimary, { addOns: '[]' }, { company: { membershipTypes: '[]' } }] };
   if (input.unresolved === 'true') {
     andConditions.push(unresolvedCondition);
   } else if (input.unresolved === 'false') {
-    andConditions.push({ NOT: { AND: [{ primaryMembership: unresolvedCondition.primaryMembership }, { addOns: unresolvedCondition.addOns }, { company: unresolvedCondition.company }] } });
+    andConditions.push({ NOT: unresolvedCondition });
   }
   if (andConditions.length > 0) whereClause.AND = andConditions;
 

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
-import { useGetReportsQuery } from '@/store/api/reportsApi'
+import { useGetReportsQuery, type GrowthPoint } from '@/store/api/reportsApi'
 import { useGetSyncStatusQuery } from '@/store/api/syncApi'
-import { Loader2, TrendingUp, Users, Activity, Building2, RefreshCw } from 'lucide-react'
+import { Loader2, TrendingUp, Users, Activity, Building2, RefreshCw, CalendarDays, CalendarRange } from 'lucide-react'
 
 function timeAgo(iso: string | null | undefined): string {
   if (!iso) return 'never'
@@ -43,7 +43,7 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
   )
 }
 
-type Tab = 'revenue' | 'membership' | 'engagement'
+type Tab = 'revenue' | 'membership' | 'engagement' | 'weekly' | 'monthly'
 type MemberTab = 'users' | 'companies'
 
 export function AdminReportsPage() {
@@ -77,13 +77,18 @@ export function AdminReportsPage() {
     )
   }
 
-  const { revenue, membership, engagement } = data.data
+  const { revenue, membership, engagement, growth } = data.data
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  const ALL_TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'revenue', label: 'Revenue', icon: <TrendingUp className="h-4 w-4" /> },
     { key: 'membership', label: 'Membership', icon: <Users className="h-4 w-4" /> },
     { key: 'engagement', label: 'Engagement', icon: <Activity className="h-4 w-4" /> },
+    { key: 'weekly', label: 'Weekly', icon: <CalendarDays className="h-4 w-4" /> },
+    { key: 'monthly', label: 'Monthly', icon: <CalendarRange className="h-4 w-4" /> },
   ]
+  // Weekly/Monthly tabs hidden for now — kept in ALL_TABS/logic so they can be re-enabled easily.
+  const HIDDEN_TABS: Tab[] = ['weekly', 'monthly']
+  const TABS = ALL_TABS.filter(t => !HIDDEN_TABS.includes(t.key))
 
   return (
     <div className="space-y-6">
@@ -417,6 +422,115 @@ export function AdminReportsPage() {
           </p>
         </div>
       )}
+
+      {/* ── WEEKLY / MONTHLY GROWTH ── */}
+      {(tab === 'weekly' || tab === 'monthly') && (
+        <GrowthTab
+          points={tab === 'weekly' ? growth.weekly : growth.monthly}
+          unitLabel={tab === 'weekly' ? 'week' : 'month'}
+        />
+      )}
+    </div>
+  )
+}
+
+function ChangeBadge({ value, isCurrency }: { value: number; isCurrency?: boolean }) {
+  if (value === 0) return <span className="text-gray-300">—</span>
+  const positive = value > 0
+  const label = isCurrency ? fmt$(Math.abs(value)) : Math.abs(value).toLocaleString()
+  return (
+    <span className={`font-medium ${positive ? 'text-green-600' : 'text-red-500'}`}>
+      {positive ? '+' : '−'}{label}
+    </span>
+  )
+}
+
+function TrendRow({ label, points, pick, formatVal }: { label: string; points: GrowthPoint[]; pick: (p: GrowthPoint) => number; formatVal: (n: number) => string }) {
+  const values = points.map(pick)
+  const max = Math.max(...values, 1)
+  return (
+    <div className="mb-3">
+      <div className="flex justify-between text-sm mb-1">
+        <span className="text-gray-600">{label}</span>
+      </div>
+      <div className="flex items-end gap-1 h-16">
+        {points.map((p, i) => (
+          <div key={p.period} className="flex-1 flex flex-col items-center justify-end gap-1" title={`${p.period}: ${formatVal(values[i])}`}>
+            <div className="w-full bg-brand/70 rounded-t transition-all" style={{ height: `${max > 0 ? Math.max((values[i] / max) * 100, 2) : 2}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+        <span>{points[0]?.period}</span>
+        <span>{points[points.length - 1]?.period}</span>
+      </div>
+    </div>
+  )
+}
+
+function GrowthTab({ points, unitLabel }: { points: GrowthPoint[]; unitLabel: string }) {
+  const latest = points[points.length - 1]
+  const first = points[0]
+  const memberShiftPct = first?.totalMembers ? Math.round(((latest.totalMembers - first.totalMembers) / first.totalMembers) * 100) : 0
+  const mrrShiftPct = first?.mrr ? Math.round(((latest.mrr - first.mrr) / first.mrr) * 100) : 0
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="Total Members Now" value={(latest?.totalMembers ?? 0).toLocaleString()} sub={`${(latest?.memberChange ?? 0) >= 0 ? '+' : ''}${latest?.memberChange ?? 0} vs prior ${unitLabel}`} accent />
+        <KpiCard label="Total MRR Now" value={fmt$(latest?.mrr ?? 0)} sub={`${(latest?.mrrChange ?? 0) >= 0 ? '+' : ''}${fmt$(latest?.mrrChange ?? 0)} vs prior ${unitLabel}`} />
+        <KpiCard label={`Member Shift (${points.length} ${unitLabel}s)`} value={`${memberShiftPct >= 0 ? '+' : ''}${memberShiftPct}%`} sub={`${first?.totalMembers ?? 0} → ${latest?.totalMembers ?? 0}`} />
+        <KpiCard label={`MRR Shift (${points.length} ${unitLabel}s)`} value={`${mrrShiftPct >= 0 ? '+' : ''}${mrrShiftPct}%`} sub={`${fmt$(first?.mrr ?? 0)} → ${fmt$(latest?.mrr ?? 0)}`} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border rounded-lg p-5">
+          <h3 className="font-semibold mb-1">Total Members Over Time</h3>
+          <p className="text-xs text-gray-400 mb-4">Cumulative CMT-qualifying members, end of each {unitLabel}</p>
+          <TrendRow label="Members" points={points} pick={p => p.totalMembers} formatVal={n => n.toLocaleString()} />
+        </div>
+        <div className="bg-white border rounded-lg p-5">
+          <h3 className="font-semibold mb-1">MRR Over Time</h3>
+          <p className="text-xs text-gray-400 mb-4">Cumulative monthly recurring revenue, end of each {unitLabel}</p>
+          <TrendRow label="MRR" points={points} pick={p => p.mrr} formatVal={fmt$} />
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-lg p-5">
+        <h3 className="font-semibold mb-1">Period-over-Period Shift</h3>
+        <p className="text-xs text-gray-400 mb-4">Change vs the previous {unitLabel}</p>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs uppercase text-gray-400 border-b">
+              <th className="text-left pb-2">Period</th>
+              <th className="text-right pb-2">Members</th>
+              <th className="text-right pb-2">Δ Members</th>
+              <th className="text-right pb-2">Companies</th>
+              <th className="text-right pb-2">Δ Companies</th>
+              <th className="text-right pb-2">MRR</th>
+              <th className="text-right pb-2">Δ MRR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {points.map(p => (
+              <tr key={p.period} className="border-b last:border-0 hover:bg-gray-50">
+                <td className="py-2 font-medium">{p.period}</td>
+                <td className="py-2 text-right tabular-nums">{p.totalMembers.toLocaleString()}</td>
+                <td className="py-2 text-right tabular-nums"><ChangeBadge value={p.memberChange} /></td>
+                <td className="py-2 text-right tabular-nums">{p.totalCompanies.toLocaleString()}</td>
+                <td className="py-2 text-right tabular-nums"><ChangeBadge value={p.companyChange} /></td>
+                <td className="py-2 text-right tabular-nums">{fmt$(p.mrr)}</td>
+                <td className="py-2 text-right tabular-nums"><ChangeBadge value={p.mrrChange} isCurrency /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="text-xs text-gray-400 italic">
+        Trajectory reflects records currently on file, grouped by when they were created — there's no historical
+        snapshot log, so this can't show a dip from a member who both joined and churned before today.
+      </p>
     </div>
   )
 }
