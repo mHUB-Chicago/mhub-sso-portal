@@ -59,6 +59,7 @@ model User {
   mustResetPassword    Boolean               @default(false)
   lastLogin            DateTime?
   primaryMembership    String?
+  primaryMembershipStatus String?
   addOns               String                @default("[]")
   profilePhoto         String?
   phone                String?

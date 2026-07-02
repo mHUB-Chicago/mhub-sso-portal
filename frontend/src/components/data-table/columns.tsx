@@ -125,6 +125,21 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     },
   },
   {
+    accessorKey: "primaryMembershipStatus",
+    header: "Status",
+    size: 110,
+    cell: ({ row }) => {
+      const status = row.original.primaryMembershipStatus
+      if (!status) return <span className="text-muted-foreground">—</span>
+      const isCancelled = status === 'Cancelled'
+      return (
+        <Badge variant="outline" className={isCancelled ? "text-rose-700 border-rose-300 bg-rose-50" : "text-green-700 border-green-300 bg-green-50"}>
+          {status}
+        </Badge>
+      )
+    },
+  },
+  {
     accessorKey: "active",
     header: "Active",
     size: 100,

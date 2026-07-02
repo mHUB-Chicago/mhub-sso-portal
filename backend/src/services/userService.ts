@@ -39,6 +39,7 @@ export interface CreateUserInput {
   mustResetPassword?: boolean;
   emailVerified?: boolean;
   primaryMembership?: string | null;
+  primaryMembershipStatus?: string | null;
   addOns?: string[];
   profilePhoto?: string | null;
   phone?: string | null;
@@ -64,6 +65,7 @@ export interface UpdateUserInput {
   emailVerified?: boolean;
   mustResetPassword?: boolean;
   primaryMembership?: string | null;
+  primaryMembershipStatus?: string | null;
   addOns?: string[];
   profilePhoto?: string | null;
   phone?: string | null;
@@ -79,48 +81,6 @@ export interface UpdateUserInput {
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
   const prisma: PrismaClient = c.get("db");
-
-  if (input.noPrimary === 'true' || input.noPrimary === 'false') {
-    const noPrimaryCondition = {
-      AND: [
-        { OR: [{ primaryMembership: null }, { primaryMembership: '' }] },
-        { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] },
-      ],
-    };
-    const whereClause: any = {
-      ...(input.role && { role: input.role }),
-      ...(input.companyId && { companyId: input.companyId }),
-      ...(input.active !== undefined && { active: input.active === 'true' }),
-      AND: [input.noPrimary === 'true' ? noPrimaryCondition : { NOT: noPrimaryCondition }],
-    };
-    const [rawUsers, total, subs] = await Promise.all([
-      prisma.user.findMany({
-        where: whereClause,
-        skip: input.offset,
-        take: input.limit,
-        orderBy: { createdAt: "desc" },
-        include: { company: { select: { membershipTypes: true } } },
-      }),
-      prisma.user.count({ where: whereClause }),
-      prisma.subscription.findMany({ select: { title: true, companyId: true } }),
-    ]);
-    const activeSubSet = new Set(subs.filter(s => s.companyId).map(s => `${s.companyId}::${s.title}`));
-    const users = rawUsers.map(u => {
-      const companyTypes: string[] = JSON.parse(u.company.membershipTypes || '[]');
-      const addOns: string[] = JSON.parse(u.addOns || '[]');
-      let membershipStatus: string;
-      if (companyTypes.length > 0) {
-        membershipStatus = 'Unresolved';
-      } else if (addOns.length > 0) {
-        membershipStatus = addOns.some(t => activeSubSet.has(`${u.companyId}::${t}`)) ? 'Unresolved' : 'Expired / Cancelled';
-      } else {
-        membershipStatus = 'No Membership';
-      }
-      const { company, ...rest } = u;
-      return { ...rest, membershipStatus };
-    });
-    return { users, total };
-  }
 
   const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
   const portalTypeNames = (await prisma.portalAccessType.findMany({ select: { name: true } })).map(t => t.name);
@@ -183,6 +143,14 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     andConditions.push({ NOT: { name: '' } });
   }
   const noRealPrimary = { OR: [{ primaryMembership: null }, { primaryMembership: '' }] };
+  const noPrimaryCondition = input.cmtOnly !== 'false'
+    ? { AND: [noRealPrimary, { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] }] }
+    : noRealPrimary;
+  if (input.noPrimary === 'true') {
+    andConditions.push(noPrimaryCondition);
+  } else if (input.noPrimary === 'false') {
+    andConditions.push({ NOT: noPrimaryCondition });
+  }
   const directPersonalCondition = { memberSource: 'subscription', company: { isPersonal: true } };
   if (input.directPersonal === 'true') {
     andConditions.push(directPersonalCondition);
@@ -232,7 +200,7 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = createUserInput;
+  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
   const existingUser = await prisma.user.findFirst({
@@ -254,6 +222,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       mustResetPassword: mustResetPassword ?? true,
       emailVerified: emailVerified ?? false,
       primaryMembership: primaryMembership ?? null,
+      primaryMembershipStatus: primaryMembershipStatus ?? null,
       addOns: JSON.stringify(addOns ?? []),
       profilePhoto: profilePhoto ?? null,
       phone: phone ?? null,
@@ -286,7 +255,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = updateUserInput;
+  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   return prisma.user.update({
@@ -302,6 +271,7 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       emailVerified,
       mustResetPassword,
       primaryMembership,
+      primaryMembershipStatus,
       ...(addOns !== undefined && { addOns: JSON.stringify(addOns) }),
       profilePhoto,
       phone,

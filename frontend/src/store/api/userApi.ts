@@ -12,6 +12,7 @@ export interface User {
   emailVerified: boolean
   mustResetPassword: boolean
   primaryMembership: string | null
+  primaryMembershipStatus: string | null
   addOns: string
   profilePhoto: string | null
   phone: string | null

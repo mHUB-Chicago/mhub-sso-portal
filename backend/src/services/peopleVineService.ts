@@ -1273,6 +1273,21 @@ export const syncPhaseCorrectionExport = async (
       await saveMeta({ membershipCardChunkKeys });
     }
 
+    // A card marked `primary: true` in PV whose own subscription has since lapsed falls
+    // out of the active-only fetch above, so its holder would otherwise show a blank
+    // Primary Membership even though the client did check "Set as Primary Membership
+    // Card". Pulling every status and keeping only the primary-flagged ones (a small
+    // fraction of the full card volume) lets syncPhaseCorrectionUsers fall back to it.
+    const { cards: allStatusCards, skippedPages: skippedAllStatusCardPages } = await fetchAllMembershipCards(c, null);
+    const anyStatusPrimaryCards = allStatusCards.filter(card => card.primary === true);
+    if (sessionId) {
+      await prisma.syncExportBlob.upsert({
+        where: { sessionId_key: { sessionId, key: 'any-status-primary-cards.json' } },
+        create: { sessionId, key: 'any-status-primary-cards.json', data: JSON.stringify({ cards: anyStatusPrimaryCards, skippedAllStatusCardPages }) },
+        update: { data: JSON.stringify({ cards: anyStatusPrimaryCards, skippedAllStatusCardPages }) },
+      });
+    }
+
     await saveMeta({ correctionExportBatchKeys: [] });
   }
 
@@ -1325,6 +1340,16 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
     membershipCards.push(...cards);
   }
   const correctionIndividualMembershipCardData = buildMembershipCardData(membershipCards);
+
+  const anyStatusPrimaryCardsBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: 'any-status-primary-cards.json' } } });
+  const { cards: anyStatusPrimaryCards } = anyStatusPrimaryCardsBlob ? JSON.parse(anyStatusPrimaryCardsBlob.data) as { cards: any[] } : { cards: [] as any[] };
+  const correctionAnyStatusPrimaryTitle: Record<string, string> = {};
+  for (const card of anyStatusPrimaryCards) {
+    const customerId = card.customer_id?.toString();
+    const title = (card.title ?? '').trim();
+    if (!customerId || !title || correctionAnyStatusPrimaryTitle[customerId]) continue;
+    correctionAnyStatusPrimaryTitle[customerId] = title;
+  }
 
   const { customers: companyProfiles, subscriptionInfoMap, individualSubscriberIds, portalAccessTypes } = await buildSubscriptionData(c, subscriptions);
 
@@ -1406,6 +1431,7 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
   await writeDataBlob(prisma, sessionId, 'phase4-data.json', {
     correctionIndividualMembershipTypes,
     correctionIndividualMembershipCardData,
+    correctionAnyStatusPrimaryTitle,
     correctionSubscriberMemberships,
     correctionActivePVSubscriberIds: Array.from(individualSubscriberIds),
   });
@@ -1469,10 +1495,12 @@ export const syncPhaseCorrectionUsers = async (
   const phase4Data = JSON.parse(phase4Blob.data) as {
     correctionIndividualMembershipTypes: Record<string, string[]>;
     correctionIndividualMembershipCardData: Record<string, { ownTypes: string[]; primaryCardTitle: string | null; primaryCardSourceCompanyName: string | null; allCardTypes: string[]; secondaryProviders: { title: string; providingCompanyName: string | null }[] }>;
+    correctionAnyStatusPrimaryTitle: Record<string, string>;
     correctionActivePVSubscriberIds: string[];
   };
   const correctionIndividualMembershipTypes = phase4Data.correctionIndividualMembershipTypes;
   const correctionIndividualMembershipCardData = phase4Data.correctionIndividualMembershipCardData;
+  const correctionAnyStatusPrimaryTitle = phase4Data.correctionAnyStatusPrimaryTitle ?? {};
   const correctionActivePVSubscriberIds = new Set<string>(phase4Data.correctionActivePVSubscriberIds);
 
   await flush(98, `Verifying users (batch ${startBatch + 1}/${batchKeys.length})`, 'running');
@@ -1573,7 +1601,16 @@ export const syncPhaseCorrectionUsers = async (
 
     const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
 
-    const newPrimary: string | null = cardData.primaryCardTitle ?? null;
+    // cardData.primaryCardTitle only sees active cards. A card the client flagged
+    // `primary: true` whose own subscription has since lapsed falls out of that active
+    // set — correctionAnyStatusPrimaryTitle (built from every status) catches it, so the
+    // person's Primary Membership still reflects what's checked in PV instead of going
+    // blank. This is a label only — active/inactive access is computed separately below
+    // and is unaffected by this fallback.
+    const newPrimary: string | null = cardData.primaryCardTitle ?? correctionAnyStatusPrimaryTitle[pvId] ?? null;
+    const newPrimaryStatus: string | null = newPrimary === null
+      ? null
+      : (cardData.primaryCardTitle !== null ? 'Active' : 'Cancelled');
 
     const newMemberSourceCompany = newPrimary !== null
       ? (cardData.primaryCardSourceCompanyName ?? company.name)
@@ -1660,6 +1697,7 @@ export const syncPhaseCorrectionUsers = async (
       existingUser.email !== customer.email.toLowerCase() ||
       existingUser.companyId !== company.id ||
       existingUser.primaryMembership !== newPrimary ||
+      existingUser.primaryMembershipStatus !== newPrimaryStatus ||
       existingUser.addOns !== JSON.stringify(newAddOns) ||
       existingUser.active !== pvUserActive ||
       existingUser.profilePhoto !== (customer.profilePhoto ?? null) ||
@@ -1683,6 +1721,7 @@ export const syncPhaseCorrectionUsers = async (
     if (existingUser.active !== pvUserActive) uChanges.push({ field: 'active', before: String(existingUser.active), after: String(pvUserActive) });
     if (existingUser.companyId !== company.id) uChanges.push({ field: 'company', before: existingUser.companyId, after: company.id });
     if (existingUser.primaryMembership !== newPrimary) uChanges.push({ field: 'primaryMembership', before: String(existingUser.primaryMembership), after: String(newPrimary) });
+    if (existingUser.primaryMembershipStatus !== newPrimaryStatus) uChanges.push({ field: 'primaryMembershipStatus', before: String(existingUser.primaryMembershipStatus), after: String(newPrimaryStatus) });
     if (existingUser.addOns !== newAddOnsJson) uChanges.push({ field: 'addOns', before: existingUser.addOns || '[]', after: newAddOnsJson });
     if (existingUser.memberSource !== memberSource) uChanges.push({ field: 'memberSource', before: String(existingUser.memberSource), after: memberSource });
     if (existingUser.memberSourceCompany !== newMemberSourceCompany) uChanges.push({ field: 'memberSourceCompany', before: String(existingUser.memberSourceCompany), after: newMemberSourceCompany });
@@ -1703,6 +1742,7 @@ export const syncPhaseCorrectionUsers = async (
         companyId: company.id,
         peopleVineId: pvId,
         primaryMembership: newPrimary,
+        primaryMembershipStatus: newPrimaryStatus,
         addOns: newAddOns,
         profilePhoto: customer.profilePhoto,
         active: pvUserActive,
@@ -1753,11 +1793,14 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
   // Same unfiltered fetchAllMembershipCards() call the nightly Phase 4 correction pass
   // uses — no unproven Customer_Id filter guess on this endpoint, just the pattern
-  // that's already proven to work every night.
-  const [customer, subResult, cardResult] = await Promise.all([
+  // that's already proven to work every night. The second, statusFilter:null call also
+  // matches Phase 4 — it's needed so a card flagged `primary: true` whose subscription
+  // has since lapsed still resolves to a Primary Membership label instead of going blank.
+  const [customer, subResult, cardResult, anyStatusCardResult] = await Promise.all([
     getCustomer(c, peopleVineId.toString()),
     getCustomersFromSubscriptions(c, peopleVineId.toString()),
     fetchAllMembershipCards(c),
+    fetchAllMembershipCards(c, null),
   ]);
 
   if (!customer) {
@@ -1799,10 +1842,18 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   // waiting for the next nightly correction pass (syncPhaseCorrectionUsers) to notice it.
   const cardDataSync = buildMembershipCardData(cardResult.cards)[pvId]
     ?? { ownTypes: [], primaryCardTitle: null, primaryCardSourceCompanyName: null, allCardTypes: [], secondaryProviders: [] };
+  // Same fallback as Phase 4: a card flagged primary whose own subscription lapsed falls
+  // out of the active-only fetch above, so its holder would otherwise show a blank
+  // Primary Membership even though the client did check the box in PV.
+  const anyStatusPrimaryCard = anyStatusCardResult.cards.find(card => card.customer_id?.toString() === pvId && card.primary === true);
+  const anyStatusPrimaryTitle = (anyStatusPrimaryCard?.title ?? '').trim() || null;
   const pickBest = (types: string[]): string | null =>
     types.find(t => primaryTypeSetSync.has(t)) ?? types.find(t => portalAccessTypes.has(t)) ?? types[0] ?? null;
   const pickAddons = (types: string[]): string[] => types.filter(t => addonTypeSetSync.has(t));
-  const membershipType = cardDataSync.primaryCardTitle ?? pickBest(membershipTypes);
+  const membershipType = cardDataSync.primaryCardTitle ?? anyStatusPrimaryTitle ?? pickBest(membershipTypes);
+  const membershipStatus: string | null = membershipType === null
+    ? null
+    : (cardDataSync.primaryCardTitle !== null ? 'Active' : (anyStatusPrimaryTitle !== null ? 'Cancelled' : 'Active'));
   const isPersonal = customer.isPersonal ?? false;
   const diffRecord: Record<string, { before: any; after: any }> = {};
 
@@ -1929,6 +1980,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       associatedUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
       associatedUser.companyId !== associatedCompany.id ||
       associatedUser.primaryMembership !== userPrimaryMembership ||
+      associatedUser.primaryMembershipStatus !== membershipStatus ||
       associatedUser.addOns !== JSON.stringify(userAddOns) ||
       associatedUser.active !== userPvActive ||
       associatedUser.profilePhoto !== (customer.profilePhoto ?? null) ||
@@ -1947,6 +1999,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       username: customer.username ? customer.username.trim().toLowerCase() : null,
       active: userPvActive,
       primaryMembership: userPrimaryMembership,
+      primaryMembershipStatus: membershipStatus,
       addOns: userAddOns,
       phone: customer.phone ?? null,
       address: customer.address ?? null,
@@ -1966,6 +2019,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           username: associatedUser.username,
           active: associatedUser.active,
           primaryMembership: associatedUser.primaryMembership,
+          primaryMembershipStatus: associatedUser.primaryMembershipStatus,
           addOns: associatedUser.addOns,
           phone: associatedUser.phone,
           address: associatedUser.address,
@@ -1987,6 +2041,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           companyId: associatedCompany.id,
           peopleVineId: customer.id.toString(),
           primaryMembership: userPrimaryMembership,
+          primaryMembershipStatus: membershipStatus,
           addOns: userAddOns,
           profilePhoto: customer.profilePhoto,
           active: userPvActive,
@@ -2041,6 +2096,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         role: Role.USER,
         companyId: associatedCompany.id,
         primaryMembership: userPrimaryMembership,
+        primaryMembershipStatus: membershipStatus,
         addOns: userAddOns,
         profilePhoto: customer.profilePhoto,
         active: userPvActive,
@@ -2335,7 +2391,7 @@ export const fetchAllPvData = async (c: Context): Promise<{
   return { subscriptions, skippedSubPages };
 };
 
-export const fetchAllMembershipCards = async (c: Context): Promise<{
+export const fetchAllMembershipCards = async (c: Context, statusFilter: string | null = 'active'): Promise<{
   cards: any[];
   skippedPages: number[];
 }> => {
@@ -2352,7 +2408,10 @@ export const fetchAllMembershipCards = async (c: Context): Promise<{
         // No `Type` filter — we need both "id" cards (e.g. "mHUB Community") and
         // "subscription" cards (e.g. "Office - Small"), since either kind can be
         // marked `primary: true` by the client in PV ("Set as Primary Membership Card").
-        queryParams: { Status: 'active', Page_Size: String(SUB_PAGE_SIZE), Page_Number: String(page) },
+        // `statusFilter: null` omits the Status param — used to also see cancelled/expired
+        // cards, so a `primary: true` card whose subscription lapsed still counts as the
+        // person's primary membership label instead of going blank.
+        queryParams: { Page_Size: String(SUB_PAGE_SIZE), Page_Number: String(page), ...(statusFilter ? { Status: statusFilter } : {}) },
       });
     } catch {
       skippedPages.push(page);

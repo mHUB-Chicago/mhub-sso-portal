@@ -22,6 +22,7 @@ export function AdminUsersPage() {
   const [emailVerified, setEmailVerified] = useState<'true' | 'false' | undefined>(undefined)
   const [portalAccess, setPortalAccess] = useState<'true' | 'false' | undefined>(undefined)
   const [memberSource, setMemberSource] = useState<'subscription' | 'membership' | undefined>(undefined)
+  const [noPrimary, setNoPrimary] = useState<'true' | 'false' | undefined>(undefined)
   const [exporting, setExporting] = useState(false)
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
@@ -34,6 +35,7 @@ export function AdminUsersPage() {
     emailVerified,
     portalAccess,
     memberSource,
+    noPrimary,
     noEmail: 'false',
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
@@ -75,6 +77,7 @@ export function AdminUsersPage() {
     else if (columnId === "emailVerified") setEmailVerified(value as 'true' | 'false' | undefined)
     else if (columnId === "portalAccess") setPortalAccess(value as 'true' | 'false' | undefined)
     else if (columnId === "memberSource") setMemberSource(value as 'subscription' | 'membership' | undefined)
+    else if (columnId === "noPrimary") setNoPrimary(value as 'true' | 'false' | undefined)
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -92,6 +95,7 @@ export function AdminUsersPage() {
       { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
       { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
+      { columnId: "noPrimary",      placeholder: "Primary Membership", options: [{ value: "true", label: "No Primary Membership" }, { value: "false", label: "Has Primary Membership" }], width: "w-52" },
     ]
   }, [companiesData, primaryMembershipsData])
 
@@ -108,6 +112,7 @@ export function AdminUsersPage() {
         emailVerified,
         portalAccess,
         memberSource,
+        noPrimary,
         noEmail: 'false',
       }).unwrap()
       const rows = result.data.users.map(u => [

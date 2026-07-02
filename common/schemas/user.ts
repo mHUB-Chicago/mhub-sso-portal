@@ -14,6 +14,7 @@ export const UserSchema = z.object({
   emailVerified: z.boolean(),
   mustResetPassword: z.boolean(),
   primaryMembership: z.string().nullable(),
+  primaryMembershipStatus: z.string().nullable(),
   addOns: z.string().default('[]'),
   profilePhoto: z.string().nullable(),
   phone: z.string().nullable(),

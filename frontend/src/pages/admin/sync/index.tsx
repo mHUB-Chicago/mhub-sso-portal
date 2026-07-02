@@ -786,7 +786,6 @@ function AuditLogsTab() {
 
 
 const PAGE_SIZE = 25
-const SHOW_MEMBERSHIP_STATUS_COLUMN = false
 
 type AttentionCategory = 'all' | 'noEmailUser' | 'noEmailCompany' | 'noPrimary' | 'directPersonal' | 'unresolved'
 
@@ -817,11 +816,11 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
 
   useEffect(() => { setPages({}) }, [search, primaryMembership, activeFilter, selected])
 
-  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true' })
-  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true' })
-  const { data: noPrimaryUsersData, isLoading: loadingNoPrimaryUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noPrimary: 'true' })
-  const { data: directPersonalUsersData, isLoading: loadingDirectPersonalUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', directPersonal: 'true' })
-  const { data: unresolvedUsersData, isLoading: loadingUnresolvedUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', unresolved: 'true' })
+  const { data: noEmailUsersData, isLoading: loadingNoEmailUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noEmail: 'true', ...(activeFilter && { active: activeFilter }) })
+  const { data: noEmailCompaniesData, isLoading: loadingNoEmailCompanies } = useGetCompaniesQuery({ limit: 1000, offset: 0, noEmail: 'true', ...(activeFilter && { active: activeFilter }) })
+  const { data: noPrimaryUsersData, isLoading: loadingNoPrimaryUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noPrimary: 'true', ...(activeFilter && { active: activeFilter }) })
+  const { data: directPersonalUsersData, isLoading: loadingDirectPersonalUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', directPersonal: 'true', ...(activeFilter && { active: activeFilter }) })
+  const { data: unresolvedUsersData, isLoading: loadingUnresolvedUsers } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', unresolved: 'true', ...(activeFilter && { active: activeFilter }) })
   const { data: membershipTypesData } = useGetMembershipTypesQuery()
   const membershipTypes = membershipTypesData?.data ?? []
 
@@ -834,25 +833,20 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
   const q = search.toLowerCase().trim()
   const noEmailUsers = allNoEmailUsers.filter(u =>
     (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-    (!primaryMembership || u.primaryMembership === primaryMembership) &&
-    (activeFilter === '' || String(u.active) === activeFilter)
+    (!primaryMembership || u.primaryMembership === primaryMembership)
   )
   const noEmailCompanies = allNoEmailCompanies.filter(co =>
     (!q || co.name.toLowerCase().includes(q) || co.email.toLowerCase().includes(q)) &&
-    (!primaryMembership || co.membershipTypes?.includes(primaryMembership)) &&
-    (activeFilter === '' || String(co.active) === activeFilter)
+    (!primaryMembership || co.membershipTypes?.includes(primaryMembership))
   )
   const noPrimaryUsers = allNoPrimaryUsers.filter(u =>
-    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-    (activeFilter === '' || String(u.active) === activeFilter)
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   )
   const directPersonalUsers = allDirectPersonalUsers.filter(u =>
-    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-    (activeFilter === '' || String(u.active) === activeFilter)
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   )
   const unresolvedUsers = allUnresolvedUsers.filter(u =>
-    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-    (activeFilter === '' || String(u.active) === activeFilter)
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   )
 
   const getEmailIssue = (email: string) =>
@@ -863,12 +857,13 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
     catch { return [] }
   }
 
+  const noSearchFilterActive = !q && !primaryMembership
   const counts: Record<Exclude<AttentionCategory, 'all'>, number> = {
-    noEmailUser:    noEmailUsers.length,
-    noEmailCompany: noEmailCompanies.length,
-    noPrimary:      noPrimaryUsers.length,
-    directPersonal: directPersonalUsers.length,
-    unresolved:     unresolvedUsers.length,
+    noEmailUser:    noSearchFilterActive ? (noEmailUsersData?.data?.total ?? noEmailUsers.length) : noEmailUsers.length,
+    noEmailCompany: noSearchFilterActive ? (noEmailCompaniesData?.data?.total ?? noEmailCompanies.length) : noEmailCompanies.length,
+    noPrimary:      noSearchFilterActive ? (noPrimaryUsersData?.data?.total ?? noPrimaryUsers.length) : noPrimaryUsers.length,
+    directPersonal: noSearchFilterActive ? (directPersonalUsersData?.data?.total ?? directPersonalUsers.length) : directPersonalUsers.length,
+    unresolved:     noSearchFilterActive ? (unresolvedUsersData?.data?.total ?? unresolvedUsers.length) : unresolvedUsers.length,
   }
   const totalIssues = Object.values(counts).reduce((a, b) => a + b, 0)
 
@@ -1097,7 +1092,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600">Add-Ons</th>
-                      {SHOW_MEMBERSHIP_STATUS_COLUMN && <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-36">Membership Status</th>}
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">Primary Status</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
                     </tr>
                   </thead>
@@ -1108,13 +1103,13 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{u.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{getAddOns(u.addOns).join(', ') || '—'}</td>
-                        {SHOW_MEMBERSHIP_STATUS_COLUMN && (
-                          <td className="px-4 py-2.5">
-                            <Badge variant="outline" className={`text-xs whitespace-nowrap ${u.membershipStatus === 'Expired / Cancelled' ? 'text-rose-700 border-rose-300 bg-rose-50' : 'text-gray-500 border-gray-300 bg-gray-50'}`}>
-                              {u.membershipStatus ?? '—'}
+                        <td className="px-4 py-2.5">
+                          {u.primaryMembershipStatus ? (
+                            <Badge variant="outline" className={`text-xs whitespace-nowrap ${u.primaryMembershipStatus === 'Cancelled' ? 'text-rose-700 border-rose-300 bg-rose-50' : 'text-green-700 border-green-300 bg-green-50'}`}>
+                              {u.primaryMembershipStatus}
                             </Badge>
-                          </td>
-                        )}
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
                         <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
                       </tr>
                     ))}
@@ -1289,7 +1284,7 @@ export function AdminSyncPage() {
   const { data: noPrimaryUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', noPrimary: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
   const { data: directPersonalUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', directPersonal: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
   const { data: unresolvedUsersCount } = useGetUsersQuery({ limit: 1000, offset: 0, role: 'USER', unresolved: 'true', ...(attentionActiveFilter && { active: attentionActiveFilter }) })
-  const attentionCount = (noEmailUsersCount?.data?.users?.length ?? 0) + (noEmailCompaniesCount?.data?.companies?.length ?? 0) + (noPrimaryUsersCount?.data?.users?.length ?? 0) + (directPersonalUsersCount?.data?.users?.length ?? 0) + (unresolvedUsersCount?.data?.users?.length ?? 0)
+  const attentionCount = (noEmailUsersCount?.data?.total ?? 0) + (noEmailCompaniesCount?.data?.total ?? 0) + (noPrimaryUsersCount?.data?.total ?? 0) + (directPersonalUsersCount?.data?.total ?? 0) + (unresolvedUsersCount?.data?.total ?? 0)
 
   useEffect(() => {
     if (isRunning) {
