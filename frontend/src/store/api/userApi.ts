@@ -22,6 +22,7 @@ export interface User {
   cardStatus: string | null
   memberSource: string
   memberSourceCompany: string | null
+  membershipStatus?: string
   createdAt: string
   updatedAt: string
 }
@@ -63,6 +64,7 @@ interface GetUsersRequest {
   emailVerified?: 'true' | 'false'
   portalAccess?: 'true' | 'false'
   noEmail?: 'true' | 'false'
+  noName?: 'true' | 'false'
   noPrimary?: 'true' | 'false'
   directPersonal?: 'true' | 'false'
   unresolved?: 'true' | 'false'
@@ -127,7 +129,7 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, noPrimary, directPersonal, unresolved, memberSource, cmtOnly }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, noName, noPrimary, directPersonal, unresolved, memberSource, cmtOnly }) => ({
         url: '/user',
         params: {
           limit,
@@ -140,6 +142,7 @@ export const userApi = createApi({
           ...(emailVerified !== undefined && { emailVerified }),
           ...(portalAccess !== undefined && { portalAccess }),
           ...(noEmail !== undefined && { noEmail }),
+          ...(noName !== undefined && { noName }),
           ...(noPrimary !== undefined && { noPrimary }),
           ...(directPersonal !== undefined && { directPersonal }),
           ...(unresolved !== undefined && { unresolved }),

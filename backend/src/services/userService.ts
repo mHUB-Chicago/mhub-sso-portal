@@ -15,6 +15,7 @@ export interface GetPaginatedUsersInput {
   emailVerified?: 'true' | 'false';
   portalAccess?: 'true' | 'false';
   noEmail?: 'true' | 'false';
+  noName?: 'true' | 'false';
   noPrimary?: 'true' | 'false';
   directPersonal?: 'true' | 'false';
   unresolved?: 'true' | 'false';
@@ -79,6 +80,48 @@ export interface UpdateUserInput {
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
   const prisma: PrismaClient = c.get("db");
 
+  if (input.noPrimary === 'true' || input.noPrimary === 'false') {
+    const noPrimaryCondition = {
+      AND: [
+        { OR: [{ primaryMembership: null }, { primaryMembership: '' }] },
+        { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] },
+      ],
+    };
+    const whereClause: any = {
+      ...(input.role && { role: input.role }),
+      ...(input.companyId && { companyId: input.companyId }),
+      ...(input.active !== undefined && { active: input.active === 'true' }),
+      AND: [input.noPrimary === 'true' ? noPrimaryCondition : { NOT: noPrimaryCondition }],
+    };
+    const [rawUsers, total, subs] = await Promise.all([
+      prisma.user.findMany({
+        where: whereClause,
+        skip: input.offset,
+        take: input.limit,
+        orderBy: { createdAt: "desc" },
+        include: { company: { select: { membershipTypes: true } } },
+      }),
+      prisma.user.count({ where: whereClause }),
+      prisma.subscription.findMany({ select: { title: true, companyId: true } }),
+    ]);
+    const activeSubSet = new Set(subs.filter(s => s.companyId).map(s => `${s.companyId}::${s.title}`));
+    const users = rawUsers.map(u => {
+      const companyTypes: string[] = JSON.parse(u.company.membershipTypes || '[]');
+      const addOns: string[] = JSON.parse(u.addOns || '[]');
+      let membershipStatus: string;
+      if (companyTypes.length > 0) {
+        membershipStatus = 'Unresolved';
+      } else if (addOns.length > 0) {
+        membershipStatus = addOns.some(t => activeSubSet.has(`${u.companyId}::${t}`)) ? 'Unresolved' : 'Expired / Cancelled';
+      } else {
+        membershipStatus = 'No Membership';
+      }
+      const { company, ...rest } = u;
+      return { ...rest, membershipStatus };
+    });
+    return { users, total };
+  }
+
   const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
   const portalTypeNames = (await prisma.portalAccessType.findMany({ select: { name: true } })).map(t => t.name);
 
@@ -134,13 +177,12 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
   } else if (input.noEmail === 'false') {
     andConditions.push({ NOT: { OR: placeholderFilter } });
   }
-  const hasMembershipDataCondition = { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] };
-  const noRealPrimary = { OR: [{ primaryMembership: null }, { primaryMembership: '' }] };
-  if (input.noPrimary === 'true') {
-    andConditions.push({ AND: [noRealPrimary, hasMembershipDataCondition] });
-  } else if (input.noPrimary === 'false') {
-    andConditions.push({ NOT: { AND: [noRealPrimary, hasMembershipDataCondition] } });
+  if (input.noName === 'true') {
+    andConditions.push({ name: '' });
+  } else if (input.noName === 'false') {
+    andConditions.push({ NOT: { name: '' } });
   }
+  const noRealPrimary = { OR: [{ primaryMembership: null }, { primaryMembership: '' }] };
   const directPersonalCondition = { memberSource: 'subscription', company: { isPersonal: true } };
   if (input.directPersonal === 'true') {
     andConditions.push(directPersonalCondition);

@@ -350,12 +350,11 @@ const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
     const username = (customer.username ?? '').trim() || null;
     const usernameAsEmail = username && username.includes('@') ? username.toLowerCase() : null;
     const email = rawEmail.length > 0 ? rawEmail : (usernameAsEmail ?? `${customer.id}@noemail.mhub`);
-    const trimmedName = customer.full_name ? customer.full_name.trim() : '';
-    const full_name = trimmedName.length > 0 ? trimmedName : (username ?? email.split('@')[0]);
+    const full_name = customer.full_name ? customer.full_name.trim() : '';
     let companyName = (customer.company_name ?? '').trim();
     const isPersonal = companyName.length === 0;
     if (isPersonal) {
-      companyName = `${full_name}'s Company`;
+      companyName = full_name ? `${full_name}'s Company` : (username ? `${username}'s Company` : `PV #${customer.id}'s Company`);
     }
     const phone = customer.mobile?.number || customer.phone?.number || null;
     const address = customer.address?.address || null;

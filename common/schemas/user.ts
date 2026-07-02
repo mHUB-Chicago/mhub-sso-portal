@@ -24,6 +24,7 @@ export const UserSchema = z.object({
   cardStatus: z.string().nullable(),
   memberSource: z.string().default('subscription'),
   memberSourceCompany: z.string().nullable(),
+  membershipStatus: z.string().optional(),
   createdAt: z.coerce.date().transform(d => d.toISOString()),
   updatedAt: z.coerce.date().transform(d => d.toISOString()),
 });
@@ -50,6 +51,7 @@ export const GetUsersRequestSchema = z.object({
   emailVerified: z.enum(['true', 'false']).optional(),
   portalAccess: z.enum(['true', 'false']).optional(),
   noEmail: z.enum(['true', 'false']).optional(),
+  noName: z.enum(['true', 'false']).optional(),
   noPrimary: z.enum(['true', 'false']).optional(),
   directPersonal: z.enum(['true', 'false']).optional(),
   unresolved: z.enum(['true', 'false']).optional(),

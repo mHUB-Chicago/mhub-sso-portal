@@ -786,6 +786,7 @@ function AuditLogsTab() {
 
 
 const PAGE_SIZE = 25
+const SHOW_MEMBERSHIP_STATUS_COLUMN = false
 
 type AttentionCategory = 'all' | 'noEmailUser' | 'noEmailCompany' | 'noPrimary' | 'directPersonal' | 'unresolved'
 
@@ -872,13 +873,13 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
   const totalIssues = Object.values(counts).reduce((a, b) => a + b, 0)
 
   const handleExport = () => {
-    const headers = ['Type', 'Name', 'PV Email', 'Membership / Add-ons', 'Issue']
+    const headers = ['Type', 'PeopleVine ID', 'Name', 'PV Email', 'Membership / Add-ons', 'Issue']
     const rows = [
-      ...noEmailUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', getEmailIssue(u.email)]),
-      ...noEmailCompanies.map(co => ['Company', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getEmailIssue(co.email)]),
-      ...noPrimaryUsers.map(u => ['User', u.name, u.email, getAddOns(u.addOns).join(', '), 'No Primary Membership Flagged']),
-      ...directPersonalUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Direct Personal Subscription']),
-      ...unresolvedUsers.map(u => ['User', u.name, u.email, u.primaryMembership ?? '', 'Unresolved Classification']),
+      ...noEmailUsers.map(u => ['User', u.peopleVineId ?? '', u.name, u.email, u.primaryMembership ?? '', getEmailIssue(u.email)]),
+      ...noEmailCompanies.map(co => ['Company', co.peopleVineId ?? '', co.name, co.email, co.membershipTypes?.join(', ') ?? '', getEmailIssue(co.email)]),
+      ...noPrimaryUsers.map(u => ['User', u.peopleVineId ?? '', u.name, u.email, getAddOns(u.addOns).join(', '), u.membershipStatus ?? 'No Primary Membership Flagged']),
+      ...directPersonalUsers.map(u => ['User', u.peopleVineId ?? '', u.name, u.email, u.primaryMembership ?? '', 'Direct Personal Subscription']),
+      ...unresolvedUsers.map(u => ['User', u.peopleVineId ?? '', u.name, u.email, u.primaryMembership ?? '', 'Unresolved Classification']),
     ]
     downloadCsv(`needs-attention-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, rows))
   }
@@ -912,9 +913,9 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
   const NameLink = ({ id, name, type }: { id: string | number; name: string; type: 'user' | 'company' }) => (
     <Link
       to={type === 'user' ? `/admin/users/${id}/edit` : `/admin/companies/${id}/edit`}
-      className="font-medium text-gray-900 hover:text-brand hover:underline underline-offset-2 inline-flex items-center gap-1 group"
+      className={`font-medium hover:text-brand hover:underline underline-offset-2 inline-flex items-center gap-1 group ${name ? 'text-gray-900' : 'text-gray-400 italic'}`}
     >
-      {name}
+      {name || 'No name in PV'}
       <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
     </Link>
   )
@@ -1021,6 +1022,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600">Membership</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-40">Issue</th>
@@ -1031,6 +1033,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                     {rows.map(u => (
                       <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{u.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{u.primaryMembership ?? '—'}</td>
                         <td className="px-4 py-2.5">
@@ -1055,6 +1058,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Company</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600">Membership</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-40">Issue</th>
@@ -1065,6 +1069,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                     {rows.map(co => (
                       <tr key={co.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2.5"><NameLink id={co.id} name={co.name} type="company" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{co.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={co.email}>{co.email}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{co.membershipTypes?.join(', ') || '—'}</td>
                         <td className="px-4 py-2.5">
@@ -1089,8 +1094,10 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600">Add-Ons</th>
+                      {SHOW_MEMBERSHIP_STATUS_COLUMN && <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-36">Membership Status</th>}
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
                     </tr>
                   </thead>
@@ -1098,8 +1105,16 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                     {rows.map(u => (
                       <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{u.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{getAddOns(u.addOns).join(', ') || '—'}</td>
+                        {SHOW_MEMBERSHIP_STATUS_COLUMN && (
+                          <td className="px-4 py-2.5">
+                            <Badge variant="outline" className={`text-xs whitespace-nowrap ${u.membershipStatus === 'Expired / Cancelled' ? 'text-rose-700 border-rose-300 bg-rose-50' : 'text-gray-500 border-gray-300 bg-gray-50'}`}>
+                              {u.membershipStatus ?? '—'}
+                            </Badge>
+                          </td>
+                        )}
                         <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
                       </tr>
                     ))}
@@ -1119,6 +1134,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600">Membership</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
@@ -1128,6 +1144,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                     {rows.map(u => (
                       <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{u.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{u.primaryMembership ?? '—'}</td>
                         <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
@@ -1149,6 +1166,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/4">Name</th>
+                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
                     </tr>
@@ -1157,6 +1175,7 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                     {rows.map(u => (
                       <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2.5"><NameLink id={u.id} name={u.name} type="user" /></td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{u.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
                         <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
                       </tr>
