@@ -1092,7 +1092,6 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">PeopleVine ID</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-1/3">PV Email</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600">Add-Ons</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-32">Primary Status</th>
                       <th className="text-left px-4 py-2.5 font-medium text-gray-600 w-24">Status</th>
                     </tr>
                   </thead>
@@ -1103,13 +1102,6 @@ function NeedsAttentionTab({ activeFilter, setActiveFilter }: { activeFilter: 't
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400">{u.peopleVineId ?? '—'}</td>
                         <td className="px-4 py-2.5 font-mono text-xs text-gray-400 truncate max-w-0" title={u.email}>{u.email}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-500 truncate max-w-0">{getAddOns(u.addOns).join(', ') || '—'}</td>
-                        <td className="px-4 py-2.5">
-                          {u.primaryMembershipStatus ? (
-                            <Badge variant="outline" className={`text-xs whitespace-nowrap ${u.primaryMembershipStatus === 'Cancelled' ? 'text-rose-700 border-rose-300 bg-rose-50' : 'text-green-700 border-green-300 bg-green-50'}`}>
-                              {u.primaryMembershipStatus}
-                            </Badge>
-                          ) : <span className="text-gray-300">—</span>}
-                        </td>
                         <td className="px-4 py-2.5"><ActiveBadge active={u.active} /></td>
                       </tr>
                     ))}
