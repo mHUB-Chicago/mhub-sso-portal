@@ -1752,9 +1752,13 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const prisma: PrismaClient = c.get('db');
 
   console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
-  const [customer, subResult] = await Promise.all([
+  // Same unfiltered fetchAllMembershipCards() call the nightly Phase 4 correction pass
+  // uses — no unproven Customer_Id filter guess on this endpoint, just the pattern
+  // that's already proven to work every night.
+  const [customer, subResult, cardResult] = await Promise.all([
     getCustomer(c, peopleVineId.toString()),
     getCustomersFromSubscriptions(c, peopleVineId.toString()),
+    fetchAllMembershipCards(c),
   ]);
 
   if (!customer) {
@@ -1791,13 +1795,15 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const primaryTypeSetSync = new Set(dbPrimaryTypesSync.map(t => t.name));
   const addonTypeSetSync = new Set(dbAddonTypesSync.map(t => t.name));
   const freeMemberExclusionSetSync = new Set(dbFreeMemberExclusionsSync.map(t => t.name));
-  // Subscription-only, like Phase 2 — the next nightly Phase 4 correction pass
-  // (syncPhaseCorrectionUsers / buildMembershipCardData) reconciles primaryMembership/addOns
-  // using PV's membership cards, including the "primary:true" card flag.
+  // Card-aware, like Phase 4 — a card PV has flagged `primary: true` ("Set as Primary
+  // Membership Card") wins over the subscription-derived guess immediately, instead of
+  // waiting for the next nightly correction pass (syncPhaseCorrectionUsers) to notice it.
+  const cardDataSync = buildMembershipCardData(cardResult.cards)[pvId]
+    ?? { ownTypes: [], primaryCardTitle: null, primaryCardSourceCompanyName: null, allCardTypes: [], secondaryProviders: [] };
   const pickBest = (types: string[]): string | null =>
     types.find(t => primaryTypeSetSync.has(t)) ?? types.find(t => portalAccessTypes.has(t)) ?? types[0] ?? null;
   const pickAddons = (types: string[]): string[] => types.filter(t => addonTypeSetSync.has(t));
-  const membershipType = pickBest(membershipTypes);
+  const membershipType = cardDataSync.primaryCardTitle ?? pickBest(membershipTypes);
   const isPersonal = customer.isPersonal ?? false;
   const diffRecord: Record<string, { before: any; after: any }> = {};
 
@@ -1900,11 +1906,18 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
   const memberSource = isCompanyRep ? 'subscription' : 'membership';
   const freeMemberAllowed = isCompanyRep ? true : companyQualifiesForFreeMemberSync(associatedCompany);
   const userPvActive = pvActive && (associatedCompany.active !== false) && freeMemberAllowed;
-  // Primary membership / add-ons reflect the individual's own active subscription(s),
-  // not the company's plan — staff/interns under a subscriber company shouldn't
-  // inherit that company's membership type until they have their own subscription.
+  // Primary membership / add-ons reflect the individual's own active subscription(s)
+  // or membership card(s), not the company's plan — staff/interns under a subscriber
+  // company shouldn't inherit that company's membership type until they have their own.
   const userPrimaryMembership = membershipType;
-  const userAddOns = pickAddons(membershipTypes);
+  const cardAddOnsSync = cardDataSync.allCardTypes.filter(t => addonTypeSetSync.has(t) && t !== userPrimaryMembership);
+  const userAddOns = Array.from(new Set([...pickAddons(membershipTypes), ...cardAddOnsSync].filter(t => t !== userPrimaryMembership)));
+  // Cross-company sponsor attribution (a card issued by a DIFFERENT company than the
+  // user's own) is intentionally not resolved here — the single-customer-scoped card
+  // fetch can't see the sponsor's card record, so `primaryCardSourceCompanyName` only
+  // ever resolves for the user's own cards. Falls back to their own company, same as
+  // the nightly Phase 4 pass does when there's no cross-company sponsor.
+  const userMemberSourceCompany = cardDataSync.primaryCardSourceCompanyName ?? associatedCompany.name;
 
   const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
   const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
@@ -1927,6 +1940,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       associatedUser.zipCode !== (customer.zipCode ?? null) ||
       associatedUser.cardStatus !== (customer.cardStatus ?? null) ||
       associatedUser.memberSource !== memberSource ||
+      associatedUser.memberSourceCompany !== userMemberSourceCompany ||
       (userByEmail && !userByEmail.peopleVineId);
     const userAfterSnapshot = {
       name: customer.full_name,
@@ -1942,6 +1956,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
       zipCode: customer.zipCode ?? null,
       cardStatus: customer.cardStatus ?? null,
       profilePhoto: customer.profilePhoto ?? null,
+      memberSourceCompany: userMemberSourceCompany,
     };
     if (needsUpdate) {
       console.log(`Updating user ${customer.full_name} (${customer.email}).`);
@@ -1960,6 +1975,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           zipCode: associatedUser.zipCode,
           cardStatus: associatedUser.cardStatus,
           profilePhoto: associatedUser.profilePhoto,
+          memberSourceCompany: associatedUser.memberSourceCompany,
         },
         after: userAfterSnapshot,
       };
@@ -1982,6 +1998,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
           zipCode: customer.zipCode ?? null,
           cardStatus: customer.cardStatus ?? null,
           memberSource,
+          memberSourceCompany: userMemberSourceCompany,
         });
       } catch (e) {
         if (isUniqueConstraintError(e)) {
@@ -2013,6 +2030,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         zipCode: customer.zipCode ?? null,
         cardStatus: customer.cardStatus ?? null,
         profilePhoto: customer.profilePhoto ?? null,
+        memberSourceCompany: userMemberSourceCompany,
       },
     };
     try {
@@ -2034,6 +2052,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         zipCode: customer.zipCode ?? null,
         cardStatus: customer.cardStatus ?? null,
         memberSource,
+        memberSourceCompany: userMemberSourceCompany,
       });
     } catch (e) {
       if (isUniqueConstraintError(e)) return;

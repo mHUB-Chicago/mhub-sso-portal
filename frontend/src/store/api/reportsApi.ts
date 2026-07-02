@@ -9,15 +9,6 @@ export interface CompanyByMembers { name: string; affiliated: number; sponsored:
 export interface CompanyByRevenue { name: string; subCount: number; mrr: number }
 export interface RecentSession { userId: string; userName: string; createdAt: string }
 export interface ReportServiceProvider { id: string; name: string; logo: string }
-export interface GrowthPoint {
-  period: string
-  totalMembers: number
-  totalCompanies: number
-  mrr: number
-  memberChange: number
-  companyChange: number
-  mrrChange: number
-}
 
 export interface ReportsData {
   revenue: {
@@ -53,9 +44,60 @@ export interface ReportsData {
     serviceProviders: ReportServiceProvider[]
     recentSessions: RecentSession[]
   }
-  growth: {
-    weekly: GrowthPoint[]
-    monthly: GrowthPoint[]
+}
+
+export interface MembershipChange {
+  member: string
+  membership: string
+  changeType: 'Cancelled' | 'Inactive'
+  affiliatedCompany: string
+  sponsoringCompany: string
+  mrr: number | null
+}
+
+export interface PlatformEngagement {
+  name: string
+  launches: number
+  uniqueUsers: number
+  changePct: number
+}
+
+export interface DailyLogins {
+  day: string
+  count: number
+}
+
+export interface WeeklyReportData {
+  offset: number
+  weekLabel: string
+  prevWeekLabel: string
+  canGoForward: boolean
+  movement: {
+    newMembers: number
+    newMembersDelta: number
+    cancelled: number
+    cancelledDelta: number
+    inactive: number
+    inactiveDelta: number
+    netChange: number
+    netChangeDelta: number
+  }
+  income: {
+    netChange: number
+    lostFromCancellations: number
+    gainedFromNew: number
+  }
+  changes: MembershipChange[]
+  engagement: {
+    logins: number
+    loginsChangePct: number
+    ssoLaunches: number
+    ssoLaunchesChangePct: number
+    activeUsers: number
+    activeUsersChangePct: number
+    sessionsPerUser: number
+    byPlatform: PlatformEngagement[]
+    dailyLogins: DailyLogins[]
   }
 }
 
@@ -77,7 +119,10 @@ export const reportsApi = createApi({
     getReports: builder.query<{ success: boolean; data: ReportsData }, void>({
       query: () => '/reports',
     }),
+    getWeeklyReport: builder.query<{ success: boolean; data: WeeklyReportData }, number>({
+      query: (offset) => `/reports/weekly?offset=${encodeURIComponent(Math.trunc(offset))}`,
+    }),
   }),
 })
 
-export const { useGetReportsQuery } = reportsApi
+export const { useGetReportsQuery, useGetWeeklyReportQuery } = reportsApi

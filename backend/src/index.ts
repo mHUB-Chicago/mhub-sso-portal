@@ -618,53 +618,6 @@ app.get("/api/reports", async (c) => {
   const payingSubs = subs.filter(s => s.rate != null && s.rate > 0);
   const mrr = payingSubs.reduce((sum, s) => sum + toMonthly(s.rate!, s.frequency ?? ''), 0);
 
-  // How membership & MRR have shifted over time: cumulative totals as of each period's end
-  // (based on record createdAt — the best signal we have; there's no historical snapshot
-  // table, so this can't reflect churn that happened before a record's current state, only
-  // the trajectory of what's currently on file), plus the delta vs the previous period.
-  const buildShiftSeries = (unit: 'week' | 'month', count: number) => {
-    const now = new Date();
-    const periodEnds: { end: Date; period: string }[] = [];
-    for (let i = count - 1; i >= 0; i--) {
-      let end: Date, period: string;
-      if (unit === 'week') {
-        end = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
-        period = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      } else {
-        end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-        period = new Date(now.getFullYear(), now.getMonth() - i, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-      }
-      periodEnds.push({ end, period });
-    }
-    let prevMembers = 0;
-    let prevCompanies = 0;
-    let prevMrr = 0;
-    return periodEnds.map(({ end, period }) => {
-      const totalMembers = users.filter(u => u.createdAt < end).length;
-      const totalCompanies = cmtCompanies.filter(co => co.createdAt < end).length;
-      const totalMrr = Math.round(
-        payingSubs.filter(s => s.createdAt < end).reduce((sum, s) => sum + toMonthly(s.rate!, s.frequency ?? ''), 0)
-      );
-      const point = {
-        period,
-        totalMembers,
-        totalCompanies,
-        mrr: totalMrr,
-        memberChange: totalMembers - prevMembers,
-        companyChange: totalCompanies - prevCompanies,
-        mrrChange: totalMrr - prevMrr,
-      };
-      prevMembers = totalMembers;
-      prevCompanies = totalCompanies;
-      prevMrr = totalMrr;
-      return point;
-    });
-  };
-  const growth = {
-    weekly: buildShiftSeries('week', 12),
-    monthly: buildShiftSeries('month', 12),
-  };
-
   const byTitleMap = new Map<string, { count: number; mrr: number }>();
   for (const s of payingSubs) {
     const t = (s.title || 'Unknown').trim();
@@ -807,7 +760,229 @@ app.get("/api/reports", async (c) => {
           createdAt: s.createdAt,
         })),
       },
-      growth,
+    },
+  });
+});
+
+app.get("/api/reports/weekly", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db') as PrismaClient;
+
+  const requestedOffset = Number(c.req.query('offset') ?? '0');
+  const offset = Number.isInteger(requestedOffset) ? Math.min(0, Math.max(-104, requestedOffset)) : 0;
+
+  const now = new Date();
+  const dayIndex = (now.getUTCDay() + 6) % 7;
+  const currentMonday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dayIndex));
+  const weekStart = new Date(currentMonday.getTime() + offset * 7 * 24 * 60 * 60 * 1000);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const prevWeekStart = new Date(weekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const prevWeekEnd = weekStart;
+
+  const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
+  const cmtWhere = {
+    OR: [
+      { primaryMembership: { in: cmtNames } },
+      { primaryMembership: null, addOns: { not: '[]' } },
+      { primaryMembership: null, company: { membershipTypes: { not: '[]' } } },
+    ],
+  };
+
+  const [
+    newMembers, newMembersPrev, weekLogs, prevWeekLogs, companies, subscriptions,
+    weekSessions, prevWeekSessions, weekSaml, prevWeekSaml, serviceProviders, newPayingUsers,
+  ] = await Promise.all([
+    prisma.user.count({ where: { role: Role.USER, createdAt: { gte: weekStart, lt: weekEnd }, ...cmtWhere } }),
+    prisma.user.count({ where: { role: Role.USER, createdAt: { gte: prevWeekStart, lt: prevWeekEnd }, ...cmtWhere } }),
+    prisma.webhookLog.findMany({
+      where: { receivedAt: { gte: weekStart, lt: weekEnd }, status: { in: ['processed', 'processed_invalid_membership'] } },
+      select: { customerNo: true, eventType: true, diff: true },
+    }),
+    prisma.webhookLog.findMany({
+      where: { receivedAt: { gte: prevWeekStart, lt: prevWeekEnd }, status: { in: ['processed', 'processed_invalid_membership'] } },
+      select: { eventType: true, diff: true },
+    }),
+    prisma.company.findMany({ select: { id: true, name: true } }),
+    prisma.subscription.findMany({ select: { title: true, companyId: true, rate: true, frequency: true } }),
+    prisma.session.findMany({ where: { createdAt: { gte: weekStart, lt: weekEnd } }, select: { createdAt: true, userId: true } }),
+    prisma.session.findMany({ where: { createdAt: { gte: prevWeekStart, lt: prevWeekEnd } }, select: { userId: true } }),
+    prisma.samlAuthRequest.findMany({
+      where: { completedAt: { not: null }, createdAt: { gte: weekStart, lt: weekEnd } },
+      select: { userId: true, serviceProviderId: true },
+    }),
+    prisma.samlAuthRequest.findMany({
+      where: { completedAt: { not: null }, createdAt: { gte: prevWeekStart, lt: prevWeekEnd } },
+      select: { serviceProviderId: true },
+    }),
+    prisma.serviceProvider.findMany({ select: { id: true, name: true } }),
+    prisma.user.findMany({
+      where: { role: Role.USER, createdAt: { gte: weekStart, lt: weekEnd }, primaryMembership: { not: null } },
+      select: { companyId: true, primaryMembership: true },
+    }),
+  ]);
+
+  const toMonthly = (rate: number, frequency: string) => {
+    const f = frequency.toLowerCase();
+    if (f.includes('annual')) return rate / 12;
+    if (f.includes('quarter')) return rate / 3;
+    return rate;
+  };
+
+  const rateByCompanyTitle = new Map<string, number>();
+  for (const s of subscriptions) {
+    if (s.rate == null || s.rate <= 0 || !s.companyId) continue;
+    rateByCompanyTitle.set(`${s.companyId}::${s.title}`, toMonthly(s.rate, s.frequency ?? ''));
+  }
+
+  type WebhookDiff = { user?: { before?: Record<string, any>; after?: Record<string, any> } };
+  const parseDiff = (raw: string | null): WebhookDiff | null => {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const isDeactivation = (diff: WebhookDiff | null) =>
+    diff?.user?.before?.active === true && diff?.user?.after?.active === false;
+
+  type MovementEvent = { customerNo: number | null; changeType: 'Cancelled' | 'Inactive'; membership: string | null; sponsoringCompany: string | null };
+  const movementEvents: MovementEvent[] = [];
+  for (const log of weekLogs) {
+    const diff = parseDiff(log.diff);
+    if (!isDeactivation(diff)) continue;
+    movementEvents.push({
+      customerNo: log.customerNo,
+      changeType: log.eventType === 'membership_changed' ? 'Cancelled' : 'Inactive',
+      membership: diff!.user!.before!.primaryMembership ?? null,
+      sponsoringCompany: diff!.user!.before!.memberSourceCompany ?? null,
+    });
+  }
+
+  let cancelledPrev = 0;
+  let inactivePrev = 0;
+  for (const log of prevWeekLogs) {
+    const diff = parseDiff(log.diff);
+    if (!isDeactivation(diff)) continue;
+    if (log.eventType === 'membership_changed') cancelledPrev++;
+    else inactivePrev++;
+  }
+
+  const cancelled = movementEvents.filter(e => e.changeType === 'Cancelled').length;
+  const inactive = movementEvents.filter(e => e.changeType === 'Inactive').length;
+  const netChange = newMembers - cancelled - inactive;
+  const netChangePrev = newMembersPrev - cancelledPrev - inactivePrev;
+
+  const customerNos = movementEvents.map(e => e.customerNo).filter((n): n is number => n != null).map(String);
+  const affectedUsers = customerNos.length > 0
+    ? await prisma.user.findMany({ where: { peopleVineId: { in: customerNos } }, select: { peopleVineId: true, name: true, email: true, companyId: true } })
+    : [];
+  const userByPvId = new Map(affectedUsers.map(u => [u.peopleVineId, u]));
+  const companyNameById = new Map(companies.map(co => [co.id, co.name]));
+
+  const changes = movementEvents.slice(0, 100).map(e => {
+    const affected = e.customerNo != null ? userByPvId.get(String(e.customerNo)) : undefined;
+    const affiliatedCompany = affected ? companyNameById.get(affected.companyId) ?? null : null;
+    const rate = affected && e.membership ? rateByCompanyTitle.get(`${affected.companyId}::${e.membership}`) ?? null : null;
+    return {
+      member: affected?.email ?? affected?.name ?? (e.customerNo != null ? `PV #${e.customerNo}` : 'Unknown'),
+      membership: e.membership ?? 'Unknown',
+      changeType: e.changeType,
+      affiliatedCompany: affiliatedCompany ?? '—',
+      sponsoringCompany: e.sponsoringCompany ?? affiliatedCompany ?? '—',
+      mrr: rate != null ? Math.round(rate) : null,
+    };
+  });
+
+  const lostFromCancellations = changes
+    .filter(d => d.changeType === 'Cancelled' && d.mrr != null)
+    .reduce((sum, d) => sum + (d.mrr ?? 0), 0);
+
+  const gainedFromNew = newPayingUsers.reduce((sum, u) => {
+    const rate = u.primaryMembership ? rateByCompanyTitle.get(`${u.companyId}::${u.primaryMembership}`) : undefined;
+    return sum + (rate ?? 0);
+  }, 0);
+
+  const pctChange = (curr: number, prev: number) => (prev > 0 ? Math.round(((curr - prev) / prev) * 100) : (curr > 0 ? 100 : 0));
+
+  const logins = weekSessions.length;
+  const loginsPrev = prevWeekSessions.length;
+  const activeUsersSet = new Set(weekSessions.map(s => s.userId));
+  const activeUsersPrevSet = new Set(prevWeekSessions.map(s => s.userId));
+  const activeUsersCount = activeUsersSet.size;
+  const ssoLaunches = weekSaml.length;
+  const ssoLaunchesPrev = prevWeekSaml.length;
+  const sessionsPerUser = activeUsersCount > 0 ? Math.round((logins / activeUsersCount) * 10) / 10 : 0;
+
+  const serviceProviderNameById = new Map(serviceProviders.map(sp => [sp.id, sp.name]));
+  const platformStats = new Map<string, { launches: number; users: Set<string> }>();
+  for (const req of weekSaml) {
+    const entry = platformStats.get(req.serviceProviderId) ?? { launches: 0, users: new Set<string>() };
+    entry.launches++;
+    if (req.userId) entry.users.add(req.userId);
+    platformStats.set(req.serviceProviderId, entry);
+  }
+  const platformPrevCounts = new Map<string, number>();
+  for (const req of prevWeekSaml) {
+    platformPrevCounts.set(req.serviceProviderId, (platformPrevCounts.get(req.serviceProviderId) ?? 0) + 1);
+  }
+  const byPlatform = [...platformStats.entries()]
+    .map(([id, v]) => ({
+      name: serviceProviderNameById.get(id) ?? 'Unknown',
+      launches: v.launches,
+      uniqueUsers: v.users.size,
+      changePct: pctChange(v.launches, platformPrevCounts.get(id) ?? 0),
+    }))
+    .sort((a, b) => b.launches - a.launches);
+
+  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const dailyCounts = new Array(7).fill(0);
+  for (const s of weekSessions) {
+    const dayOffset = Math.floor((s.createdAt.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+    if (dayOffset >= 0 && dayOffset < 7) dailyCounts[dayOffset]++;
+  }
+  const dailyLogins = dayLabels.map((day, i) => ({ day, count: dailyCounts[i] }));
+
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const weekLabel = `${fmtDate(weekStart)} – ${fmtDate(new Date(weekEnd.getTime() - 1))}, ${weekStart.getUTCFullYear()}`;
+  const prevWeekLabel = `${fmtDate(prevWeekStart)} – ${fmtDate(new Date(prevWeekEnd.getTime() - 1))}`;
+
+  return c.json({
+    success: true,
+    data: {
+      offset,
+      weekLabel,
+      prevWeekLabel,
+      canGoForward: offset < 0,
+      movement: {
+        newMembers,
+        newMembersDelta: newMembers - newMembersPrev,
+        cancelled,
+        cancelledDelta: cancelled - cancelledPrev,
+        inactive,
+        inactiveDelta: inactive - inactivePrev,
+        netChange,
+        netChangeDelta: netChange - netChangePrev,
+      },
+      income: {
+        netChange: Math.round(gainedFromNew - lostFromCancellations),
+        lostFromCancellations: Math.round(lostFromCancellations),
+        gainedFromNew: Math.round(gainedFromNew),
+      },
+      changes,
+      engagement: {
+        logins,
+        loginsChangePct: pctChange(logins, loginsPrev),
+        ssoLaunches,
+        ssoLaunchesChangePct: pctChange(ssoLaunches, ssoLaunchesPrev),
+        activeUsers: activeUsersCount,
+        activeUsersChangePct: pctChange(activeUsersCount, activeUsersPrevSet.size),
+        sessionsPerUser,
+        byPlatform,
+        dailyLogins,
+      },
     },
   });
 });
