@@ -117,13 +117,12 @@ const readDataBlob = async <T>(prisma: PrismaClient, sessionId: string | undefin
     const blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key } } });
     return blob ? (JSON.parse(blob.data) as T) : fallback;
 };
-const BLOB_CHUNK_SIZE = 2000;
+const BLOB_CHUNK_MAX_BYTES = 500_000;
 const writeChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, prefix: string, items: any[]): Promise<string[]> => {
     if (!sessionId)
         return [];
     const keys: string[] = [];
-    for (let i = 0; i < items.length || i === 0; i += BLOB_CHUNK_SIZE) {
-        const chunk = items.slice(i, i + BLOB_CHUNK_SIZE);
+    const flushChunk = async (chunk: any[]) => {
         const key = `${prefix}-${String(keys.length).padStart(6, '0')}.json`;
         const data = JSON.stringify({ items: chunk });
         await prisma.syncExportBlob.upsert({
@@ -132,9 +131,21 @@ const writeChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefi
             update: { data },
         });
         keys.push(key);
-        if (items.length === 0)
-            break;
+    };
+    let chunk: any[] = [];
+    let chunkBytes = 2;
+    for (const item of items) {
+        const itemBytes = JSON.stringify(item).length + 1;
+        if (chunk.length > 0 && chunkBytes + itemBytes > BLOB_CHUNK_MAX_BYTES) {
+            await flushChunk(chunk);
+            chunk = [];
+            chunkBytes = 2;
+        }
+        chunk.push(item);
+        chunkBytes += itemBytes;
     }
+    if (chunk.length > 0 || keys.length === 0)
+        await flushChunk(chunk);
     return keys;
 };
 const readChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, keys: string[]): Promise<any[]> => {
@@ -1460,14 +1471,17 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
         correctionSubscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? null;
         correctionIndividualMembershipTypes[pvId] = info.membershipTypes;
     }
+    const correctionIndividualMembershipTypesChunkKeys = await writeChunkedBlob(prisma, sessionId, 'phase4-membership-types', Object.entries(correctionIndividualMembershipTypes));
+    const correctionIndividualMembershipCardDataChunkKeys = await writeChunkedBlob(prisma, sessionId, 'phase4-membership-card-data', Object.entries(correctionIndividualMembershipCardData));
     await writeDataBlob(prisma, sessionId, 'phase4-data.json', {
-        correctionIndividualMembershipTypes,
-        correctionIndividualMembershipCardData,
         correctionAnyStatusPrimaryTitle,
         correctionAttemptedPVSubscriberIds: Array.from(correctionAttemptedPVSubscriberIds),
         correctionSubscriberMemberships,
         correctionActivePVSubscriberIds: Array.from(individualSubscriberIds),
     });
+    if (sessionId) {
+        await saveMeta({ correctionIndividualMembershipTypesChunkKeys, correctionIndividualMembershipCardDataChunkKeys });
+    }
     await appendAuditChunk(prisma, sessionId, 'correctionsCompanies', auditCorrectionsCompanies);
     await appendAuditChunk(prisma, sessionId, 'revenueSynced', auditRevenueSynced);
     const auditCounts: Record<string, number> = { ...(meta.auditCounts ?? {}) };
@@ -1494,6 +1508,8 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
                 subscriptionChunkKeys: undefined,
                 anyStatusPrimaryCardChunkKeys: undefined,
                 attemptedSubscriberChunkKeys: undefined,
+                correctionIndividualMembershipTypesChunkKeys: undefined,
+                correctionIndividualMembershipCardDataChunkKeys: undefined,
             });
         }
         await flush(100, 'Done', 'completed');
@@ -1516,23 +1532,32 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         throw new Error('phase4-data.json blob is missing — aborting correction batch to avoid writing incorrect primaryMembership/addOns from empty data');
     }
     const phase4Data = JSON.parse(phase4Blob.data) as {
-        correctionIndividualMembershipTypes: Record<string, string[]>;
-        correctionIndividualMembershipCardData: Record<string, {
-            ownTypes: string[];
-            primaryCardTitle: string | null;
-            primaryCardSourceCompanyName: string | null;
-            allCardTypes: string[];
-            secondaryProviders: {
-                title: string;
-                providingCompanyName: string | null;
-            }[];
-        }>;
         correctionAnyStatusPrimaryTitle: Record<string, string>;
         correctionAttemptedPVSubscriberIds: string[];
         correctionActivePVSubscriberIds: string[];
     };
-    const correctionIndividualMembershipTypes = phase4Data.correctionIndividualMembershipTypes;
-    const correctionIndividualMembershipCardData = phase4Data.correctionIndividualMembershipCardData;
+    const correctionIndividualMembershipTypesEntries = await readChunkedBlob(prisma, sessionId, meta.correctionIndividualMembershipTypesChunkKeys ?? []) as [string, string[]][];
+    const correctionIndividualMembershipTypes: Record<string, string[]> = Object.fromEntries(correctionIndividualMembershipTypesEntries);
+    const correctionIndividualMembershipCardDataEntries = await readChunkedBlob(prisma, sessionId, meta.correctionIndividualMembershipCardDataChunkKeys ?? []) as [string, {
+        ownTypes: string[];
+        primaryCardTitle: string | null;
+        primaryCardSourceCompanyName: string | null;
+        allCardTypes: string[];
+        secondaryProviders: {
+            title: string;
+            providingCompanyName: string | null;
+        }[];
+    }][];
+    const correctionIndividualMembershipCardData: Record<string, {
+        ownTypes: string[];
+        primaryCardTitle: string | null;
+        primaryCardSourceCompanyName: string | null;
+        allCardTypes: string[];
+        secondaryProviders: {
+            title: string;
+            providingCompanyName: string | null;
+        }[];
+    }> = Object.fromEntries(correctionIndividualMembershipCardDataEntries);
     const correctionAnyStatusPrimaryTitle = phase4Data.correctionAnyStatusPrimaryTitle ?? {};
     const correctionActivePVSubscriberIds = new Set<string>(phase4Data.correctionActivePVSubscriberIds);
     const correctionAttemptedPVSubscriberIds = new Set<string>(phase4Data.correctionAttemptedPVSubscriberIds ?? []);
