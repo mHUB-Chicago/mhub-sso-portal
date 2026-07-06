@@ -1,4 +1,7 @@
 import { AppType } from "..";
+import { PrismaD1 } from "@prisma/adapter-d1";
+import { PrismaClient } from "@prisma/client";
+import { JobType } from "./queueConsumer";
 
 // America/Chicago is UTC-5 (CDT) or UTC-6 (CST) depending on daylight saving.
 // Two crons are registered (06:00 UTC and 07:00 UTC) to cover both — only the
@@ -18,16 +21,30 @@ export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: Exec
     console.log(`Skipping ${event.cron} — does not match current Chicago 1am offset`);
     return;
   }
-  console.log(`Triggering PeopleVine sync via HTTP`);
+  console.log(`Queuing PeopleVine sync directly`);
   ctx.waitUntil(
-    fetch(`${env.BACKEND_URL}/__internal/sync`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.SEED_TOKEN}`,
-      },
-    })
-      .then(res => res.json())
-      .then((data: any) => console.log('Sync result:', data))
-      .catch((err: any) => console.error('Scheduled sync failed:', err))
+    (async () => {
+      try {
+        const prisma = new PrismaClient({ adapter: new PrismaD1(env.DB) });
+        const session = await prisma.syncSession.create({
+          data: {
+            type: 'ALL',
+            status: 'pending',
+            step: 'Queued',
+            logs: JSON.stringify([{ time: new Date().toISOString(), level: 'info', message: 'Scheduled sync queued' }]),
+            metadata: JSON.stringify({ includeFreeMembers: true }),
+          },
+        });
+        await env.QUEUE.send({
+          jobId: crypto.randomUUID(),
+          jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,
+          payload: { type: 'ALL', sessionId: session.id },
+        });
+        console.log(`Scheduled sync queued, session: ${session.id}`);
+      }
+      catch (err) {
+        console.error('Scheduled sync failed:', err);
+      }
+    })()
   );
 };

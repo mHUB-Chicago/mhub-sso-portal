@@ -117,6 +117,37 @@ const readDataBlob = async <T>(prisma: PrismaClient, sessionId: string | undefin
     const blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key } } });
     return blob ? (JSON.parse(blob.data) as T) : fallback;
 };
+const BLOB_CHUNK_SIZE = 2000;
+const writeChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, prefix: string, items: any[]): Promise<string[]> => {
+    if (!sessionId)
+        return [];
+    const keys: string[] = [];
+    for (let i = 0; i < items.length || i === 0; i += BLOB_CHUNK_SIZE) {
+        const chunk = items.slice(i, i + BLOB_CHUNK_SIZE);
+        const key = `${prefix}-${String(keys.length).padStart(6, '0')}.json`;
+        const data = JSON.stringify({ items: chunk });
+        await prisma.syncExportBlob.upsert({
+            where: { sessionId_key: { sessionId, key } },
+            create: { sessionId, key, data },
+            update: { data },
+        });
+        keys.push(key);
+        if (items.length === 0)
+            break;
+    }
+    return keys;
+};
+const readChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, keys: string[]): Promise<any[]> => {
+    if (!sessionId)
+        return [];
+    const items: any[] = [];
+    for (const key of keys) {
+        const blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key } } });
+        if (blob)
+            items.push(...(JSON.parse(blob.data) as { items: any[] }).items);
+    }
+    return items;
+};
 const appendAuditChunk = async (prisma: PrismaClient, sessionId: string | undefined, category: string, items: unknown[]): Promise<void> => {
     if (!sessionId || items.length === 0)
         return;
@@ -1264,52 +1295,27 @@ export const syncPhaseCorrectionExport = async (c: Context, sessionId?: string, 
         await flush(94, 'Verifying against PeopleVine — exporting subscriptions', 'running');
         log('info', 'Starting post-sync verification pass');
         const { subscriptions, skippedSubPages } = await fetchAllPvData(c);
-        if (sessionId) {
-            const data = JSON.stringify({ subscriptions, skippedSubPages });
-            await prisma.syncExportBlob.upsert({
-                where: { sessionId_key: { sessionId, key: 'subscriptions.json' } },
-                create: { sessionId, key: 'subscriptions.json', data },
-                update: { data },
-            });
-        }
+        if (skippedSubPages.length > 0)
+            log('warn', `[verify] Subscription export skipped pages: [${skippedSubPages.join(', ')}]`);
+        const subscriptionChunkKeys = await writeChunkedBlob(prisma, sessionId, 'subscriptions', subscriptions);
         const { cards: membershipCards, skippedPages: skippedCardPages } = await fetchAllMembershipCards(c);
-        if (sessionId) {
-            const CARD_CHUNK_SIZE = 2000;
-            const membershipCardChunkKeys: string[] = [];
-            for (let i = 0; i < membershipCards.length || i === 0; i += CARD_CHUNK_SIZE) {
-                const chunk = membershipCards.slice(i, i + CARD_CHUNK_SIZE);
-                const key = `membership-cards-${String(membershipCardChunkKeys.length).padStart(6, '0')}.json`;
-                const data = JSON.stringify(i === 0 ? { cards: chunk, skippedCardPages } : { cards: chunk });
-                await prisma.syncExportBlob.upsert({
-                    where: { sessionId_key: { sessionId, key } },
-                    create: { sessionId, key, data },
-                    update: { data },
-                });
-                membershipCardChunkKeys.push(key);
-                if (membershipCards.length === 0)
-                    break;
-            }
-            await saveMeta({ membershipCardChunkKeys });
-        }
+        if (skippedCardPages.length > 0)
+            log('warn', `[verify] Membership card export skipped pages: [${skippedCardPages.join(', ')}]`);
+        const membershipCardChunkKeys = await writeChunkedBlob(prisma, sessionId, 'membership-cards', membershipCards);
         const { cards: allStatusCards, skippedPages: skippedAllStatusCardPages } = await fetchAllMembershipCards(c, null);
+        if (skippedAllStatusCardPages.length > 0)
+            log('warn', `[verify] Any-status card export skipped pages: [${skippedAllStatusCardPages.join(', ')}]`);
         const anyStatusPrimaryCards = allStatusCards.filter(card => card.primary === true);
-        if (sessionId) {
-            await prisma.syncExportBlob.upsert({
-                where: { sessionId_key: { sessionId, key: 'any-status-primary-cards.json' } },
-                create: { sessionId, key: 'any-status-primary-cards.json', data: JSON.stringify({ cards: anyStatusPrimaryCards, skippedAllStatusCardPages }) },
-                update: { data: JSON.stringify({ cards: anyStatusPrimaryCards, skippedAllStatusCardPages }) },
-            });
-        }
+        const anyStatusPrimaryCardChunkKeys = await writeChunkedBlob(prisma, sessionId, 'any-status-primary-cards', anyStatusPrimaryCards);
         const { subscriptions: allStatusSubscriptions, skippedSubPages: skippedAllStatusSubPages } = await fetchAllPvData(c, null);
+        if (skippedAllStatusSubPages.length > 0)
+            log('warn', `[verify] Any-status subscription export skipped pages: [${skippedAllStatusSubPages.join(', ')}]`);
         const attemptedSubscriberRecords = allStatusSubscriptions
             .filter(sub => sub?.customer?.id && sub.title)
             .map(sub => ({ customer_id: sub.customer.id, title: String(sub.title).trim() }));
+        const attemptedSubscriberChunkKeys = await writeChunkedBlob(prisma, sessionId, 'attempted-subscribers', attemptedSubscriberRecords);
         if (sessionId) {
-            await prisma.syncExportBlob.upsert({
-                where: { sessionId_key: { sessionId, key: 'attempted-subscribers.json' } },
-                create: { sessionId, key: 'attempted-subscribers.json', data: JSON.stringify({ records: attemptedSubscriberRecords, skippedAllStatusSubPages }) },
-                update: { data: JSON.stringify({ records: attemptedSubscriberRecords, skippedAllStatusSubPages }) },
-            });
+            await saveMeta({ subscriptionChunkKeys, membershipCardChunkKeys, anyStatusPrimaryCardChunkKeys, attemptedSubscriberChunkKeys });
         }
         await saveMeta({ correctionExportBatchKeys: [] });
     }
@@ -1343,32 +1349,14 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
     }
     const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
     const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
-    const subsBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: 'subscriptions.json' } } });
-    const { subscriptions } = subsBlob ? JSON.parse(subsBlob.data) as {
-        subscriptions: any[];
-    } : { subscriptions: [] as any[] };
+    const subscriptions = await readChunkedBlob(prisma, sessionId, meta.subscriptionChunkKeys ?? []);
     const membershipCardChunkKeys: string[] = meta.membershipCardChunkKeys ?? [];
-    const membershipCards: any[] = [];
-    for (const key of membershipCardChunkKeys) {
-        const chunkBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key } } });
-        const { cards } = chunkBlob ? JSON.parse(chunkBlob.data) as {
-            cards: any[];
-        } : { cards: [] as any[] };
-        membershipCards.push(...cards);
-    }
+    const membershipCards = await readChunkedBlob(prisma, sessionId, membershipCardChunkKeys);
     const correctionIndividualMembershipCardData = buildMembershipCardData(membershipCards);
-    const attemptedSubscribersBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: 'attempted-subscribers.json' } } });
-    const { records: attemptedSubscriberRecords } = attemptedSubscribersBlob
-        ? JSON.parse(attemptedSubscribersBlob.data) as {
-            records: {
-                customer_id: number;
-                title: string;
-            }[];
-        }
-        : { records: [] as {
-                customer_id: number;
-                title: string;
-            }[] };
+    const attemptedSubscriberRecords = await readChunkedBlob(prisma, sessionId, meta.attemptedSubscriberChunkKeys ?? []) as {
+        customer_id: number;
+        title: string;
+    }[];
     const dbCmtTypesForAttempted = await prisma.companyMembershipType.findMany({ select: { name: true } });
     const cmtNameSetForAttempted = new Set(dbCmtTypesForAttempted.map(t => t.name));
     const correctionAttemptedPVSubscriberIds = new Set<string>();
@@ -1376,10 +1364,7 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
         if (cmtNameSetForAttempted.has(rec.title))
             correctionAttemptedPVSubscriberIds.add(rec.customer_id.toString());
     }
-    const anyStatusPrimaryCardsBlob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: 'any-status-primary-cards.json' } } });
-    const { cards: anyStatusPrimaryCards } = anyStatusPrimaryCardsBlob ? JSON.parse(anyStatusPrimaryCardsBlob.data) as {
-        cards: any[];
-    } : { cards: [] as any[] };
+    const anyStatusPrimaryCards = await readChunkedBlob(prisma, sessionId, meta.anyStatusPrimaryCardChunkKeys ?? []);
     const correctionAnyStatusPrimaryTitle: Record<string, string> = {};
     for (const card of anyStatusPrimaryCards) {
         const customerId = card.customer_id?.toString();
@@ -1506,6 +1491,9 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
                 correctionExportBatchKeys: undefined,
                 correctionExportLastPage: undefined,
                 membershipCardChunkKeys: undefined,
+                subscriptionChunkKeys: undefined,
+                anyStatusPrimaryCardChunkKeys: undefined,
+                attemptedSubscriberChunkKeys: undefined,
             });
         }
         await flush(100, 'Done', 'completed');
