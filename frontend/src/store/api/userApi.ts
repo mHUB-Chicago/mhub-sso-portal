@@ -36,6 +36,7 @@ export interface Company {
   active: boolean
   membershipTypes: string[]
   isPersonal: boolean
+  subscriptionStatus: string | null
   createdAt: string
   updatedAt: string
 }

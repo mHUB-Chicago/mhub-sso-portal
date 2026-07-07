@@ -12,6 +12,16 @@ import {
   checkCancelled,
   SyncCancelledError,
 } from "@/services/peopleVineService";
+import {
+  syncV2ExtractPvData,
+  syncV2ExtractCustomers,
+  syncV2Compute,
+  syncV2LoadCompanies,
+  syncV2LoadUsers,
+  syncV2LoadSubscriptions,
+  syncV2Deactivate,
+  cleanupV2Export,
+} from "@/services/peopleVineServiceV2";
 import { PrismaClient } from "@/database/models";
 import { createMockContext } from "@/utils/createMockContext";
 
@@ -31,6 +41,13 @@ export const enum JobType {
   SYNC_PHASE_CORRECTION_USERS = "SYNC_PHASE_CORRECTION_USERS",
   SYNC_FILTERED = "SYNC_FILTERED",
   SYNC_FILTERED_MEMBERS = "SYNC_FILTERED_MEMBERS",
+  SYNC_V2_EXTRACT_PVDATA = "SYNC_V2_EXTRACT_PVDATA",
+  SYNC_V2_EXTRACT_CUSTOMERS = "SYNC_V2_EXTRACT_CUSTOMERS",
+  SYNC_V2_COMPUTE = "SYNC_V2_COMPUTE",
+  SYNC_V2_LOAD_COMPANIES = "SYNC_V2_LOAD_COMPANIES",
+  SYNC_V2_LOAD_USERS = "SYNC_V2_LOAD_USERS",
+  SYNC_V2_LOAD_SUBSCRIPTIONS = "SYNC_V2_LOAD_SUBSCRIPTIONS",
+  SYNC_V2_DEACTIVATE = "SYNC_V2_DEACTIVATE",
 }
 
 export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionContext) => {
@@ -185,6 +202,110 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
               jobType: JobType.SYNC_FILTERED_MEMBERS,
               payload: { sessionId, startOffset: nextOffset },
             });
+          }
+
+        } else if (jobType === JobType.SYNC_V2_EXTRACT_PVDATA) {
+          const { sessionId } = payload ?? {};
+          await syncV2ExtractPvData(context, sessionId);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          await env.QUEUE.send({
+            jobId: crypto.randomUUID(),
+            jobType: JobType.SYNC_V2_EXTRACT_CUSTOMERS,
+            payload: { sessionId, startPage: 1 },
+          });
+
+        } else if (jobType === JobType.SYNC_V2_EXTRACT_CUSTOMERS) {
+          const { sessionId, startPage = 1 } = payload ?? {};
+          const { hasMore, lastPage } = await syncV2ExtractCustomers(context, sessionId, startPage);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          if (hasMore) {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_EXTRACT_CUSTOMERS,
+              payload: { sessionId, startPage: lastPage + 1 },
+            });
+          } else {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_COMPUTE,
+              payload: { sessionId, startBatch: 0 },
+            });
+          }
+
+        } else if (jobType === JobType.SYNC_V2_COMPUTE) {
+          const { sessionId, startBatch = 0 } = payload ?? {};
+          const { hasMore, nextBatch } = await syncV2Compute(context, sessionId, startBatch);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          if (hasMore) {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_COMPUTE,
+              payload: { sessionId, startBatch: nextBatch },
+            });
+          } else {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_LOAD_COMPANIES,
+              payload: { sessionId, startBatch: 0 },
+            });
+          }
+
+        } else if (jobType === JobType.SYNC_V2_LOAD_COMPANIES) {
+          const { sessionId, startBatch = 0 } = payload ?? {};
+          const { hasMore, nextBatch } = await syncV2LoadCompanies(context, sessionId, startBatch);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          if (hasMore) {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_LOAD_COMPANIES,
+              payload: { sessionId, startBatch: nextBatch },
+            });
+          } else {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_LOAD_USERS,
+              payload: { sessionId, startBatch: 0 },
+            });
+          }
+
+        } else if (jobType === JobType.SYNC_V2_LOAD_USERS) {
+          const { sessionId, startBatch = 0 } = payload ?? {};
+          const { hasMore, nextBatch } = await syncV2LoadUsers(context, sessionId, startBatch);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          if (hasMore) {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_LOAD_USERS,
+              payload: { sessionId, startBatch: nextBatch },
+            });
+          } else {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_V2_LOAD_SUBSCRIPTIONS,
+              payload: { sessionId },
+            });
+          }
+
+        } else if (jobType === JobType.SYNC_V2_LOAD_SUBSCRIPTIONS) {
+          const { sessionId } = payload ?? {};
+          await syncV2LoadSubscriptions(context, sessionId);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          await env.QUEUE.send({
+            jobId: crypto.randomUUID(),
+            jobType: JobType.SYNC_V2_DEACTIVATE,
+            payload: { sessionId },
+          });
+
+        } else if (jobType === JobType.SYNC_V2_DEACTIVATE) {
+          const { sessionId } = payload ?? {};
+          await syncV2Deactivate(context, sessionId);
+          const prisma = context.get('db') as PrismaClient;
+          if (sessionId) {
+            await cleanupV2Export(context, sessionId);
+            await prisma.syncSession.update({
+              where: { id: sessionId },
+              data: { status: 'completed', step: 'Done', progress: 100, completedAt: new Date() },
+            }).catch(() => { });
           }
 
         } else {

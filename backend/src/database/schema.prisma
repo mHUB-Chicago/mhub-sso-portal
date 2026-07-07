@@ -218,6 +218,7 @@ model Subscription {
   id             String    @id @default(uuid())
   peopleVineId   String    @unique
   pvCustomerId   String
+  customerName   String?
   companyId      String?
   company        Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
   title          String

@@ -38,6 +38,40 @@ export interface UpdateCompanyInput {
   peopleVineId?: string;
 }
 
+const namesResemble = (customerName: string, companyName: string): boolean => {
+  const normalize = (s: string) => s.trim().toLowerCase().replace(/[.,]/g, "").replace(/\b(inc|llc|ltd|co)\b/g, "").trim();
+  const a = normalize(customerName);
+  const b = normalize(companyName);
+  if (!a || !b) return false;
+  return a.includes(b) || b.includes(a);
+};
+
+const attachSubscriptionStatus = async (prisma: PrismaClient, companies: Company[]): Promise<Company[]> => {
+  if (companies.length === 0) return companies;
+  const subs = await prisma.subscription.findMany({
+    where: { companyId: { not: null } },
+    orderBy: { updatedAt: "desc" },
+    select: { companyId: true, status: true, customerName: true },
+  });
+  const companyNameById = new Map(companies.map(co => [co.id, co.name]));
+  const matchedStatusByCompanyId = new Map<string, string>();
+  const fallbackStatusByCompanyId = new Map<string, string>();
+  for (const sub of subs) {
+    if (!sub.companyId) continue;
+    if (!fallbackStatusByCompanyId.has(sub.companyId)) {
+      fallbackStatusByCompanyId.set(sub.companyId, sub.status);
+    }
+    const companyName = companyNameById.get(sub.companyId);
+    if (companyName && sub.customerName && !matchedStatusByCompanyId.has(sub.companyId) && namesResemble(sub.customerName, companyName)) {
+      matchedStatusByCompanyId.set(sub.companyId, sub.status);
+    }
+  }
+  return companies.map(co => ({
+    ...co,
+    subscriptionStatus: matchedStatusByCompanyId.get(co.id) ?? fallbackStatusByCompanyId.get(co.id) ?? null,
+  })) as Company[];
+};
+
 export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompaniesInput): Promise<GetPaginatedCompaniesResult> => {
   const prisma: PrismaClient = c.get("db");
   const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];
@@ -64,7 +98,7 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
       prisma.$queryRaw<{ total: bigint }[]>`SELECT COUNT(*) as total FROM "Company" c WHERE ${where}`,
     ]);
     const companies = rawCompanies.map(c => ({ ...c, active: Boolean(c.active), isPersonal: Boolean(c.isPersonal) })) as Company[];
-    return { companies, total: Number(countResult[0]?.total ?? 0) };
+    return { companies: await attachSubscriptionStatus(prisma, companies), total: Number(countResult[0]?.total ?? 0) };
   }
 
   const whereClause: any = {
@@ -96,7 +130,7 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
     }),
     prisma.company.count({ where: whereClause }),
   ]);
-  return { companies, total };
+  return { companies: await attachSubscriptionStatus(prisma, companies), total };
 }
 
 export const createCompany = async (c: Context, input: CreateCompanyInput) => {

@@ -96,6 +96,9 @@ app.post("/api/sync/start", async (c) => {
       metadata: JSON.stringify({ includeFreeMembers }),
     },
   });
+  // V2 pipeline (SYNC_V2_EXTRACT_PVDATA) is still under validation — route all "Sync All" runs
+  // through v1 (SYNC_PEOPLEVINE_EVERYTHING, which itself branches on `type` for ALL vs CONTINUE)
+  // until v2 has more production confidence.
   await c.env.QUEUE.send({
     jobId: session.id,
     jobType: JobType.SYNC_PEOPLEVINE_EVERYTHING,

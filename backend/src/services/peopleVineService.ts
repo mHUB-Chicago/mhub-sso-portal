@@ -2,7 +2,7 @@ import { Context } from 'hono';
 import { Company, PeopleVineToken, PeopleVineTokenType, PrismaClient, Role, User } from '@prisma/client';
 import { createCompany, deactivateCompany, updateCompany } from './companyService';
 import { createUser, deactivateUser, updateUser } from './userService';
-const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) => Promise<void>, afterBatch?: () => Promise<void>): Promise<void> => {
+export const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) => Promise<void>, afterBatch?: () => Promise<void>): Promise<void> => {
     for (let i = 0; i < items.length; i += limit) {
         await Promise.all(items.slice(i, i + limit).map(fn));
         if (afterBatch)
@@ -118,7 +118,7 @@ const readDataBlob = async <T>(prisma: PrismaClient, sessionId: string | undefin
     return blob ? (JSON.parse(blob.data) as T) : fallback;
 };
 const BLOB_CHUNK_MAX_BYTES = 500_000;
-const writeChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, prefix: string, items: any[]): Promise<string[]> => {
+export const writeChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, prefix: string, items: any[]): Promise<string[]> => {
     if (!sessionId)
         return [];
     const keys: string[] = [];
@@ -148,7 +148,7 @@ const writeChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefi
         await flushChunk(chunk);
     return keys;
 };
-const readChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, keys: string[]): Promise<any[]> => {
+export const readChunkedBlob = async (prisma: PrismaClient, sessionId: string | undefined, keys: string[]): Promise<any[]> => {
     if (!sessionId)
         return [];
     const items: any[] = [];
@@ -372,7 +372,7 @@ const apiRequestWithPagination = async (c: Context, options: RequestOptions): Pr
     }
     throw new Error(`[apiRequestWithPagination] ${endpoint} failed after ${PV_MAX_RETRIES} attempts`);
 };
-const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
+export const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
     return customers.map((customer) => {
         const pvActive = customer.status == null ? true : customer.status.toLowerCase() === 'active';
         const profilePhoto = (customer.profile_photo && customer.profile_photo.trim().length > 0)
@@ -417,7 +417,7 @@ const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
 };
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const SUB_PAGE_SIZE = 100;
-const buildMembershipCardData = (cards: any[]): Record<string, {
+export const buildMembershipCardData = (cards: any[]): Record<string, {
     ownTypes: string[];
     primaryCardTitle: string | null;
     primaryCardSourceCompanyName: string | null;
@@ -475,6 +475,7 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
         membershipTypes: string[];
         isActive: boolean;
         attemptedTypes: string[];
+        rawTitles: string[];
     }>;
     individualSubscriberIds: Set<string>;
     portalAccessTypes: Set<string>;
@@ -490,6 +491,7 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
         membershipTypes: string[];
         isActive: boolean;
         attemptedTypes: string[];
+        rawTitles: string[];
     }>();
     const individualSubscriberIds = new Set<string>();
     for (const sub of subscriptions) {
@@ -500,9 +502,12 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
         const title = sub.title ? sub.title.trim() : null;
         const subIsActive = sub.status == null ? true : sub.status.toLowerCase() === 'active';
         if (!subscriptionInfoMap.has(pvId)) {
-            subscriptionInfoMap.set(pvId, { membershipTypes: [], isActive: false, attemptedTypes: [] });
+            subscriptionInfoMap.set(pvId, { membershipTypes: [], isActive: false, attemptedTypes: [], rawTitles: [] });
         }
         const entry = subscriptionInfoMap.get(pvId)!;
+        if (title && subIsActive && !entry.rawTitles.includes(title)) {
+            entry.rawTitles.push(title);
+        }
         if (title && companyMembershipTypes.has(title)) {
             if (!entry.attemptedTypes.includes(title))
                 entry.attemptedTypes.push(title);
@@ -552,6 +557,7 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string, st
         membershipTypes: string[];
         isActive: boolean;
         attemptedTypes: string[];
+        rawTitles: string[];
     }>;
     individualSubscriberIds: Set<string>;
     portalAccessTypes: Set<string>;
@@ -597,7 +603,7 @@ const getCustomersFromSubscriptions = async (c: Context, customerNo?: string, st
     const data = await buildSubscriptionData(c, subscriptions, customerNo);
     return { ...data, hadErrors: skippedSubPages.length > 0, skippedSubPages };
 };
-const getCustomers = async (c: Context, startPage = 1, maxPages?: number, onPageFetched?: (page: number) => Promise<void>): Promise<{
+export const getCustomers = async (c: Context, startPage = 1, maxPages?: number, onPageFetched?: (page: number) => Promise<void>): Promise<{
     customers: PeopleVineCustomer[];
     hadErrors: boolean;
     lastPage: number;
@@ -663,7 +669,7 @@ const getCustomers = async (c: Context, startPage = 1, maxPages?: number, onPage
     } while (true);
     return { customers: normalizeCustomers(customers), hadErrors, lastPage, hasMore };
 };
-const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
+export const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVineCustomer | null> => {
     let lastErr: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -684,7 +690,7 @@ const getCustomer = async (c: Context, peopleVineId: string): Promise<PeopleVine
     }
     throw lastErr;
 };
-const resolvePlaceholderEmails = async (c: Context, customers: PeopleVineCustomer[]): Promise<PeopleVineCustomer[]> => {
+export const resolvePlaceholderEmails = async (c: Context, customers: PeopleVineCustomer[]): Promise<PeopleVineCustomer[]> => {
     const resolved = [...customers];
     const placeholderIndices = resolved
         .map((cu, i) => (cu.email.endsWith('@noemail.mhub') ? i : -1))
@@ -720,11 +726,11 @@ export const getSubscriptionSample = async (c: Context): Promise<{
         customer,
     };
 };
-const isUniqueConstraintError = (e: unknown): boolean => {
+export const isUniqueConstraintError = (e: unknown): boolean => {
     const msg = e instanceof Error ? e.message.toLowerCase() : '';
     return msg.includes('already exists') || msg.includes('unique constraint') || (e as any)?.code === 'P2002';
 };
-const parsePvDate = (value: string | null | undefined): Date | null => {
+export const parsePvDate = (value: string | null | undefined): Date | null => {
     if (!value || value.startsWith('1900-01-01'))
         return null;
     const d = new Date(value);
@@ -840,8 +846,8 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
     const individualMembershipTypes: Record<string, string[]> = {};
     for (const [pvId, info] of subscriptionInfoMap.entries()) {
         const portalType = info.membershipTypes.find(t => portalAccessTypes.has(t));
-        subscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? null;
-        individualMembershipTypes[pvId] = info.membershipTypes;
+        subscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? info.rawTitles[0] ?? null;
+        individualMembershipTypes[pvId] = info.membershipTypes.length > 0 ? info.membershipTypes : info.rawTitles;
     }
     await writeDataBlob(prisma, sessionId, 'phase1-data.json', {
         activePVCompanyIds: Array.from(companyProfilesMap.keys()),
@@ -1325,8 +1331,9 @@ export const syncPhaseCorrectionExport = async (c: Context, sessionId?: string, 
             .filter(sub => sub?.customer?.id && sub.title)
             .map(sub => ({ customer_id: sub.customer.id, title: String(sub.title).trim() }));
         const attemptedSubscriberChunkKeys = await writeChunkedBlob(prisma, sessionId, 'attempted-subscribers', attemptedSubscriberRecords);
+        const anyStatusSubscriptionChunkKeys = await writeChunkedBlob(prisma, sessionId, 'any-status-subscriptions', allStatusSubscriptions);
         if (sessionId) {
-            await saveMeta({ subscriptionChunkKeys, membershipCardChunkKeys, anyStatusPrimaryCardChunkKeys, attemptedSubscriberChunkKeys });
+            await saveMeta({ subscriptionChunkKeys, membershipCardChunkKeys, anyStatusPrimaryCardChunkKeys, attemptedSubscriberChunkKeys, anyStatusSubscriptionChunkKeys });
         }
         await saveMeta({ correctionExportBatchKeys: [] });
     }
@@ -1334,17 +1341,11 @@ export const syncPhaseCorrectionExport = async (c: Context, sessionId?: string, 
     const { customers: bulkCustomers, hadErrors, lastPage, hasMore } = await getCustomers(c, startPage, BATCH_PAGES);
     const customers = await resolvePlaceholderEmails(c, bulkCustomers);
     if (sessionId && customers.length > 0) {
-        const key = `customers-${String(startPage).padStart(6, '0')}.json`;
-        const data = JSON.stringify(customers);
-        await prisma.syncExportBlob.upsert({
-            where: { sessionId_key: { sessionId, key } },
-            create: { sessionId, key, data },
-            update: { data },
-        });
+        const newKeys = await writeChunkedBlob(prisma, sessionId, `customers-${String(startPage).padStart(6, '0')}`, customers);
         const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
         const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
         const existingKeys: string[] = meta.correctionExportBatchKeys ?? [];
-        await saveMeta({ correctionExportBatchKeys: [...existingKeys, key], correctionExportLastPage: lastPage });
+        await saveMeta({ correctionExportBatchKeys: [...existingKeys, ...newKeys], correctionExportLastPage: lastPage });
     }
     await flush(hasMore ? 96 : 97, hasMore ? `Verification export — fetched through page ${lastPage}` : 'Verification export complete', 'running');
     log('info', hasMore ? `Export batch done (pages ${startPage}–${lastPage}). Continuing from page ${lastPage + 1}.` : 'Verification export complete.');
@@ -1361,6 +1362,7 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
     const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
     const meta: Record<string, any> = session ? JSON.parse(session.metadata ?? '{}') : {};
     const subscriptions = await readChunkedBlob(prisma, sessionId, meta.subscriptionChunkKeys ?? []);
+    const anyStatusSubscriptionsForRevenue = await readChunkedBlob(prisma, sessionId, meta.anyStatusSubscriptionChunkKeys ?? []);
     const membershipCardChunkKeys: string[] = meta.membershipCardChunkKeys ?? [];
     const membershipCards = await readChunkedBlob(prisma, sessionId, membershipCardChunkKeys);
     const correctionIndividualMembershipCardData = buildMembershipCardData(membershipCards);
@@ -1439,7 +1441,7 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
         companyName: string | null;
         status: string;
     }[] = [];
-    await runConcurrent(subscriptions, 20, async (sub) => {
+    await runConcurrent(anyStatusSubscriptionsForRevenue, 20, async (sub) => {
         const pvId = sub.id?.toString();
         if (!pvId)
             return;
@@ -1447,6 +1449,7 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
         const matchedCompany = customerCompanyName ? dbCompaniesByName.get(customerCompanyName) : undefined;
         const data = {
             pvCustomerId: sub.customer?.id?.toString() ?? '',
+            customerName: sub.customer?.full_name ?? null,
             companyId: matchedCompany?.id ?? null,
             title: sub.title ?? '',
             status: sub.status ?? '',
@@ -1468,19 +1471,19 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
     const correctionIndividualMembershipTypes: Record<string, string[]> = {};
     for (const [pvId, info] of subscriptionInfoMap.entries()) {
         const portalType = info.membershipTypes.find(t => portalAccessTypes.has(t));
-        correctionSubscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? null;
-        correctionIndividualMembershipTypes[pvId] = info.membershipTypes;
+        correctionSubscriberMemberships[pvId] = portalType ?? info.membershipTypes[0] ?? info.rawTitles[0] ?? null;
+        correctionIndividualMembershipTypes[pvId] = info.membershipTypes.length > 0 ? info.membershipTypes : info.rawTitles;
     }
     const correctionIndividualMembershipTypesChunkKeys = await writeChunkedBlob(prisma, sessionId, 'phase4-membership-types', Object.entries(correctionIndividualMembershipTypes));
     const correctionIndividualMembershipCardDataChunkKeys = await writeChunkedBlob(prisma, sessionId, 'phase4-membership-card-data', Object.entries(correctionIndividualMembershipCardData));
+    const correctionAnyStatusPrimaryTitleChunkKeys = await writeChunkedBlob(prisma, sessionId, 'phase4-any-status-primary-title', Object.entries(correctionAnyStatusPrimaryTitle));
+    const correctionSubscriberMembershipsChunkKeys = await writeChunkedBlob(prisma, sessionId, 'phase4-subscriber-memberships', Object.entries(correctionSubscriberMemberships));
     await writeDataBlob(prisma, sessionId, 'phase4-data.json', {
-        correctionAnyStatusPrimaryTitle,
         correctionAttemptedPVSubscriberIds: Array.from(correctionAttemptedPVSubscriberIds),
-        correctionSubscriberMemberships,
         correctionActivePVSubscriberIds: Array.from(individualSubscriberIds),
     });
     if (sessionId) {
-        await saveMeta({ correctionIndividualMembershipTypesChunkKeys, correctionIndividualMembershipCardDataChunkKeys });
+        await saveMeta({ correctionIndividualMembershipTypesChunkKeys, correctionIndividualMembershipCardDataChunkKeys, correctionAnyStatusPrimaryTitleChunkKeys, correctionSubscriberMembershipsChunkKeys });
     }
     await appendAuditChunk(prisma, sessionId, 'correctionsCompanies', auditCorrectionsCompanies);
     await appendAuditChunk(prisma, sessionId, 'revenueSynced', auditRevenueSynced);
@@ -1508,8 +1511,11 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
                 subscriptionChunkKeys: undefined,
                 anyStatusPrimaryCardChunkKeys: undefined,
                 attemptedSubscriberChunkKeys: undefined,
+                anyStatusSubscriptionChunkKeys: undefined,
                 correctionIndividualMembershipTypesChunkKeys: undefined,
                 correctionIndividualMembershipCardDataChunkKeys: undefined,
+                correctionAnyStatusPrimaryTitleChunkKeys: undefined,
+                correctionSubscriberMembershipsChunkKeys: undefined,
             });
         }
         await flush(100, 'Done', 'completed');
@@ -1532,7 +1538,6 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         throw new Error('phase4-data.json blob is missing — aborting correction batch to avoid writing incorrect primaryMembership/addOns from empty data');
     }
     const phase4Data = JSON.parse(phase4Blob.data) as {
-        correctionAnyStatusPrimaryTitle: Record<string, string>;
         correctionAttemptedPVSubscriberIds: string[];
         correctionActivePVSubscriberIds: string[];
     };
@@ -1558,7 +1563,8 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             providingCompanyName: string | null;
         }[];
     }> = Object.fromEntries(correctionIndividualMembershipCardDataEntries);
-    const correctionAnyStatusPrimaryTitle = phase4Data.correctionAnyStatusPrimaryTitle ?? {};
+    const correctionAnyStatusPrimaryTitleEntries = await readChunkedBlob(prisma, sessionId, meta.correctionAnyStatusPrimaryTitleChunkKeys ?? []) as [string, string][];
+    const correctionAnyStatusPrimaryTitle: Record<string, string> = Object.fromEntries(correctionAnyStatusPrimaryTitleEntries);
     const correctionActivePVSubscriberIds = new Set<string>(phase4Data.correctionActivePVSubscriberIds);
     const correctionAttemptedPVSubscriberIds = new Set<string>(phase4Data.correctionAttemptedPVSubscriberIds ?? []);
     await flush(98, `Verifying users (batch ${startBatch + 1}/${batchKeys.length})`, 'running');
@@ -1603,7 +1609,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         return types.some(t => (portalTypeSet.has(t) || primaryTypeSet.has(t)) && !freeMemberExclusionSet.has(t));
     };
     const blob = await prisma.syncExportBlob.findUnique({ where: { sessionId_key: { sessionId, key: batchKeys[startBatch] } } });
-    const customers: PeopleVineCustomer[] = blob ? JSON.parse(blob.data) : [];
+    const customers: PeopleVineCustomer[] = blob ? (JSON.parse(blob.data) as { items: PeopleVineCustomer[] }).items : [];
     const auditCorrectionsUsers: {
         id: string;
         name: string;
@@ -1682,10 +1688,11 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             }
         }
         const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
-        const newPrimary: string | null = cardData.primaryCardTitle ?? correctionAnyStatusPrimaryTitle[pvId] ?? null;
+        const cardBasedPrimary = cardData.primaryCardTitle ?? correctionAnyStatusPrimaryTitle[pvId] ?? null;
+        const newPrimary: string | null = cardBasedPrimary ?? correctionIndividualMembershipTypes[pvId]?.[0] ?? null;
         const newPrimaryStatus: string | null = newPrimary === null
             ? null
-            : (cardData.primaryCardTitle !== null ? 'Active' : 'Cancelled');
+            : (cardBasedPrimary === null ? 'Active' : (cardData.primaryCardTitle !== null ? 'Active' : 'Cancelled'));
         const newMemberSourceCompany = newPrimary !== null
             ? (cardData.primaryCardSourceCompanyName ?? company.name)
             : company.name;
@@ -1906,7 +1913,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const pvId = customer.id.toString();
     const hasSubInfo = subResult.subscriptionInfoMap.has(pvId);
     const subInfo = subResult.subscriptionInfoMap.get(pvId);
-    const membershipTypes = subInfo?.membershipTypes ?? [];
+    const membershipTypes = (subInfo?.membershipTypes.length ?? 0) > 0 ? subInfo!.membershipTypes : (subInfo?.rawTitles ?? []);
     const portalAccessTypes = subResult.portalAccessTypes;
     const prismaForSync: PrismaClient = c.get('db');
     const [dbPrimaryTypesSync, dbAddonTypesSync, dbFreeMemberExclusionsSync] = await Promise.all([

@@ -296,6 +296,22 @@ export const companyColumns: ColumnDef<Company>[] = [
     },
   },
   {
+    accessorKey: "subscriptionStatus",
+    header: "Status",
+    size: 110,
+    cell: ({ row }) => {
+      const status = row.original.subscriptionStatus
+      if (!status) return <span className="text-muted-foreground">—</span>
+      const isNegative = status.toLowerCase() === 'failed' || status.toLowerCase() === 'cancelled'
+      const label = status.charAt(0).toUpperCase() + status.slice(1)
+      return (
+        <Badge variant="outline" className={isNegative ? "text-rose-700 border-rose-300 bg-rose-50" : "text-green-700 border-green-300 bg-green-50"}>
+          {label}
+        </Badge>
+      )
+    },
+  },
+  {
     accessorKey: "active",
     header: "Active",
     size: 100,
