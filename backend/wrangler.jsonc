@@ -33,7 +33,8 @@
   ],
   "triggers": {
     // 06:00 UTC = 1am CDT (summer), 07:00 UTC = 1am CST (winter) — both registered, handler picks the correct one
-    "crons": ["0 6 * * *", "0 7 * * *"]
+    // */30 * * * * — re-checks Direct Personal Subscription users directly
+    "crons": ["0 6 * * *", "0 7 * * *", "*/30 * * * *"]
   },
   "observability": {
     "enabled": true,

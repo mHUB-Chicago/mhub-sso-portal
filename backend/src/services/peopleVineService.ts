@@ -1602,6 +1602,13 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         const types = JSON.parse(co.membershipTypes || '[]') as string[];
         return types.filter(t => addonTypeSet.has(t));
     };
+    const getPrimaryType = (co: {
+        membershipTypes: string;
+    }): string | null => {
+        const types = JSON.parse(co.membershipTypes || '[]') as string[];
+        const nonAddon = types.filter(t => !addonTypeSet.has(t));
+        return types.find(t => primaryTypeSet.has(t)) ?? nonAddon.find(t => portalTypeSet.has(t)) ?? nonAddon[0] ?? null;
+    };
     const companyQualifiesForFreeMember = (co: {
         membershipTypes: string;
     }): boolean => {
@@ -1673,6 +1680,15 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             return;
         const memberSource = (isSubscriber || correctionAttemptedPVSubscriberIds.has(pvId)) ? 'subscription' : 'membership';
         const cardData = correctionIndividualMembershipCardData[pvId] ?? { ownTypes: [], primaryCardTitle: null, primaryCardSourceCompanyName: null, allCardTypes: [], secondaryProviders: [] };
+        // A card whose parent_card_id points to someone else's card means a real company is
+        // sponsoring this person's access — even when their own PV profile still lists their own
+        // name as "company_name" (which would otherwise leave them wrongly classified as a direct
+        // personal subscriber). Prefer that sponsor's existing non-personal company when found.
+        const sponsorCompanyName = cardData.primaryCardSourceCompanyName?.trim() || null;
+        const sponsorCompany = (customer.isPersonal && sponsorCompanyName)
+            ? companiesByNameMap.get(sponsorCompanyName)
+            : undefined;
+        const resolvedCompany = (sponsorCompany && !sponsorCompany.isPersonal) ? sponsorCompany : company;
         const ownCompanyNameLower = company.name.trim().toLowerCase();
         const externalProviders = cardData.secondaryProviders.filter(sp => sp.providingCompanyName && sp.providingCompanyName.trim().toLowerCase() !== ownCompanyNameLower);
         let pvUserActive = (customer.pvActive ?? true) && (isMember
@@ -1689,16 +1705,23 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         }
         const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
         const cardBasedPrimary = cardData.primaryCardTitle ?? correctionAnyStatusPrimaryTitle[pvId] ?? null;
-        const newPrimary: string | null = cardBasedPrimary ?? correctionIndividualMembershipTypes[pvId]?.[0] ?? null;
+        const ownPrimary = cardBasedPrimary ?? correctionIndividualMembershipTypes[pvId]?.[0] ?? null;
+        // A free/non-rep member's own PV record has no subscription of their own, so `ownPrimary`
+        // is null unless a rep's sync happened to cascade the company's membership type down to
+        // them already. Fall back to the (possibly sponsor-resolved) company's membership types so
+        // this member's own sync pass can also resolve "no primary membership" on its own.
+        const companyFallbackPrimary = (memberSource === 'membership' && ownPrimary === null) ? getPrimaryType(resolvedCompany) : null;
+        const newPrimary: string | null = ownPrimary ?? companyFallbackPrimary;
         const newPrimaryStatus: string | null = newPrimary === null
             ? null
-            : (cardBasedPrimary === null ? 'Active' : (cardData.primaryCardTitle !== null ? 'Active' : 'Cancelled'));
+            : (ownPrimary === null ? 'Active' : (cardBasedPrimary === null ? 'Active' : (cardData.primaryCardTitle !== null ? 'Active' : 'Cancelled')));
         const newMemberSourceCompany = newPrimary !== null
             ? (cardData.primaryCardSourceCompanyName ?? company.name)
             : company.name;
         const subscriptionAddOns = getAddonTypes({ membershipTypes: ownMembershipTypesJson });
         const cardAddOns = cardData.allCardTypes.filter(t => addonTypeSet.has(t) && t !== newPrimary);
-        const newAddOns = Array.from(new Set([...subscriptionAddOns, ...cardAddOns].filter(t => t !== newPrimary)));
+        const companyFallbackAddOns = (memberSource === 'membership' && ownPrimary === null) ? getAddonTypes(resolvedCompany) : [];
+        const newAddOns = Array.from(new Set([...subscriptionAddOns, ...companyFallbackAddOns, ...cardAddOns].filter(t => t !== newPrimary)));
         const recognizedTypes = new Set([...portalTypeSet, ...primaryTypeSet, ...addonTypeSet]);
         const primaryCandidateTypes = new Set([...portalTypeSet, ...primaryTypeSet]);
         const reflectedTypes = new Set([newPrimary, ...newAddOns].filter((t): t is string => !!t));
@@ -1774,7 +1797,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         }
         const needsUpdate = existingUser.name !== customer.full_name ||
             existingUser.email !== customer.email.toLowerCase() ||
-            existingUser.companyId !== company.id ||
+            existingUser.companyId !== resolvedCompany.id ||
             existingUser.primaryMembership !== newPrimary ||
             existingUser.primaryMembershipStatus !== newPrimaryStatus ||
             existingUser.addOns !== JSON.stringify(newAddOns) ||
@@ -1805,8 +1828,8 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             uChanges.push({ field: 'email', before: existingUser.email, after: newEmailLower });
         if (existingUser.active !== pvUserActive)
             uChanges.push({ field: 'active', before: String(existingUser.active), after: String(pvUserActive) });
-        if (existingUser.companyId !== company.id)
-            uChanges.push({ field: 'company', before: existingUser.companyId, after: company.id });
+        if (existingUser.companyId !== resolvedCompany.id)
+            uChanges.push({ field: 'company', before: existingUser.companyId, after: resolvedCompany.id });
         if (existingUser.primaryMembership !== newPrimary)
             uChanges.push({ field: 'primaryMembership', before: String(existingUser.primaryMembership), after: String(newPrimary) });
         if (existingUser.primaryMembershipStatus !== newPrimaryStatus)
@@ -1837,7 +1860,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
                 name: customer.full_name,
                 email: customer.email,
                 username: customer.username ?? null,
-                companyId: company.id,
+                companyId: resolvedCompany.id,
                 peopleVineId: pvId,
                 primaryMembership: newPrimary,
                 primaryMembershipStatus: newPrimaryStatus,
@@ -1853,7 +1876,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
                 memberSource,
                 memberSourceCompany: newMemberSourceCompany,
             });
-            auditCorrectionsUsers.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: company.id, changes: uChanges });
+            auditCorrectionsUsers.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: resolvedCompany.id, changes: uChanges });
         }
         catch (e) {
             if (!isUniqueConstraintError(e))
@@ -2000,7 +2023,16 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         }
     }
     const baseCompany = movingToPersonal ? null : (repCompanyCandidate ?? existingCompanyByName);
-    let associatedCompany = baseCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
+    // A card whose parent_card_id points to someone else's card means a real company is sponsoring
+    // this person's access — even when their own PV profile still lists their own name as
+    // "company_name" (which would otherwise leave them wrongly classified as a direct personal
+    // subscriber, since `isPersonal` only looks at that field). When we can match the sponsor to an
+    // existing real company, prefer it over the person's own personal placeholder company.
+    const sponsorCompanyName = cardDataSync.primaryCardSourceCompanyName?.trim() || null;
+    const sponsorCompany = (isPersonal && sponsorCompanyName)
+        ? await prisma.company.findFirst({ where: { name: sponsorCompanyName, isPersonal: false } })
+        : null;
+    let associatedCompany = sponsorCompany ?? baseCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
     if (!associatedCompany) {
         if (!isCompanyRep || !pvActive) {
             console.log(`No company found for ${customer.full_name} — sub-member or inactive, skipping.`);
@@ -2052,9 +2084,24 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
             }
         }
     }
-    const userPrimaryMembership = membershipType;
+    // A free/non-rep member's own PV record has no subscription of their own, so `membershipType`
+    // (derived from their own cards/subscriptions) is null unless the rep's webhook happens to have
+    // cascaded the company's membership type down to them already (see the cascade above, which
+    // only fires when the rep's own types just changed). Firing a webhook for the member themselves
+    // used to leave them stuck with no primary membership forever — fall back to the company's
+    // membership types here too, so their own webhook event can also resolve it.
+    const companyMembershipTypesForFallback: string[] = isCompanyRep ? [] : JSON.parse(associatedCompany.membershipTypes || '[]');
+    const userPrimaryMembership = membershipType ?? pickBest(companyMembershipTypesForFallback);
+    // `membershipStatus` only reflects the member's own subscription/card, so it stays null in the
+    // same fallback case. The company's membershipTypes list only ever holds currently-active types,
+    // so a primary sourced from it is always "Active".
+    const userPrimaryMembershipStatus = membershipType !== null ? membershipStatus : (userPrimaryMembership !== null ? 'Active' : null);
     const cardAddOnsSync = cardDataSync.allCardTypes.filter(t => addonTypeSetSync.has(t) && t !== userPrimaryMembership);
-    const userAddOns = Array.from(new Set([...pickAddons(membershipTypes), ...cardAddOnsSync].filter(t => t !== userPrimaryMembership)));
+    const userAddOns = Array.from(new Set([
+        ...pickAddons(membershipTypes),
+        ...pickAddons(companyMembershipTypesForFallback),
+        ...cardAddOnsSync,
+    ].filter(t => t !== userPrimaryMembership)));
     const userMemberSourceCompany = cardDataSync.primaryCardSourceCompanyName ?? associatedCompany.name;
     const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
     const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
@@ -2068,7 +2115,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
             associatedUser.username !== (customer.username ? customer.username.trim().toLowerCase() : null) ||
             associatedUser.companyId !== associatedCompany.id ||
             associatedUser.primaryMembership !== userPrimaryMembership ||
-            associatedUser.primaryMembershipStatus !== membershipStatus ||
+            associatedUser.primaryMembershipStatus !== userPrimaryMembershipStatus ||
             associatedUser.addOns !== JSON.stringify(userAddOns) ||
             associatedUser.active !== userPvActive ||
             associatedUser.profilePhoto !== (customer.profilePhoto ?? null) ||
@@ -2087,7 +2134,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
             username: customer.username ? customer.username.trim().toLowerCase() : null,
             active: userPvActive,
             primaryMembership: userPrimaryMembership,
-            primaryMembershipStatus: membershipStatus,
+            primaryMembershipStatus: userPrimaryMembershipStatus,
             addOns: userAddOns,
             phone: customer.phone ?? null,
             address: customer.address ?? null,
@@ -2129,7 +2176,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                     companyId: associatedCompany.id,
                     peopleVineId: customer.id.toString(),
                     primaryMembership: userPrimaryMembership,
-                    primaryMembershipStatus: membershipStatus,
+                    primaryMembershipStatus: userPrimaryMembershipStatus,
                     addOns: userAddOns,
                     profilePhoto: customer.profilePhoto,
                     active: userPvActive,
@@ -2187,7 +2234,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 role: Role.USER,
                 companyId: associatedCompany.id,
                 primaryMembership: userPrimaryMembership,
-                primaryMembershipStatus: membershipStatus,
+                primaryMembershipStatus: userPrimaryMembershipStatus,
                 addOns: userAddOns,
                 profilePhoto: customer.profilePhoto,
                 active: userPvActive,
