@@ -12,6 +12,7 @@ export interface GetPaginatedCompaniesInput {
   active?: 'true' | 'false';
   noEmail?: 'true' | 'false';
   cmtOnly?: 'true' | 'false';
+  subscriptionStatus?: string;
 }
 
 export interface GetPaginatedCompaniesResult {
@@ -46,8 +47,8 @@ const namesResemble = (customerName: string, companyName: string): boolean => {
   return a.includes(b) || b.includes(a);
 };
 
-const attachSubscriptionStatus = async (prisma: PrismaClient, companies: Company[]): Promise<Company[]> => {
-  if (companies.length === 0) return companies;
+const attachSubscriptionStatus = async (prisma: PrismaClient, companies: Company[]): Promise<(Company & { subscriptionStatus: string | null })[]> => {
+  if (companies.length === 0) return companies as (Company & { subscriptionStatus: string | null })[];
   const subs = await prisma.subscription.findMany({
     where: { companyId: { not: null } },
     orderBy: { updatedAt: "desc" },
@@ -69,13 +70,22 @@ const attachSubscriptionStatus = async (prisma: PrismaClient, companies: Company
   return companies.map(co => ({
     ...co,
     subscriptionStatus: matchedStatusByCompanyId.get(co.id) ?? fallbackStatusByCompanyId.get(co.id) ?? null,
-  })) as Company[];
+  }));
 };
 
 export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompaniesInput): Promise<GetPaginatedCompaniesResult> => {
   const prisma: PrismaClient = c.get("db");
   const PLACEHOLDER_SUFFIXES = ['@noemail.mhub', '@placeholder.invalid'];
   const placeholderFilter = PLACEHOLDER_SUFFIXES.map(s => ({ email: { contains: s } }));
+  // subscriptionStatus is computed post-fetch (see attachSubscriptionStatus), so it can't be
+  // pushed into a DB WHERE clause. When it's requested, fetch every row matching the other
+  // filters (no DB-level pagination), compute the status for all of them, filter, then paginate
+  // in memory so the returned page and total stay consistent with what's actually displayed.
+  const filterBySubscriptionStatus = input.subscriptionStatus !== undefined;
+  const paginate = (companies: Company[]): GetPaginatedCompaniesResult => ({
+    companies: companies.slice(input.offset, input.offset + input.limit),
+    total: companies.length,
+  });
 
   if (!input.membershipType && input.cmtOnly !== 'false') {
     const conditions: Prisma.Sql[] = [
@@ -93,6 +103,12 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
       conditions.push(Prisma.sql`(c.email NOT LIKE ${'%@noemail.mhub'} AND c.email NOT LIKE ${'%@placeholder.invalid'})`);
     }
     const where = Prisma.join(conditions, ' AND ');
+    if (filterBySubscriptionStatus) {
+      const rawCompanies = await prisma.$queryRaw<any[]>`SELECT c.* FROM "Company" c WHERE ${where} ORDER BY c."createdAt" DESC`;
+      const companies = rawCompanies.map(c => ({ ...c, active: Boolean(c.active), isPersonal: Boolean(c.isPersonal) })) as Company[];
+      const withStatus = await attachSubscriptionStatus(prisma, companies);
+      return paginate(withStatus.filter(co => co.subscriptionStatus === input.subscriptionStatus));
+    }
     const [rawCompanies, countResult] = await Promise.all([
       prisma.$queryRaw<any[]>`SELECT c.* FROM "Company" c WHERE ${where} ORDER BY c."createdAt" DESC LIMIT ${input.limit} OFFSET ${input.offset}`,
       prisma.$queryRaw<{ total: bigint }[]>`SELECT COUNT(*) as total FROM "Company" c WHERE ${where}`,
@@ -121,6 +137,13 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
     andConditions.push({ NOT: { OR: placeholderFilter } });
   }
   if (andConditions.length > 0) whereClause.AND = andConditions;
+
+  if (filterBySubscriptionStatus) {
+    const companies = await prisma.company.findMany({ where: whereClause, orderBy: { createdAt: "desc" } });
+    const withStatus = await attachSubscriptionStatus(prisma, companies);
+    return paginate(withStatus.filter(co => co.subscriptionStatus === input.subscriptionStatus));
+  }
+
   const [companies, total] = await Promise.all([
     prisma.company.findMany({
       where: whereClause,

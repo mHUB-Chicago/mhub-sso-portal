@@ -990,6 +990,227 @@ app.get("/api/reports/weekly", async (c) => {
   });
 });
 
+app.get("/api/reports/monthly", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const prisma = c.get('db') as PrismaClient;
+
+  const requestedOffset = Number(c.req.query('offset') ?? '0');
+  const offset = Number.isInteger(requestedOffset) ? Math.min(0, Math.max(-24, requestedOffset)) : 0;
+
+  const now = new Date();
+  const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const monthStart = new Date(Date.UTC(currentMonthStart.getUTCFullYear(), currentMonthStart.getUTCMonth() + offset, 1));
+  const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+  const prevMonthStart = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1));
+  const prevMonthEnd = monthStart;
+
+  const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
+  const cmtWhere = {
+    OR: [
+      { primaryMembership: { in: cmtNames } },
+      { primaryMembership: null, addOns: { not: '[]' } },
+      { primaryMembership: null, company: { membershipTypes: { not: '[]' } } },
+    ],
+  };
+
+  const [
+    newMembers, newMembersPrev, monthLogs, prevMonthLogs, companies, subscriptions,
+    monthSessions, prevMonthSessions, monthSaml, prevMonthSaml, serviceProviders, newPayingUsers,
+  ] = await Promise.all([
+    prisma.user.count({ where: { role: Role.USER, createdAt: { gte: monthStart, lt: monthEnd }, ...cmtWhere } }),
+    prisma.user.count({ where: { role: Role.USER, createdAt: { gte: prevMonthStart, lt: prevMonthEnd }, ...cmtWhere } }),
+    prisma.webhookLog.findMany({
+      where: { receivedAt: { gte: monthStart, lt: monthEnd }, status: { in: ['processed', 'processed_invalid_membership'] } },
+      select: { customerNo: true, eventType: true, diff: true },
+    }),
+    prisma.webhookLog.findMany({
+      where: { receivedAt: { gte: prevMonthStart, lt: prevMonthEnd }, status: { in: ['processed', 'processed_invalid_membership'] } },
+      select: { eventType: true, diff: true },
+    }),
+    prisma.company.findMany({ select: { id: true, name: true } }),
+    prisma.subscription.findMany({ select: { title: true, companyId: true, rate: true, frequency: true } }),
+    prisma.session.findMany({ where: { createdAt: { gte: monthStart, lt: monthEnd } }, select: { createdAt: true, userId: true } }),
+    prisma.session.findMany({ where: { createdAt: { gte: prevMonthStart, lt: prevMonthEnd } }, select: { userId: true } }),
+    prisma.samlAuthRequest.findMany({
+      where: { completedAt: { not: null }, createdAt: { gte: monthStart, lt: monthEnd } },
+      select: { userId: true, serviceProviderId: true },
+    }),
+    prisma.samlAuthRequest.findMany({
+      where: { completedAt: { not: null }, createdAt: { gte: prevMonthStart, lt: prevMonthEnd } },
+      select: { serviceProviderId: true },
+    }),
+    prisma.serviceProvider.findMany({ select: { id: true, name: true } }),
+    prisma.user.findMany({
+      where: { role: Role.USER, createdAt: { gte: monthStart, lt: monthEnd }, primaryMembership: { not: null } },
+      select: { companyId: true, primaryMembership: true },
+    }),
+  ]);
+
+  const toMonthly = (rate: number, frequency: string) => {
+    const f = frequency.toLowerCase();
+    if (f.includes('annual')) return rate / 12;
+    if (f.includes('quarter')) return rate / 3;
+    return rate;
+  };
+
+  const rateByCompanyTitle = new Map<string, number>();
+  for (const s of subscriptions) {
+    if (s.rate == null || s.rate <= 0 || !s.companyId) continue;
+    rateByCompanyTitle.set(`${s.companyId}::${s.title}`, toMonthly(s.rate, s.frequency ?? ''));
+  }
+
+  type WebhookDiff = { user?: { before?: Record<string, any>; after?: Record<string, any> } };
+  const parseDiff = (raw: string | null): WebhookDiff | null => {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  const isDeactivation = (diff: WebhookDiff | null) =>
+    diff?.user?.before?.active === true && diff?.user?.after?.active === false;
+
+  type MovementEvent = { customerNo: number | null; changeType: 'Cancelled' | 'Inactive'; membership: string | null; sponsoringCompany: string | null };
+  const movementEvents: MovementEvent[] = [];
+  for (const log of monthLogs) {
+    const diff = parseDiff(log.diff);
+    if (!isDeactivation(diff)) continue;
+    movementEvents.push({
+      customerNo: log.customerNo,
+      changeType: log.eventType === 'membership_changed' ? 'Cancelled' : 'Inactive',
+      membership: diff!.user!.before!.primaryMembership ?? null,
+      sponsoringCompany: diff!.user!.before!.memberSourceCompany ?? null,
+    });
+  }
+
+  let cancelledPrev = 0;
+  let inactivePrev = 0;
+  for (const log of prevMonthLogs) {
+    const diff = parseDiff(log.diff);
+    if (!isDeactivation(diff)) continue;
+    if (log.eventType === 'membership_changed') cancelledPrev++;
+    else inactivePrev++;
+  }
+
+  const cancelled = movementEvents.filter(e => e.changeType === 'Cancelled').length;
+  const inactive = movementEvents.filter(e => e.changeType === 'Inactive').length;
+  const netChange = newMembers - cancelled - inactive;
+  const netChangePrev = newMembersPrev - cancelledPrev - inactivePrev;
+
+  const customerNos = movementEvents.map(e => e.customerNo).filter((n): n is number => n != null).map(String);
+  const affectedUsers = customerNos.length > 0
+    ? await prisma.user.findMany({ where: { peopleVineId: { in: customerNos } }, select: { peopleVineId: true, name: true, email: true, companyId: true } })
+    : [];
+  const userByPvId = new Map(affectedUsers.map(u => [u.peopleVineId, u]));
+  const companyNameById = new Map(companies.map(co => [co.id, co.name]));
+
+  const changes = movementEvents.slice(0, 100).map(e => {
+    const affected = e.customerNo != null ? userByPvId.get(String(e.customerNo)) : undefined;
+    const affiliatedCompany = affected ? companyNameById.get(affected.companyId) ?? null : null;
+    const rate = affected && e.membership ? rateByCompanyTitle.get(`${affected.companyId}::${e.membership}`) ?? null : null;
+    return {
+      member: affected?.email ?? affected?.name ?? (e.customerNo != null ? `PV #${e.customerNo}` : 'Unknown'),
+      membership: e.membership ?? 'Unknown',
+      changeType: e.changeType,
+      affiliatedCompany: affiliatedCompany ?? '—',
+      sponsoringCompany: e.sponsoringCompany ?? affiliatedCompany ?? '—',
+      mrr: rate != null ? Math.round(rate) : null,
+    };
+  });
+
+  const lostFromCancellations = changes
+    .filter(d => d.changeType === 'Cancelled' && d.mrr != null)
+    .reduce((sum, d) => sum + (d.mrr ?? 0), 0);
+
+  const gainedFromNew = newPayingUsers.reduce((sum, u) => {
+    const rate = u.primaryMembership ? rateByCompanyTitle.get(`${u.companyId}::${u.primaryMembership}`) : undefined;
+    return sum + (rate ?? 0);
+  }, 0);
+
+  const pctChange = (curr: number, prev: number) => (prev > 0 ? Math.round(((curr - prev) / prev) * 100) : (curr > 0 ? 100 : 0));
+
+  const logins = monthSessions.length;
+  const loginsPrev = prevMonthSessions.length;
+  const activeUsersSet = new Set(monthSessions.map(s => s.userId));
+  const activeUsersPrevSet = new Set(prevMonthSessions.map(s => s.userId));
+  const activeUsersCount = activeUsersSet.size;
+  const ssoLaunches = monthSaml.length;
+  const ssoLaunchesPrev = prevMonthSaml.length;
+  const sessionsPerUser = activeUsersCount > 0 ? Math.round((logins / activeUsersCount) * 10) / 10 : 0;
+
+  const serviceProviderNameById = new Map(serviceProviders.map(sp => [sp.id, sp.name]));
+  const platformStats = new Map<string, { launches: number; users: Set<string> }>();
+  for (const req of monthSaml) {
+    const entry = platformStats.get(req.serviceProviderId) ?? { launches: 0, users: new Set<string>() };
+    entry.launches++;
+    if (req.userId) entry.users.add(req.userId);
+    platformStats.set(req.serviceProviderId, entry);
+  }
+  const platformPrevCounts = new Map<string, number>();
+  for (const req of prevMonthSaml) {
+    platformPrevCounts.set(req.serviceProviderId, (platformPrevCounts.get(req.serviceProviderId) ?? 0) + 1);
+  }
+  const byPlatform = [...platformStats.entries()]
+    .map(([id, v]) => ({
+      name: serviceProviderNameById.get(id) ?? 'Unknown',
+      launches: v.launches,
+      uniqueUsers: v.users.size,
+      changePct: pctChange(v.launches, platformPrevCounts.get(id) ?? 0),
+    }))
+    .sort((a, b) => b.launches - a.launches);
+
+  const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / (24 * 60 * 60 * 1000));
+  const dailyCounts = new Array(daysInMonth).fill(0);
+  for (const s of monthSessions) {
+    const dayOffset = Math.floor((s.createdAt.getTime() - monthStart.getTime()) / (24 * 60 * 60 * 1000));
+    if (dayOffset >= 0 && dayOffset < daysInMonth) dailyCounts[dayOffset]++;
+  }
+  const dailyLogins = dailyCounts.map((count, i) => ({ day: String(i + 1), count }));
+
+  const monthLabel = `${monthStart.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' })} ${monthStart.getUTCFullYear()}`;
+  const prevMonthLabel = `${prevMonthStart.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' })} ${prevMonthStart.getUTCFullYear()}`;
+
+  return c.json({
+    success: true,
+    data: {
+      offset,
+      monthLabel,
+      prevMonthLabel,
+      canGoForward: offset < 0,
+      movement: {
+        newMembers,
+        newMembersDelta: newMembers - newMembersPrev,
+        cancelled,
+        cancelledDelta: cancelled - cancelledPrev,
+        inactive,
+        inactiveDelta: inactive - inactivePrev,
+        netChange,
+        netChangeDelta: netChange - netChangePrev,
+      },
+      income: {
+        netChange: Math.round(gainedFromNew - lostFromCancellations),
+        lostFromCancellations: Math.round(lostFromCancellations),
+        gainedFromNew: Math.round(gainedFromNew),
+      },
+      changes,
+      engagement: {
+        logins,
+        loginsChangePct: pctChange(logins, loginsPrev),
+        ssoLaunches,
+        ssoLaunchesChangePct: pctChange(ssoLaunches, ssoLaunchesPrev),
+        activeUsers: activeUsersCount,
+        activeUsersChangePct: pctChange(activeUsersCount, activeUsersPrevSet.size),
+        sessionsPerUser,
+        byPlatform,
+        dailyLogins,
+      },
+    },
+  });
+});
+
 app.get("/api/config/free-member-exclusion-types", async (c) => {
   const user = c.get('user');
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);

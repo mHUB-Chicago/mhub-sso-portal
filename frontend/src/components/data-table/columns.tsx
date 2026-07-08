@@ -126,7 +126,7 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
   },
   {
     accessorKey: "primaryMembershipStatus",
-    header: "Status",
+    header: "Subscription Status",
     size: 110,
     cell: ({ row }) => {
       const status = row.original.primaryMembershipStatus
@@ -297,7 +297,7 @@ export const companyColumns: ColumnDef<Company>[] = [
   },
   {
     accessorKey: "subscriptionStatus",
-    header: "Status",
+    header: "Subscription Status",
     size: 110,
     cell: ({ row }) => {
       const status = row.original.subscriptionStatus

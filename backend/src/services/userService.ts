@@ -14,6 +14,7 @@ export interface GetPaginatedUsersInput {
   active?: 'true' | 'false';
   emailVerified?: 'true' | 'false';
   portalAccess?: 'true' | 'false';
+  primaryMembershipStatus?: 'Active' | 'Cancelled';
   noEmail?: 'true' | 'false';
   noName?: 'true' | 'false';
   noPrimary?: 'true' | 'false';
@@ -120,6 +121,7 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     ...(input.emailVerified !== undefined && { emailVerified: input.emailVerified === 'true' }),
     ...(membershipTypeFilter !== undefined && { primaryMembership: membershipTypeFilter }),
     ...(input.memberSource && { memberSource: input.memberSource }),
+    ...(input.primaryMembershipStatus && { primaryMembershipStatus: input.primaryMembershipStatus }),
   };
 
   const andConditions: any[] = [];

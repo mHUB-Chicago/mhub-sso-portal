@@ -23,6 +23,7 @@ export function AdminUsersPage() {
   const [portalAccess, setPortalAccess] = useState<'true' | 'false' | undefined>(undefined)
   const [memberSource, setMemberSource] = useState<'subscription' | 'membership' | undefined>(undefined)
   const [noPrimary, setNoPrimary] = useState<'true' | 'false' | undefined>(undefined)
+  const [primaryMembershipStatus, setPrimaryMembershipStatus] = useState<'Active' | 'Cancelled' | undefined>(undefined)
   const [exporting, setExporting] = useState(false)
 
   const { data: usersData, isLoading: usersLoading, error: usersError } = useGetUsersQuery({
@@ -36,6 +37,7 @@ export function AdminUsersPage() {
     portalAccess,
     memberSource,
     noPrimary,
+    primaryMembershipStatus,
     noEmail: 'false',
   })
   const { data: companiesData, isLoading: companiesLoading } = useGetCompaniesQuery({ limit: 1000, offset: 0 })
@@ -78,6 +80,7 @@ export function AdminUsersPage() {
     else if (columnId === "portalAccess") setPortalAccess(value as 'true' | 'false' | undefined)
     else if (columnId === "memberSource") setMemberSource(value as 'subscription' | 'membership' | undefined)
     else if (columnId === "noPrimary") setNoPrimary(value as 'true' | 'false' | undefined)
+    else if (columnId === "primaryMembershipStatus") setPrimaryMembershipStatus(value as 'Active' | 'Cancelled' | undefined)
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -93,9 +96,10 @@ export function AdminUsersPage() {
       { columnId: "primaryMembership", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
       { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription" }, { value: "membership", label: "Member" }], width: "w-36" },
       { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
-      { columnId: "active",         placeholder: "Status",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
+      { columnId: "active",         placeholder: "Active",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
       { columnId: "noPrimary",      placeholder: "Primary Membership", options: [{ value: "true", label: "No Primary Membership" }, { value: "false", label: "Has Primary Membership" }], width: "w-52" },
+      { columnId: "primaryMembershipStatus", placeholder: "Subscription Status", options: [{ value: "Active", label: "Active" }, { value: "Cancelled", label: "Cancelled" }], width: "w-48" },
     ]
   }, [companiesData, primaryMembershipsData])
 
@@ -113,6 +117,7 @@ export function AdminUsersPage() {
         portalAccess,
         memberSource,
         noPrimary,
+        primaryMembershipStatus,
         noEmail: 'false',
       }).unwrap()
       const rows = result.data.users.map(u => [

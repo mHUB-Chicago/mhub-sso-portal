@@ -101,6 +101,40 @@ export interface WeeklyReportData {
   }
 }
 
+export interface MonthlyReportData {
+  offset: number
+  monthLabel: string
+  prevMonthLabel: string
+  canGoForward: boolean
+  movement: {
+    newMembers: number
+    newMembersDelta: number
+    cancelled: number
+    cancelledDelta: number
+    inactive: number
+    inactiveDelta: number
+    netChange: number
+    netChangeDelta: number
+  }
+  income: {
+    netChange: number
+    lostFromCancellations: number
+    gainedFromNew: number
+  }
+  changes: MembershipChange[]
+  engagement: {
+    logins: number
+    loginsChangePct: number
+    ssoLaunches: number
+    ssoLaunchesChangePct: number
+    activeUsers: number
+    activeUsersChangePct: number
+    sessionsPerUser: number
+    byPlatform: PlatformEngagement[]
+    dailyLogins: DailyLogins[]
+  }
+}
+
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
 const basePath = import.meta.env.VITE_API_BASE_PATH ?? '/api'
 
@@ -122,7 +156,10 @@ export const reportsApi = createApi({
     getWeeklyReport: builder.query<{ success: boolean; data: WeeklyReportData }, number>({
       query: (offset) => `/reports/weekly?offset=${encodeURIComponent(Math.trunc(offset))}`,
     }),
+    getMonthlyReport: builder.query<{ success: boolean; data: MonthlyReportData }, number>({
+      query: (offset) => `/reports/monthly?offset=${encodeURIComponent(Math.trunc(offset))}`,
+    }),
   }),
 })
 
-export const { useGetReportsQuery, useGetWeeklyReportQuery } = reportsApi
+export const { useGetReportsQuery, useGetWeeklyReportQuery, useGetMonthlyReportQuery } = reportsApi

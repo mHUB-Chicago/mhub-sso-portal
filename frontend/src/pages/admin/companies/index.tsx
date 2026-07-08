@@ -17,6 +17,7 @@ export function AdminCompaniesPage() {
   const [search, setSearch] = useState("")
   const [membershipType, setMembershipType] = useState<string | undefined>(undefined)
   const [active, setActive] = useState<'true' | 'false' | undefined>(undefined)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | undefined>(undefined)
   const [exporting, setExporting] = useState(false)
 
   const { data: companiesData, isLoading, error: companiesError } = useGetCompaniesQuery({
@@ -25,6 +26,7 @@ export function AdminCompaniesPage() {
     search: search || undefined,
     membershipType,
     active,
+    subscriptionStatus,
     noEmail: 'false',
   })
 
@@ -42,6 +44,7 @@ export function AdminCompaniesPage() {
     setPage(0)
     if (columnId === "membershipType") setMembershipType(value)
     else if (columnId === "active") setActive(value as 'true' | 'false' | undefined)
+    else if (columnId === "subscriptionStatus") setSubscriptionStatus(value)
   }
 
   const handlePageSizeChange = (size: number) => {
@@ -53,7 +56,14 @@ export function AdminCompaniesPage() {
     const membershipOptions = [...(membershipTypesData?.data ?? [])].sort((a, b) => a.localeCompare(b)).map(t => ({ value: t, label: t }))
     return [
       { columnId: "membershipType", placeholder: "Membership", options: membershipOptions, width: "w-48", type: 'combobox' },
-      { columnId: "active",         placeholder: "Status",     options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }], width: "w-36" },
+      { columnId: "active",         placeholder: "Active",     options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }], width: "w-36" },
+      { columnId: "subscriptionStatus", placeholder: "Subscription Status", options: [
+        { value: "active", label: "Active" },
+        { value: "cancelled", label: "Cancelled" },
+        { value: "expired", label: "Expired" },
+        { value: "failed", label: "Failed" },
+        { value: "suspended", label: "Suspended" },
+      ], width: "w-48" },
     ]
   }, [membershipTypesData])
 
@@ -66,6 +76,7 @@ export function AdminCompaniesPage() {
         search: search || undefined,
         membershipType,
         active,
+        subscriptionStatus,
         noEmail: 'false',
       }).unwrap()
       const rows = result.data.companies.map(c => [

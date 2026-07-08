@@ -72,6 +72,7 @@ interface GetUsersRequest {
   unresolved?: 'true' | 'false'
   memberSource?: 'subscription' | 'membership'
   cmtOnly?: 'true' | 'false'
+  primaryMembershipStatus?: 'Active' | 'Cancelled'
 }
 
 interface GetUsersResponse {
@@ -131,7 +132,7 @@ export const userApi = createApi({
   tagTypes: ['User', 'Users'],
   endpoints: (builder) => ({
     getUsers: builder.query<GetUsersResponse, GetUsersRequest>({
-      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, noName, noPrimary, directPersonal, unresolved, memberSource, cmtOnly }) => ({
+      query: ({ limit = 20, offset = 0, role, search, companyId, primaryMembership, active, emailVerified, portalAccess, noEmail, noName, noPrimary, directPersonal, unresolved, memberSource, cmtOnly, primaryMembershipStatus }) => ({
         url: '/user',
         params: {
           limit,
@@ -150,6 +151,7 @@ export const userApi = createApi({
           ...(unresolved !== undefined && { unresolved }),
           ...(memberSource && { memberSource }),
           ...(cmtOnly !== undefined && { cmtOnly }),
+          ...(primaryMembershipStatus && { primaryMembershipStatus }),
         },
       }),
       providesTags: ['Users'],

@@ -23,6 +23,7 @@ export const GetCompaniesRequestSchema = z.object({
   active: z.enum(['true', 'false']).optional(),
   noEmail: z.enum(['true', 'false']).optional(),
   cmtOnly: z.enum(['true', 'false']).optional(),
+  subscriptionStatus: z.string().optional(),
 });
 
 export const GetCompaniesResponseSchema = SuccessResponseSchema(z.object({

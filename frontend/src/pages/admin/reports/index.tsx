@@ -1,7 +1,59 @@
 import { useState, useMemo } from 'react'
-import { useGetReportsQuery, useGetWeeklyReportQuery, type DailyLogins } from '@/store/api/reportsApi'
+import { useGetReportsQuery, useGetWeeklyReportQuery, useGetMonthlyReportQuery, type DailyLogins } from '@/store/api/reportsApi'
 import { useGetSyncStatusQuery } from '@/store/api/syncApi'
-import { Loader2, TrendingUp, Users, Activity, Building2, RefreshCw, CalendarDays, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import { Loader2, TrendingUp, Users, Activity, Building2, RefreshCw, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+
+const MIN_OFFSET = -104
+const MAX_OFFSET = 0
+
+// react-day-picker compares Date objects by local calendar day, so week
+// boundaries here are computed in local time (not UTC) to keep the
+// highlighted range aligned with what's actually rendered in the grid.
+function localMonday(d: Date): Date {
+  const dayIndex = (d.getDay() + 6) % 7
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dayIndex)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+
+function offsetToWeekStart(offset: number): Date {
+  const start = localMonday(new Date())
+  start.setDate(start.getDate() + offset * 7)
+  return start
+}
+
+function offsetToWeekEnd(offset: number): Date {
+  const end = offsetToWeekStart(offset)
+  end.setDate(end.getDate() + 6)
+  return end
+}
+
+function dateToOffset(date: Date): number {
+  const diffMs = localMonday(date).getTime() - localMonday(new Date()).getTime()
+  const diffWeeks = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
+  return Math.min(MAX_OFFSET, Math.max(MIN_OFFSET, diffWeeks))
+}
+
+const MONTH_MIN_OFFSET = -24
+const MONTH_MAX_OFFSET = 0
+
+function offsetToMonthStart(offset: number): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth() + offset, 1)
+}
+
+function offsetToMonthEnd(offset: number): Date {
+  const start = offsetToMonthStart(offset)
+  return new Date(start.getFullYear(), start.getMonth() + 1, 0)
+}
+
+function dateToMonthOffset(date: Date): number {
+  const now = new Date()
+  const diffMonths = (date.getFullYear() - now.getFullYear()) * 12 + (date.getMonth() - now.getMonth())
+  return Math.min(MONTH_MAX_OFFSET, Math.max(MONTH_MIN_OFFSET, diffMonths))
+}
 
 function timeAgo(iso: string | null | undefined): string {
   if (!iso) return 'never'
@@ -43,7 +95,7 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
   )
 }
 
-type Tab = 'revenue' | 'membership' | 'engagement' | 'weekly'
+type Tab = 'revenue' | 'membership' | 'engagement' | 'weekly' | 'monthly'
 type MemberTab = 'users' | 'companies'
 
 export function AdminReportsPage() {
@@ -84,6 +136,7 @@ export function AdminReportsPage() {
     { key: 'membership', label: 'Membership', icon: <Users className="h-4 w-4" /> },
     { key: 'engagement', label: 'Engagement', icon: <Activity className="h-4 w-4" /> },
     { key: 'weekly', label: 'Weekly', icon: <CalendarDays className="h-4 w-4" /> },
+    { key: 'monthly', label: 'Monthly', icon: <CalendarRange className="h-4 w-4" /> },
   ]
 
   return (
@@ -420,6 +473,7 @@ export function AdminReportsPage() {
       )}
 
       {tab === 'weekly' && <WeeklyTab />}
+      {tab === 'monthly' && <MonthlyTab />}
     </div>
   )
 }
@@ -476,6 +530,7 @@ function DailyLoginsChart({ data }: { data: DailyLogins[] }) {
 function WeeklyTab() {
   const [offset, setOffset] = useState(0)
   const [subTab, setSubTab] = useState<WeeklySubTab>('movement')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const { data, isLoading, isError, refetch } = useGetWeeklyReportQuery(offset)
 
   if (isLoading) {
@@ -507,7 +562,30 @@ function WeeklyTab() {
           <button onClick={() => setOffset(o => o - 1)} className="text-gray-400 hover:text-gray-700" aria-label="Previous week">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold">{weekLabel}</span>
+          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+            <PopoverTrigger asChild>
+              <button className="flex items-center gap-1.5 text-sm font-semibold hover:text-brand" aria-label="Pick a week">
+                <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
+                {weekLabel}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="center">
+              <Calendar
+                mode="range"
+                captionLayout="dropdown"
+                startMonth={offsetToWeekStart(MIN_OFFSET)}
+                endMonth={offsetToWeekStart(MAX_OFFSET)}
+                selected={{ from: offsetToWeekStart(offset), to: offsetToWeekEnd(offset) }}
+                defaultMonth={offsetToWeekStart(offset)}
+                weekStartsOn={1}
+                disabled={(date) => dateToOffset(date) > MAX_OFFSET || dateToOffset(date) < MIN_OFFSET}
+                onDayClick={(date) => {
+                  setOffset(dateToOffset(date))
+                  setPickerOpen(false)
+                }}
+              />
+            </PopoverContent>
+          </Popover>
           <button
             onClick={() => canGoForward && setOffset(o => Math.min(0, o + 1))}
             disabled={!canGoForward}
@@ -760,6 +838,325 @@ function WeeklyTab() {
 
           <p className="text-xs text-gray-400 italic">
             Weekly report generated from PeopleVine webhook events (membership movement) and portal SSO event logs (engagement). Income impact reflects paid memberships only.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type MonthlySubTab = 'movement' | 'engagement'
+
+function MonthlyTab() {
+  const [offset, setOffset] = useState(0)
+  const [subTab, setSubTab] = useState<MonthlySubTab>('movement')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const { data, isLoading, isError, refetch } = useGetMonthlyReportQuery(offset)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64 gap-3 text-gray-500">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Loading monthly report…
+      </div>
+    )
+  }
+
+  if (isError || !data?.data) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-500">
+        <p>Failed to load monthly report.</p>
+        <button onClick={() => refetch()} className="text-brand underline text-sm">Retry</button>
+      </div>
+    )
+  }
+
+  const { monthLabel, prevMonthLabel, canGoForward, movement, income, changes, engagement } = data.data
+  const maxPlatformLaunches = Math.max(...engagement.byPlatform.map(p => p.launches), 1)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <span className="text-xs uppercase tracking-wide text-gray-400 font-semibold">Month of</span>
+        <div className="flex items-center gap-2 border rounded-lg px-3 py-1.5">
+          <button onClick={() => setOffset(o => o - 1)} className="text-gray-400 hover:text-gray-700" aria-label="Previous month">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+            <PopoverTrigger asChild>
+              <button className="flex items-center gap-1.5 text-sm font-semibold hover:text-brand" aria-label="Pick a month">
+                <CalendarRange className="h-3.5 w-3.5 text-gray-400" />
+                {monthLabel}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="center">
+              <Calendar
+                mode="range"
+                captionLayout="dropdown"
+                startMonth={offsetToMonthStart(MONTH_MIN_OFFSET)}
+                endMonth={offsetToMonthStart(MONTH_MAX_OFFSET)}
+                selected={{ from: offsetToMonthStart(offset), to: offsetToMonthEnd(offset) }}
+                defaultMonth={offsetToMonthStart(offset)}
+                disabled={(date) => dateToMonthOffset(date) > MONTH_MAX_OFFSET || dateToMonthOffset(date) < MONTH_MIN_OFFSET}
+                onDayClick={(date) => {
+                  setOffset(dateToMonthOffset(date))
+                  setPickerOpen(false)
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+          <button
+            onClick={() => canGoForward && setOffset(o => Math.min(0, o + 1))}
+            disabled={!canGoForward}
+            className={canGoForward ? 'text-gray-400 hover:text-gray-700' : 'text-gray-200 cursor-not-allowed'}
+            aria-label="Next month"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+        <span className="text-xs text-gray-400">vs. previous month ({prevMonthLabel})</span>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setSubTab('movement')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+            subTab === 'movement' ? 'bg-brand border-brand text-white' : 'text-gray-500 border-gray-200 hover:text-gray-700'
+          }`}
+        >
+          <Users className="h-3.5 w-3.5" />
+          Membership Movement
+        </button>
+        <button
+          onClick={() => setSubTab('engagement')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+            subTab === 'engagement' ? 'bg-brand border-brand text-white' : 'text-gray-500 border-gray-200 hover:text-gray-700'
+          }`}
+        >
+          <Activity className="h-3.5 w-3.5" />
+          Engagement
+        </button>
+      </div>
+
+      {subTab === 'movement' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white border border-l-4 border-l-brand rounded-lg p-4">
+              <div className="text-2xl font-bold tracking-tight text-green-600">+{movement.newMembers}</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">New Members</div>
+              <div className="text-xs text-gray-400 mt-1">joined this month</div>
+              <div className="mt-2"><Delta value={movement.newMembersDelta} /></div>
+            </div>
+            <div className="bg-white border rounded-lg p-4">
+              <div className="text-2xl font-bold tracking-tight text-red-500">−{movement.cancelled}</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Cancelled</div>
+              <div className="text-xs text-gray-400 mt-1">memberships ended</div>
+              <div className="mt-2"><Delta value={movement.cancelledDelta} invert /></div>
+            </div>
+            <div className="bg-white border rounded-lg p-4">
+              <div className="text-2xl font-bold tracking-tight text-gray-500">−{movement.inactive}</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Went Inactive</div>
+              <div className="text-xs text-gray-400 mt-1">lapsed / expired</div>
+              <div className="mt-2"><Delta value={movement.inactiveDelta} invert /></div>
+            </div>
+            <div className="bg-white border rounded-lg p-4">
+              <div className="text-2xl font-bold tracking-tight">{movement.netChange >= 0 ? '+' : ''}{movement.netChange}</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mt-1">Net Change</div>
+              <div className="text-xs text-gray-400 mt-1">active membership base</div>
+              <div className="mt-2"><Delta value={movement.netChangeDelta} /></div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border rounded-lg p-5">
+              <h3 className="font-semibold mb-1">Income Impact</h3>
+              <p className="text-xs text-gray-400 mb-4">Change in MRR from this month's movement</p>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className={`text-3xl font-bold tracking-tight ${income.netChange < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                  {income.netChange >= 0 ? '+' : '−'}{fmt$(Math.abs(income.netChange))}
+                </span>
+                <span className="text-xs text-gray-500">net MRR change this month</span>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">
+                −{fmt$(income.lostFromCancellations)} from cancellations, +{fmt$(income.gainedFromNew)} from new paid memberships
+              </p>
+              {changes.filter(ch => ch.changeType === 'Cancelled' && ch.mrr != null).length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No paid cancellations this month</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs uppercase text-gray-400 border-b">
+                      <th className="text-left pb-2">Cancelled Membership</th>
+                      <th className="text-left pb-2">Sponsoring Company</th>
+                      <th className="text-right pb-2">MRR Lost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {changes.filter(ch => ch.changeType === 'Cancelled' && ch.mrr != null).map((ch, i) => (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-2 font-medium">{ch.membership}</td>
+                        <td className="py-2 text-gray-500">{ch.sponsoringCompany}</td>
+                        <td className="py-2 text-right tabular-nums">−{fmt$(ch.mrr ?? 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="text-xs text-gray-400 italic mt-2">Lost MRR attributed to each membership's sponsoring company, per card.</p>
+            </div>
+
+            <div className="bg-white border rounded-lg p-5">
+              <h3 className="font-semibold mb-1">This Month's Movement</h3>
+              <p className="text-xs text-gray-400 mb-4">Membership changes captured from PeopleVine webhooks</p>
+              <div className="flex items-center justify-between py-2.5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  <div>
+                    <div className="text-sm font-semibold">New Members</div>
+                    <div className="text-xs text-gray-400">New registrations & activations</div>
+                  </div>
+                </div>
+                <span className="text-lg font-bold text-green-600">+{movement.newMembers}</span>
+              </div>
+              <div className="flex items-center justify-between py-2.5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  <div>
+                    <div className="text-sm font-semibold">Cancelled</div>
+                    <div className="text-xs text-gray-400">Membership cancelled in PeopleVine</div>
+                  </div>
+                </div>
+                <span className="text-lg font-bold text-red-500">−{movement.cancelled}</span>
+              </div>
+              <div className="flex items-center justify-between py-2.5 border-b">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-2 w-2 rounded-full bg-gray-400" />
+                  <div>
+                    <div className="text-sm font-semibold">Went Inactive</div>
+                    <div className="text-xs text-gray-400">Expired, suspended, or lapsed</div>
+                  </div>
+                </div>
+                <span className="text-lg font-bold text-red-500">−{movement.inactive}</span>
+              </div>
+              <div className="flex items-center justify-between py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="h-2 w-2 rounded-full bg-brand" />
+                  <div>
+                    <div className="text-sm font-semibold">Net Change</div>
+                    <div className="text-xs text-gray-400">Active membership base</div>
+                  </div>
+                </div>
+                <span className="text-lg font-bold">{movement.netChange >= 0 ? '+' : ''}{movement.netChange}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border rounded-lg p-5">
+            <h3 className="font-semibold mb-1">Membership Changes — Detail</h3>
+            <p className="text-xs text-gray-400 mb-4">Every membership that changed state this month</p>
+            {changes.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No membership changes this month</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs uppercase text-gray-400 border-b">
+                    <th className="text-left pb-2">Member</th>
+                    <th className="text-left pb-2">Membership</th>
+                    <th className="text-left pb-2">Change</th>
+                    <th className="text-left pb-2">Affiliated Company</th>
+                    <th className="text-left pb-2">Sponsoring Company</th>
+                    <th className="text-right pb-2">MRR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changes.map((ch, i) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
+                      <td className="py-2 font-medium">{ch.member}</td>
+                      <td className="py-2 text-gray-500">{ch.membership}</td>
+                      <td className="py-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          ch.changeType === 'Cancelled' ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {ch.changeType}
+                        </span>
+                      </td>
+                      <td className="py-2 text-gray-500">{ch.affiliatedCompany}</td>
+                      <td className="py-2 text-gray-500">{ch.sponsoringCompany}</td>
+                      <td className="py-2 text-right tabular-nums">{ch.mrr != null ? `−${fmt$(ch.mrr)}` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {subTab === 'engagement' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard label="Logins" value={engagement.logins.toLocaleString()} sub="portal sign-ins" accent />
+            <KpiCard label="SSO Launches" value={engagement.ssoLaunches.toLocaleString()} sub="SAML completions" />
+            <KpiCard label="Active Users" value={engagement.activeUsers.toLocaleString()} sub="unique this month" />
+            <KpiCard label="Sessions / User" value={engagement.sessionsPerUser.toString()} sub="avg this month" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border rounded-lg p-5">
+              <h3 className="font-semibold mb-1">SSO Launches by Platform</h3>
+              <p className="text-xs text-gray-400 mb-4">Which services members launched this month</p>
+              {engagement.byPlatform.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No SSO launches this month</p>
+              ) : (
+                engagement.byPlatform.map(p => (
+                  <BarRow key={p.name} label={p.name} value={p.launches} max={maxPlatformLaunches} formatVal={n => n.toLocaleString()} />
+                ))
+              )}
+            </div>
+
+            <div className="bg-white border rounded-lg p-5">
+              <h3 className="font-semibold mb-1">Daily Logins</h3>
+              <p className="text-xs text-gray-400 mb-4">Portal sign-ins each day this month</p>
+              <DailyLoginsChart data={engagement.dailyLogins} />
+            </div>
+          </div>
+
+          <div className="bg-white border rounded-lg p-5">
+            <h3 className="font-semibold mb-1">Platform Engagement — Detail</h3>
+            <p className="text-xs text-gray-400 mb-4">Per connected service, this month vs. previous</p>
+            {engagement.byPlatform.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No platform activity this month</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs uppercase text-gray-400 border-b">
+                    <th className="text-left pb-2">Platform</th>
+                    <th className="text-right pb-2">SSO Launches</th>
+                    <th className="text-right pb-2">Unique Users</th>
+                    <th className="text-right pb-2">vs Last Month</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {engagement.byPlatform.map(p => (
+                    <tr key={p.name} className="border-b last:border-0 hover:bg-gray-50">
+                      <td className="py-2 font-medium">{p.name}</td>
+                      <td className="py-2 text-right tabular-nums">{p.launches}</td>
+                      <td className="py-2 text-right tabular-nums">{p.uniqueUsers}</td>
+                      <td className={`py-2 text-right tabular-nums font-medium ${p.changePct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        <span className="inline-flex items-center gap-1 justify-end">
+                          {p.changePct >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                          {Math.abs(p.changePct)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-400 italic">
+            Monthly report generated from PeopleVine webhook events (membership movement) and portal SSO event logs (engagement). Income impact reflects paid memberships only.
           </p>
         </div>
       )}

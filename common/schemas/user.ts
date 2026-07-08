@@ -51,6 +51,7 @@ export const GetUsersRequestSchema = z.object({
   active: z.enum(['true', 'false']).optional(),
   emailVerified: z.enum(['true', 'false']).optional(),
   portalAccess: z.enum(['true', 'false']).optional(),
+  primaryMembershipStatus: z.enum(['Active', 'Cancelled']).optional(),
   noEmail: z.enum(['true', 'false']).optional(),
   noName: z.enum(['true', 'false']).optional(),
   noPrimary: z.enum(['true', 'false']).optional(),
