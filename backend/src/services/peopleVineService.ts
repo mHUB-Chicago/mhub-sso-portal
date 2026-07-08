@@ -1970,9 +1970,14 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
             const wasInactive = !companyForRepOps.active;
             const existingTypes: string[] = JSON.parse(companyForRepOps.membershipTypes || '[]');
             const newMembershipTypes = hasSubInfo ? membershipTypes : existingTypes;
+            // Webhook-driven syncs only touch the one customer that changed in PV, so a company's
+            // placeholder email (assigned when it was first created without a real email) is only
+            // ever fixed here — the full "Sync All" isn't the only path that needs to resolve it.
+            const isPlaceholderCompanyEmail = companyForRepOps.email.endsWith('@placeholder.invalid') || companyForRepOps.email.endsWith('@noemail.mhub');
+            const resolvedCompanyEmail = isPlaceholderCompanyEmail && customer.email ? customer.email.toLowerCase() : undefined;
             diffRecord.company = {
-                before: { name: companyForRepOps.name, active: companyForRepOps.active, membershipTypes: existingTypes, isPersonal: companyForRepOps.isPersonal },
-                after: { name: customer.company_name, active: pvActive, membershipTypes: newMembershipTypes, isPersonal },
+                before: { name: companyForRepOps.name, active: companyForRepOps.active, membershipTypes: existingTypes, isPersonal: companyForRepOps.isPersonal, email: companyForRepOps.email },
+                after: { name: customer.company_name, active: pvActive, membershipTypes: newMembershipTypes, isPersonal, email: resolvedCompanyEmail ?? companyForRepOps.email },
             };
             await updateCompany(c, {
                 id: companyForRepOps.id,
@@ -1981,6 +1986,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 membershipTypes: newMembershipTypes,
                 isPersonal,
                 peopleVineId: pvId,
+                email: resolvedCompanyEmail,
             });
             if (wasInactive && pvActive) {
                 console.log(`Reactivating subscribers for company ${companyForRepOps.name}.`);
