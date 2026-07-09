@@ -14,6 +14,11 @@ export const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) 
 // ends up getting matched inconsistently (or re-created as a duplicate). Always key/look up
 // company-name maps through this.
 export const normCompanyKey = (name: string): string => name.trim().toLowerCase();
+// Statuses that mean a subscription attempt is permanently over — a customer whose only company-tier
+// subscription history is cancelled/expired shouldn't be treated as an ongoing personal subscriber
+// forever just because they tried one years ago (see: Luis Galvan, stuck flagged as Direct Personal
+// Subscription despite currently being a free mHUB Community member with zero active subscriptions).
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set(['cancelled', 'expired']);
 // syncOne looks companies up one at a time via direct DB queries (no in-memory map like the bulk
 // sync phases), so it needs its own case-insensitive lookup. Non-personal companies are preferred
 // when a name collides with both a personal and a non-personal row.
@@ -519,7 +524,9 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
             continue;
         const pvId = customer.id.toString();
         const title = sub.title ? sub.title.trim() : null;
-        const subIsActive = sub.status == null ? true : sub.status.toLowerCase() === 'active';
+        const subStatusLower = sub.status == null ? '' : sub.status.toLowerCase();
+        const subIsActive = sub.status == null ? true : subStatusLower === 'active';
+        const subIsTerminal = TERMINAL_SUBSCRIPTION_STATUSES.has(subStatusLower);
         if (!subscriptionInfoMap.has(pvId)) {
             subscriptionInfoMap.set(pvId, { membershipTypes: [], isActive: false, attemptedTypes: [], rawTitles: [] });
         }
@@ -528,7 +535,7 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
             entry.rawTitles.push(title);
         }
         if (title && companyMembershipTypes.has(title)) {
-            if (!entry.attemptedTypes.includes(title))
+            if (!subIsTerminal && !entry.attemptedTypes.includes(title))
                 entry.attemptedTypes.push(title);
             if (subIsActive) {
                 entry.isActive = true;
@@ -762,6 +769,26 @@ export const getUniqueConstraintField = (e: unknown): string | null => {
     if (typeof meta === 'string')
         return meta;
     return null;
+};
+// Looks up who currently holds the conflicting email/username so sync logs name both sides of
+// the collision instead of just "unknown field" — makes these conflicts actually actionable.
+export const describeUniqueConflict = async (
+    prisma: PrismaClient,
+    field: string | null,
+    candidate: { email?: string | null; username?: string | null }
+): Promise<string> => {
+    if (field !== 'email' && field !== 'username')
+        return `field "${field ?? 'unknown'}"`;
+    const value = field === 'email' ? candidate.email?.toLowerCase() : candidate.username?.trim().toLowerCase();
+    if (!value)
+        return `field "${field}"`;
+    const holder = await prisma.user.findFirst({
+        where: field === 'email' ? { email: value } : { username: value },
+        select: { id: true, name: true, peopleVineId: true },
+    });
+    return holder
+        ? `${field}="${value}" (already held by ${holder.name}, PV#${holder.peopleVineId ?? 'n/a'}, id=${holder.id})`
+        : `${field}="${value}" (no current holder found)`;
 };
 export const parsePvDate = (value: string | null | undefined): Date | null => {
     if (!value || value.startsWith('1900-01-01'))
@@ -1146,7 +1173,8 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
                         // See syncOne — a stale/duplicate value on any one unique field used to
                         // silently abort this whole user's update, blocking unrelated fixes.
                         const conflictingField = getUniqueConstraintField(e);
-                        log('warn', `[sync] Unique constraint conflict updating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+                        const conflictDetail = await describeUniqueConflict(prisma, conflictingField, userUpdatePayload);
+                        log('warn', `[sync] Unique constraint conflict updating user ${customer.full_name} (PV#${pvId}) on ${conflictDetail}.`);
                         if (conflictingField && conflictingField in userUpdatePayload) {
                             const retryPayload = { ...userUpdatePayload };
                             delete retryPayload[conflictingField];
@@ -1193,7 +1221,8 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         catch (e) {
             if (isUniqueConstraintError(e)) {
                 const conflictingField = getUniqueConstraintField(e);
-                log('warn', `[sync] Unique constraint conflict creating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+                const conflictDetail = await describeUniqueConflict(prisma, conflictingField, userCreatePayload);
+                log('warn', `[sync] Unique constraint conflict creating user ${customer.full_name} (PV#${pvId}) on ${conflictDetail}.`);
                 // Only "username" is safe to drop and retry here — email/peopleVineId/role/companyId
                 // are required to create a user at all, so a conflict on those means a genuine
                 // duplicate that needs manual resolution, not a field we can just omit.
@@ -1404,7 +1433,7 @@ export const syncPhaseCorrectionExport = async (c: Context, sessionId?: string, 
         if (skippedAllStatusSubPages.length > 0)
             log('warn', `[verify] Any-status subscription export skipped pages: [${skippedAllStatusSubPages.join(', ')}]`);
         const attemptedSubscriberRecords = allStatusSubscriptions
-            .filter(sub => sub?.customer?.id && sub.title)
+            .filter(sub => sub?.customer?.id && sub.title && !TERMINAL_SUBSCRIPTION_STATUSES.has((sub.status ?? '').toLowerCase()))
             .map(sub => ({ customer_id: sub.customer.id, title: String(sub.title).trim() }));
         const attemptedSubscriberChunkKeys = await writeChunkedBlob(prisma, sessionId, 'attempted-subscribers', attemptedSubscriberRecords);
         const anyStatusSubscriptionChunkKeys = await writeChunkedBlob(prisma, sessionId, 'any-status-subscriptions', allStatusSubscriptions);
@@ -1974,7 +2003,8 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             // See syncOne — a stale/duplicate value on any one unique field used to silently
             // abort this whole user's correction pass, blocking unrelated fixes.
             const conflictingField = getUniqueConstraintField(e);
-            log('warn', `[sync] Unique constraint conflict updating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+            const conflictDetail = await describeUniqueConflict(prisma, conflictingField, userUpdatePayload);
+            log('warn', `[sync] Unique constraint conflict updating user ${customer.full_name} (PV#${pvId}) on ${conflictDetail}.`);
             if (conflictingField && conflictingField in userUpdatePayload) {
                 const retryPayload = { ...userUpdatePayload };
                 delete retryPayload[conflictingField];
@@ -2308,7 +2338,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                     // primaryMembership) that had nothing to do with the conflict. Retry with just
                     // that one field left untouched instead of giving up on the whole sync.
                     const conflictingField = getUniqueConstraintField(e);
-                    console.warn(`[syncOne] Unique constraint conflict updating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+                    const conflictDetail = await describeUniqueConflict(prisma, conflictingField, userUpdatePayload);
+                    console.warn(`[syncOne] Unique constraint conflict updating user ${customer.full_name} (PV#${pvId}) on ${conflictDetail}.`);
                     if (conflictingField && conflictingField in userUpdatePayload) {
                         console.warn(`[syncOne] Retrying update for ${customer.full_name} without "${conflictingField}".`);
                         const retryPayload = { ...userUpdatePayload };
@@ -2376,8 +2407,12 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
             });
         }
         catch (e) {
-            if (isUniqueConstraintError(e))
+            if (isUniqueConstraintError(e)) {
+                const conflictingField = getUniqueConstraintField(e);
+                const conflictDetail = await describeUniqueConflict(prisma, conflictingField, { email: customer.email, username: customer.username ?? null });
+                console.warn(`[syncOne] Unique constraint conflict creating user ${customer.full_name} (PV#${pvId}) on ${conflictDetail}.`);
                 return;
+            }
             throw e;
         }
     }

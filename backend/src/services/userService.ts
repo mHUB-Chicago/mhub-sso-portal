@@ -210,11 +210,18 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
   const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
-  const existingUser = await prisma.user.findFirst({
-    where: { OR: [{ email: normalizedEmail }, ...(normalizedUsername ? [{ username: normalizedUsername }] : [])] },
-  });
-  if (existingUser) {
-    throw new Error("User with this email already exists");
+  // Checked separately (not one OR query) so the thrown error names the exact
+  // conflicting field — callers parse this via getUniqueConstraintField() to
+  // decide whether the conflict is safe to retry without (e.g. username).
+  const existingByEmail = await prisma.user.findFirst({ where: { email: normalizedEmail } });
+  if (existingByEmail) {
+    throw new Error("UNIQUE constraint failed: User.email");
+  }
+  if (normalizedUsername) {
+    const existingByUsername = await prisma.user.findFirst({ where: { username: normalizedUsername } });
+    if (existingByUsername) {
+      throw new Error("UNIQUE constraint failed: User.username");
+    }
   }
   let hashedPassword = password ? await hashPassword(password) : undefined;
   const createdUser = await prisma.user.create({
