@@ -9,6 +9,20 @@ export const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) 
             await afterBatch();
     }
 };
+// PV returns company names with inconsistent casing across different endpoints/pages, and
+// company-name lookups need to agree on one normalized form everywhere or the same real company
+// ends up getting matched inconsistently (or re-created as a duplicate). Always key/look up
+// company-name maps through this.
+export const normCompanyKey = (name: string): string => name.trim().toLowerCase();
+// syncOne looks companies up one at a time via direct DB queries (no in-memory map like the bulk
+// sync phases), so it needs its own case-insensitive lookup. Non-personal companies are preferred
+// when a name collides with both a personal and a non-personal row.
+const findCompanyByNameCI = async (prisma: PrismaClient, name: string): Promise<Company | null> => {
+    const rows = await prisma.$queryRaw<any[]>`SELECT * FROM "Company" WHERE LOWER(TRIM(name)) = LOWER(TRIM(${name})) ORDER BY isPersonal ASC LIMIT 1`;
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    return { ...row, active: Boolean(row.active), isPersonal: Boolean(row.isPersonal) } as Company;
+};
 const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined, addOnsJson?: string | null): Promise<boolean> => {
     const prisma: PrismaClient = c.get('db');
@@ -462,8 +476,13 @@ export const buildMembershipCardData = (cards: any[]): Record<string, {
         }
         if (card.primary === true) {
             entry.primaryCardTitle = title;
+            // Only a genuine sub-card (parent_card_id != 0) means someone else is actually
+            // sponsoring this person. For their own root card, `customer_company_name` is just
+            // that card's raw, unnormalized copy of their own name/company — surfacing it here
+            // previously caused non-sponsored personal subscribers to get misattributed to an
+            // unrelated company that happened to share their literal name (see: normCompanyKey).
             entry.primaryCardSourceCompanyName = parentCardId === 0
-                ? (cardCompanyNameById.get(card.id) ?? null)
+                ? null
                 : (cardCompanyNameById.get(parentCardId) ?? null);
         }
     }
@@ -887,15 +906,16 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
     const dbCompanies = await prisma.company.findMany();
     const companiesByNameMap = new Map<string, Company>();
     for (const co of dbCompanies) {
-        const existing = companiesByNameMap.get(co.name);
+        const key = normCompanyKey(co.name);
+        const existing = companiesByNameMap.get(key);
         if (existing) {
             log('warn', `[sync] Duplicate company name: "${co.name}" — IDs ${existing.id} and ${co.id}.`);
             if (!existing.peopleVineId && co.peopleVineId) {
-                companiesByNameMap.set(co.name, co);
+                companiesByNameMap.set(key, co);
             }
         }
         else {
-            companiesByNameMap.set(co.name, co);
+            companiesByNameMap.set(key, co);
         }
     }
     const pendingCompanyCreations = new Map<string, Promise<Company | undefined>>();
@@ -982,7 +1002,7 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         const existingUser = existingByPvId ?? (existingByEmail && !existingByEmail.peopleVineId ? existingByEmail : undefined);
         if (existingUser && existingUser.role === 'ADMIN')
             return;
-        let company = companiesByNameMap.get(customer.company_name);
+        let company = companiesByNameMap.get(normCompanyKey(customer.company_name));
         const hadExistingCompany = !!company;
         if (company && !company.active && isSubscriber) {
             company = undefined;
@@ -991,10 +1011,11 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
             if (!existingUser && !isSubscriber && (!isMember || !includeFreeMembers))
                 return;
             const companyName = customer.company_name || `${customer.full_name}'s Company`;
+            const companyKey = normCompanyKey(companyName);
             company = await prisma.company.findFirst({ where: { name: companyName } }) ?? undefined;
             if (!company) {
-                if (pendingCompanyCreations.has(companyName)) {
-                    company = await pendingCompanyCreations.get(companyName);
+                if (pendingCompanyCreations.has(companyKey)) {
+                    company = await pendingCompanyCreations.get(companyKey);
                 }
                 else {
                     const creation = (async (): Promise<Company | undefined> => {
@@ -1013,12 +1034,12 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
                             return await prisma.company.findFirst({ where: { OR: [{ peopleVineId: pvId }, { name: companyName }] } }) ?? undefined;
                         }
                     })();
-                    pendingCompanyCreations.set(companyName, creation);
+                    pendingCompanyCreations.set(companyKey, creation);
                     company = await creation;
                 }
                 if (!company)
                     return;
-                companiesByNameMap.set(companyName, company);
+                companiesByNameMap.set(companyKey, company);
             }
         }
         const pvUserActive = (customer.pvActive ?? true) && (isMember
@@ -1445,7 +1466,18 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
         const pvId = sub.id?.toString();
         if (!pvId)
             return;
-        const customerCompanyName = (sub.customer?.company_name ?? '').trim().toLowerCase();
+        // Raw subscription payloads carry the customer's own (sometimes personal) company_name as-is
+        // — never routed through normalizeCustomers' "personal → X's Company" fallback used
+        // everywhere else. Without applying the same rule here, a personal subscriber's revenue
+        // record either matches nothing or, worse, matches an unrelated company that happens to be
+        // literally named after them.
+        const rawSubCompanyName = (sub.customer?.company_name ?? '').trim();
+        const subCustomerFullName = (sub.customer?.full_name ?? '').trim();
+        const subIsPersonal = rawSubCompanyName.length === 0 || rawSubCompanyName.toLowerCase() === subCustomerFullName.toLowerCase();
+        const resolvedSubCompanyName = subIsPersonal
+            ? (subCustomerFullName ? `${subCustomerFullName}'s Company` : (sub.customer?.id ? `PV #${sub.customer.id}'s Company` : ''))
+            : rawSubCompanyName;
+        const customerCompanyName = resolvedSubCompanyName ? normCompanyKey(resolvedSubCompanyName) : '';
         const matchedCompany = customerCompanyName ? dbCompaniesByName.get(customerCompanyName) : undefined;
         const data = {
             pvCustomerId: sub.customer?.id?.toString() ?? '',
@@ -1571,13 +1603,14 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
     const dbCompanies = await prisma.company.findMany();
     const companiesByNameMap = new Map<string, Company>();
     for (const co of dbCompanies) {
-        const existing = companiesByNameMap.get(co.name);
+        const key = normCompanyKey(co.name);
+        const existing = companiesByNameMap.get(key);
         if (existing) {
             if (!existing.peopleVineId && co.peopleVineId)
-                companiesByNameMap.set(co.name, co);
+                companiesByNameMap.set(key, co);
         }
         else {
-            companiesByNameMap.set(co.name, co);
+            companiesByNameMap.set(key, co);
         }
     }
     const existingUsers = await prisma.user.findMany();
@@ -1670,7 +1703,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         const pvId = customer.id.toString();
         const isSubscriber = correctionActivePVSubscriberIds.has(pvId);
         const isMember = customer.isMember ?? false;
-        const company = companiesByNameMap.get(customer.company_name);
+        const company = companiesByNameMap.get(normCompanyKey(customer.company_name));
         if (!company)
             return;
         const existingUser = byPvId.get(pvId) ?? byEmail.get(customer.email.toLowerCase());
@@ -1686,7 +1719,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         // personal subscriber). Prefer that sponsor's existing non-personal company when found.
         const sponsorCompanyName = cardData.primaryCardSourceCompanyName?.trim() || null;
         const sponsorCompany = (customer.isPersonal && sponsorCompanyName)
-            ? companiesByNameMap.get(sponsorCompanyName)
+            ? companiesByNameMap.get(normCompanyKey(sponsorCompanyName))
             : undefined;
         const resolvedCompany = (sponsorCompany && !sponsorCompany.isPersonal) ? sponsorCompany : company;
         const ownCompanyNameLower = company.name.trim().toLowerCase();
@@ -1696,7 +1729,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             : isSubscriber);
         if (!pvUserActive && (customer.pvActive ?? true)) {
             for (const sp of externalProviders) {
-                const sponsor = companiesByNameMap.get(sp.providingCompanyName!);
+                const sponsor = companiesByNameMap.get(normCompanyKey(sp.providingCompanyName!));
                 if (sponsor && sponsor.active !== false && companyQualifiesForFreeMember(sponsor)) {
                     pvUserActive = true;
                     break;
@@ -1963,7 +1996,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         after: any;
     }> = {};
     const existingCompanyByPvId = await prisma.company.findFirst({ where: { peopleVineId: pvId } });
-    const existingCompanyByName = await prisma.company.findFirst({ where: { name: customer.company_name } });
+    const existingCompanyByName = await findCompanyByNameCI(prisma, customer.company_name);
     const hasCompanyLevelSub = subResult.customers.some(cu => cu.id.toString() === pvId);
     const hasOwnCmtSubAttempt = (anyStatusSubResult.subscriptionInfoMap.get(pvId)?.attemptedTypes.length ?? 0) > 0;
     const isCompanyRep = existingCompanyByPvId !== null || hasCompanyLevelSub || hasOwnCmtSubAttempt;
@@ -2029,9 +2062,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     // subscriber, since `isPersonal` only looks at that field). When we can match the sponsor to an
     // existing real company, prefer it over the person's own personal placeholder company.
     const sponsorCompanyName = cardDataSync.primaryCardSourceCompanyName?.trim() || null;
-    const sponsorCompany = (isPersonal && sponsorCompanyName)
-        ? await prisma.company.findFirst({ where: { name: sponsorCompanyName, isPersonal: false } })
-        : null;
+    const sponsorCompanyMatch = (isPersonal && sponsorCompanyName) ? await findCompanyByNameCI(prisma, sponsorCompanyName) : null;
+    const sponsorCompany = (sponsorCompanyMatch && !sponsorCompanyMatch.isPersonal) ? sponsorCompanyMatch : null;
     let associatedCompany = sponsorCompany ?? baseCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
     if (!associatedCompany) {
         if (!isCompanyRep || !pvActive) {
