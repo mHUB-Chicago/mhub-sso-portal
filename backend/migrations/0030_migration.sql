@@ -1,0 +1,2 @@
+ALTER TABLE "User" ADD COLUMN "isSystemAccount" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Company" ADD COLUMN "isSystemAccount" BOOLEAN NOT NULL DEFAULT false;

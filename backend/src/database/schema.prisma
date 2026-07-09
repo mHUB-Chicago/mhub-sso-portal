@@ -37,6 +37,7 @@ model Company {
   email                   String                   @unique
   membershipTypes         String                   @default("[]")
   isPersonal              Boolean                  @default(false)
+  isSystemAccount         Boolean                  @default(false)
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
   subscriptions           Subscription[]
@@ -70,6 +71,7 @@ model User {
   cardStatus           String?
   memberSource         String                @default("subscription")
   memberSourceCompany  String?
+  isSystemAccount      Boolean               @default(false)
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]

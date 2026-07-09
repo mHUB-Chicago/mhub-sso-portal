@@ -749,6 +749,20 @@ export const isUniqueConstraintError = (e: unknown): boolean => {
     const msg = e instanceof Error ? e.message.toLowerCase() : '';
     return msg.includes('already exists') || msg.includes('unique constraint') || (e as any)?.code === 'P2002';
 };
+// D1's raw error names the offending column, e.g. "UNIQUE constraint failed: User.username" —
+// use that to know exactly which field to drop and retry, instead of assuming it's always email.
+export const getUniqueConstraintField = (e: unknown): string | null => {
+    const msg = e instanceof Error ? e.message : '';
+    const match = msg.match(/UNIQUE constraint failed:\s*\w+\.(\w+)/i);
+    if (match)
+        return match[1];
+    const meta = (e as any)?.meta?.target;
+    if (Array.isArray(meta) && meta.length > 0)
+        return String(meta[0]);
+    if (typeof meta === 'string')
+        return meta;
+    return null;
+};
 export const parsePvDate = (value: string | null | undefined): Date | null => {
     if (!value || value.startsWith('1900-01-01'))
         return null;
@@ -1104,61 +1118,98 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
                 if (existingUser.cardStatus !== (customer.cardStatus ?? null))
                     uChanges.push({ field: 'cardStatus', before: String(existingUser.cardStatus), after: String(customer.cardStatus ?? null) });
                 log('info', `Updating user ${customer.full_name} (${customer.email}).`);
+                const userUpdatePayload: Record<string, any> = {
+                    id: existingUser.id,
+                    name: customer.full_name,
+                    email: customer.email,
+                    username: customer.username ?? null,
+                    companyId: company.id,
+                    peopleVineId: pvId,
+                    primaryMembership: newPrimary,
+                    addOns: newAddOns,
+                    profilePhoto: customer.profilePhoto,
+                    active: pvUserActive,
+                    phone: customer.phone ?? null,
+                    address: customer.address ?? null,
+                    city: customer.city ?? null,
+                    state: customer.state ?? null,
+                    zipCode: customer.zipCode ?? null,
+                    cardStatus: customer.cardStatus ?? null,
+                    memberSource,
+                };
                 try {
-                    await updateUser(c, {
-                        id: existingUser.id,
-                        name: customer.full_name,
-                        email: customer.email,
-                        username: customer.username ?? null,
-                        companyId: company.id,
-                        peopleVineId: pvId,
-                        primaryMembership: newPrimary,
-                        addOns: newAddOns,
-                        profilePhoto: customer.profilePhoto,
-                        active: pvUserActive,
-                        phone: customer.phone ?? null,
-                        address: customer.address ?? null,
-                        city: customer.city ?? null,
-                        state: customer.state ?? null,
-                        zipCode: customer.zipCode ?? null,
-                        cardStatus: customer.cardStatus ?? null,
-                        memberSource,
-                    });
+                    await updateUser(c, userUpdatePayload as any);
                     auditUsersUpdated.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: company.id, changes: uChanges });
                 }
                 catch (e) {
-                    if (isUniqueConstraintError(e))
+                    if (isUniqueConstraintError(e)) {
+                        // See syncOne — a stale/duplicate value on any one unique field used to
+                        // silently abort this whole user's update, blocking unrelated fixes.
+                        const conflictingField = getUniqueConstraintField(e);
+                        log('warn', `[sync] Unique constraint conflict updating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+                        if (conflictingField && conflictingField in userUpdatePayload) {
+                            const retryPayload = { ...userUpdatePayload };
+                            delete retryPayload[conflictingField];
+                            try {
+                                await updateUser(c, retryPayload as any);
+                                auditUsersUpdated.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: company.id, changes: uChanges });
+                            }
+                            catch (retryError) {
+                                log('warn', `[sync] Retry without "${conflictingField}" still failed for ${customer.full_name}.`);
+                                if (!isUniqueConstraintError(retryError))
+                                    throw retryError;
+                            }
+                        }
                         return;
+                    }
                     throw e;
                 }
             }
             return;
         }
+        const userCreatePayload = {
+            name: customer.full_name,
+            email: customer.email,
+            username: customer.username ?? null,
+            peopleVineId: pvId,
+            role: Role.USER,
+            companyId: company.id,
+            primaryMembership: newPrimary,
+            addOns: newAddOns,
+            profilePhoto: customer.profilePhoto,
+            active: pvUserActive,
+            phone: customer.phone ?? null,
+            address: customer.address ?? null,
+            city: customer.city ?? null,
+            state: customer.state ?? null,
+            zipCode: customer.zipCode ?? null,
+            cardStatus: customer.cardStatus ?? null,
+            memberSource,
+        };
         try {
-            const createdUser = await createUser(c, {
-                name: customer.full_name,
-                email: customer.email,
-                username: customer.username ?? null,
-                peopleVineId: pvId,
-                role: Role.USER,
-                companyId: company.id,
-                primaryMembership: newPrimary,
-                addOns: newAddOns,
-                profilePhoto: customer.profilePhoto,
-                active: pvUserActive,
-                phone: customer.phone ?? null,
-                address: customer.address ?? null,
-                city: customer.city ?? null,
-                state: customer.state ?? null,
-                zipCode: customer.zipCode ?? null,
-                cardStatus: customer.cardStatus ?? null,
-                memberSource,
-            });
+            const createdUser = await createUser(c, userCreatePayload);
             auditUsersCreated.push({ id: createdUser.id, name: customer.full_name, email: customer.email.toLowerCase(), companyId: company.id });
         }
         catch (e) {
-            if (isUniqueConstraintError(e))
+            if (isUniqueConstraintError(e)) {
+                const conflictingField = getUniqueConstraintField(e);
+                log('warn', `[sync] Unique constraint conflict creating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+                // Only "username" is safe to drop and retry here — email/peopleVineId/role/companyId
+                // are required to create a user at all, so a conflict on those means a genuine
+                // duplicate that needs manual resolution, not a field we can just omit.
+                if (conflictingField === 'username') {
+                    try {
+                        const createdUser = await createUser(c, { ...userCreatePayload, username: null });
+                        auditUsersCreated.push({ id: createdUser.id, name: customer.full_name, email: customer.email.toLowerCase(), companyId: company.id });
+                    }
+                    catch (retryError) {
+                        log('warn', `[sync] Retry without "username" still failed creating ${customer.full_name}.`);
+                        if (!isUniqueConstraintError(retryError))
+                            throw retryError;
+                    }
+                }
                 return;
+            }
             throw e;
         }
     };
@@ -1224,7 +1275,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const activePVCompanySet = new Set(activePVCompanyIds);
     if (activePVCompanyIds.length > 0) {
         const orphanedUsers = await prisma.user.findMany({
-            where: { role: 'USER', peopleVineId: null, memberSource: { not: 'membership' } },
+            where: { role: 'USER', peopleVineId: null, memberSource: { not: 'membership' }, isSystemAccount: false },
             include: { company: { select: { peopleVineId: true } } },
         });
         log('info', `[deactivate] Found ${orphanedUsers.length} orphaned users with no PV ID.`);
@@ -1266,6 +1317,10 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     if (activePVCompanyIds.length > 0) {
         const dbCompanies = await prisma.company.findMany();
         await runConcurrent(dbCompanies, 20, async (co) => {
+            // System/internal tracking accounts are never expected to appear in PV's active
+            // dataset, so they'd otherwise get deactivated by this pass on every single sync.
+            if (co.isSystemAccount)
+                return;
             if (activatedCompanyIds.has(co.id))
                 return;
             if (!co.peopleVineId) {
@@ -1282,7 +1337,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     if (activePVUserIds.length > 0) {
         const activePVUserSet = new Set(activePVUserIds);
         const existingUsers = await prisma.user.findMany({
-            where: { role: 'USER', peopleVineId: { not: null } },
+            where: { role: 'USER', peopleVineId: { not: null }, isSystemAccount: false },
             include: { company: { select: { active: true } } },
         });
         await runConcurrent(existingUsers, 20, async (u) => {
@@ -1887,33 +1942,52 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             uChanges.push({ field: 'zipCode', before: String(existingUser.zipCode), after: String(customer.zipCode ?? null) });
         if (existingUser.cardStatus !== (customer.cardStatus ?? null))
             uChanges.push({ field: 'cardStatus', before: String(existingUser.cardStatus), after: String(customer.cardStatus ?? null) });
+        const userUpdatePayload: Record<string, any> = {
+            id: existingUser.id,
+            name: customer.full_name,
+            email: customer.email,
+            username: customer.username ?? null,
+            companyId: resolvedCompany.id,
+            peopleVineId: pvId,
+            primaryMembership: newPrimary,
+            primaryMembershipStatus: newPrimaryStatus,
+            addOns: newAddOns,
+            profilePhoto: customer.profilePhoto,
+            active: pvUserActive,
+            phone: customer.phone ?? null,
+            address: customer.address ?? null,
+            city: customer.city ?? null,
+            state: customer.state ?? null,
+            zipCode: customer.zipCode ?? null,
+            cardStatus: customer.cardStatus ?? null,
+            memberSource,
+            memberSourceCompany: newMemberSourceCompany,
+        };
         try {
-            await updateUser(c, {
-                id: existingUser.id,
-                name: customer.full_name,
-                email: customer.email,
-                username: customer.username ?? null,
-                companyId: resolvedCompany.id,
-                peopleVineId: pvId,
-                primaryMembership: newPrimary,
-                primaryMembershipStatus: newPrimaryStatus,
-                addOns: newAddOns,
-                profilePhoto: customer.profilePhoto,
-                active: pvUserActive,
-                phone: customer.phone ?? null,
-                address: customer.address ?? null,
-                city: customer.city ?? null,
-                state: customer.state ?? null,
-                zipCode: customer.zipCode ?? null,
-                cardStatus: customer.cardStatus ?? null,
-                memberSource,
-                memberSourceCompany: newMemberSourceCompany,
-            });
+            await updateUser(c, userUpdatePayload as any);
             auditCorrectionsUsers.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: resolvedCompany.id, changes: uChanges });
         }
         catch (e) {
-            if (!isUniqueConstraintError(e))
+            if (!isUniqueConstraintError(e)) {
                 throw e;
+            }
+            // See syncOne — a stale/duplicate value on any one unique field used to silently
+            // abort this whole user's correction pass, blocking unrelated fixes.
+            const conflictingField = getUniqueConstraintField(e);
+            log('warn', `[sync] Unique constraint conflict updating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+            if (conflictingField && conflictingField in userUpdatePayload) {
+                const retryPayload = { ...userUpdatePayload };
+                delete retryPayload[conflictingField];
+                try {
+                    await updateUser(c, retryPayload as any);
+                    auditCorrectionsUsers.push({ id: existingUser.id, name: customer.full_name, email: newEmailLower, companyId: resolvedCompany.id, changes: uChanges });
+                }
+                catch (retryError) {
+                    log('warn', `[sync] Retry without "${conflictingField}" still failed for ${customer.full_name}.`);
+                    if (!isUniqueConstraintError(retryError))
+                        throw retryError;
+                }
+            }
         }
     }, () => checkCancelled(prisma, sessionId));
     await appendAuditChunk(prisma, sessionId, 'correctionsUsers', auditCorrectionsUsers);
@@ -1950,7 +2024,10 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     if (!customer) {
         console.log(`Customer ${peopleVineId} not found in PV — deactivating if present in DB.`);
         const existingCompany = await prisma.company.findFirst({ where: { peopleVineId: String(peopleVineId) } });
-        if (existingCompany?.active) {
+        // System/internal tracking accounts (e.g. an admin's PV placeholder used to track spaces
+        // mHUB pays for on members' behalf) may be intentionally missing from PV — PV "not found"
+        // for these doesn't mean the member left, so never auto-deactivate them from here.
+        if (existingCompany?.active && !existingCompany.isSystemAccount) {
             await deactivateCompany(c, existingCompany.id);
             if (webhookLogId) {
                 await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify({ company: { before: { active: true }, after: { active: false } } }) } }).catch(() => { });
@@ -1958,7 +2035,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
             return;
         }
         const existingUser = await prisma.user.findFirst({ where: { peopleVineId: String(peopleVineId) } });
-        if (existingUser?.active && existingUser.role !== 'ADMIN') {
+        if (existingUser?.active && existingUser.role !== 'ADMIN' && !existingUser.isSystemAccount) {
             await deactivateUser(c, existingUser.id);
             if (webhookLogId) {
                 await (prisma.webhookLog.update as any)({ where: { id: webhookLogId }, data: { diff: JSON.stringify({ user: { before: { active: true }, after: { active: false } } }) } }).catch(() => { });
@@ -2199,32 +2276,50 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 },
                 after: userAfterSnapshot,
             };
+            const userUpdatePayload: Record<string, any> = {
+                id: associatedUser.id,
+                name: customer.full_name,
+                email: customer.email,
+                username: customer.username ?? null,
+                companyId: associatedCompany.id,
+                peopleVineId: customer.id.toString(),
+                primaryMembership: userPrimaryMembership,
+                primaryMembershipStatus: userPrimaryMembershipStatus,
+                addOns: userAddOns,
+                profilePhoto: customer.profilePhoto,
+                active: userPvActive,
+                phone: customer.phone ?? null,
+                address: customer.address ?? null,
+                city: customer.city ?? null,
+                state: customer.state ?? null,
+                zipCode: customer.zipCode ?? null,
+                cardStatus: customer.cardStatus ?? null,
+                memberSource,
+                memberSourceCompany: userMemberSourceCompany,
+            };
             try {
-                await updateUser(c, {
-                    id: associatedUser.id,
-                    name: customer.full_name,
-                    email: customer.email,
-                    username: customer.username ?? null,
-                    companyId: associatedCompany.id,
-                    peopleVineId: customer.id.toString(),
-                    primaryMembership: userPrimaryMembership,
-                    primaryMembershipStatus: userPrimaryMembershipStatus,
-                    addOns: userAddOns,
-                    profilePhoto: customer.profilePhoto,
-                    active: userPvActive,
-                    phone: customer.phone ?? null,
-                    address: customer.address ?? null,
-                    city: customer.city ?? null,
-                    state: customer.state ?? null,
-                    zipCode: customer.zipCode ?? null,
-                    cardStatus: customer.cardStatus ?? null,
-                    memberSource,
-                    memberSourceCompany: userMemberSourceCompany,
-                });
+                await updateUser(c, userUpdatePayload as any);
             }
             catch (e) {
                 if (isUniqueConstraintError(e)) {
-                    console.warn(`[syncOne] Email conflict updating user ${customer.full_name} — skipping email change.`);
+                    // D1's error names the actual column (e.g. "User.username"), which isn't
+                    // always email — a stale/duplicate value on any of the three unique fields
+                    // used to abort the *entire* update, silently blocking unrelated fixes (like
+                    // primaryMembership) that had nothing to do with the conflict. Retry with just
+                    // that one field left untouched instead of giving up on the whole sync.
+                    const conflictingField = getUniqueConstraintField(e);
+                    console.warn(`[syncOne] Unique constraint conflict updating user ${customer.full_name} on field "${conflictingField ?? 'unknown'}".`);
+                    if (conflictingField && conflictingField in userUpdatePayload) {
+                        console.warn(`[syncOne] Retrying update for ${customer.full_name} without "${conflictingField}".`);
+                        const retryPayload = { ...userUpdatePayload };
+                        delete retryPayload[conflictingField];
+                        try {
+                            await updateUser(c, retryPayload as any);
+                        }
+                        catch (retryError) {
+                            console.error(`[syncOne] Retry without "${conflictingField}" still failed for ${customer.full_name}:`, retryError);
+                        }
+                    }
                     return;
                 }
                 throw e;

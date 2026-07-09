@@ -134,8 +134,13 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
       { username: { contains: input.search } },
     ]});
   }
+  // System/internal tracking accounts (e.g. an admin's PV placeholder used to track spaces mHUB
+  // pays for on members' behalf) will permanently look like a data problem to these "Needs
+  // Attention" checks — they'll never have a real company or primary membership to assign. Exclude
+  // them from the flagged side of each condition so they don't show up as noise for admins to chase.
+  const notSystemAccount = { isSystemAccount: false };
   if (input.noEmail === 'true') {
-    andConditions.push({ OR: placeholderFilter });
+    andConditions.push({ AND: [{ OR: placeholderFilter }, notSystemAccount] });
   } else if (input.noEmail === 'false') {
     andConditions.push({ NOT: { OR: placeholderFilter } });
   }
@@ -149,19 +154,19 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
     ? { AND: [noRealPrimary, { OR: [{ addOns: { not: '[]' } }, { company: { membershipTypes: { not: '[]' } } }] }] }
     : noRealPrimary;
   if (input.noPrimary === 'true') {
-    andConditions.push(noPrimaryCondition);
+    andConditions.push({ AND: [noPrimaryCondition, notSystemAccount] });
   } else if (input.noPrimary === 'false') {
     andConditions.push({ NOT: noPrimaryCondition });
   }
   const directPersonalCondition = { memberSource: 'subscription', company: { isPersonal: true } };
   if (input.directPersonal === 'true') {
-    andConditions.push(directPersonalCondition);
+    andConditions.push({ AND: [directPersonalCondition, notSystemAccount] });
   } else if (input.directPersonal === 'false') {
     andConditions.push({ NOT: { AND: [{ memberSource: directPersonalCondition.memberSource }, { company: directPersonalCondition.company }] } });
   }
   const unresolvedCondition = { AND: [noRealPrimary, { addOns: '[]' }, { company: { membershipTypes: '[]' } }] };
   if (input.unresolved === 'true') {
-    andConditions.push(unresolvedCondition);
+    andConditions.push({ AND: [unresolvedCondition, notSystemAccount] });
   } else if (input.unresolved === 'false') {
     andConditions.push({ NOT: unresolvedCondition });
   }
