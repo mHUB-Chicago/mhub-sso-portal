@@ -14,11 +14,6 @@ export const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) 
 // ends up getting matched inconsistently (or re-created as a duplicate). Always key/look up
 // company-name maps through this.
 export const normCompanyKey = (name: string): string => name.trim().toLowerCase();
-// Statuses that mean a subscription attempt is permanently over — a customer whose only company-tier
-// subscription history is cancelled/expired shouldn't be treated as an ongoing personal subscriber
-// forever just because they tried one years ago (see: Luis Galvan, stuck flagged as Direct Personal
-// Subscription despite currently being a free mHUB Community member with zero active subscriptions).
-const TERMINAL_SUBSCRIPTION_STATUSES = new Set(['cancelled', 'expired']);
 // syncOne looks companies up one at a time via direct DB queries (no in-memory map like the bulk
 // sync phases), so it needs its own case-insensitive lookup. Non-personal companies are preferred
 // when a name collides with both a personal and a non-personal row.
@@ -524,9 +519,7 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
             continue;
         const pvId = customer.id.toString();
         const title = sub.title ? sub.title.trim() : null;
-        const subStatusLower = sub.status == null ? '' : sub.status.toLowerCase();
-        const subIsActive = sub.status == null ? true : subStatusLower === 'active';
-        const subIsTerminal = TERMINAL_SUBSCRIPTION_STATUSES.has(subStatusLower);
+        const subIsActive = sub.status == null ? true : sub.status.toLowerCase() === 'active';
         if (!subscriptionInfoMap.has(pvId)) {
             subscriptionInfoMap.set(pvId, { membershipTypes: [], isActive: false, attemptedTypes: [], rawTitles: [] });
         }
@@ -535,7 +528,7 @@ const buildSubscriptionData = async (c: Context, subscriptions: any[], customerN
             entry.rawTitles.push(title);
         }
         if (title && companyMembershipTypes.has(title)) {
-            if (!subIsTerminal && !entry.attemptedTypes.includes(title))
+            if (!entry.attemptedTypes.includes(title))
                 entry.attemptedTypes.push(title);
             if (subIsActive) {
                 entry.isActive = true;
@@ -1433,7 +1426,7 @@ export const syncPhaseCorrectionExport = async (c: Context, sessionId?: string, 
         if (skippedAllStatusSubPages.length > 0)
             log('warn', `[verify] Any-status subscription export skipped pages: [${skippedAllStatusSubPages.join(', ')}]`);
         const attemptedSubscriberRecords = allStatusSubscriptions
-            .filter(sub => sub?.customer?.id && sub.title && !TERMINAL_SUBSCRIPTION_STATUSES.has((sub.status ?? '').toLowerCase()))
+            .filter(sub => sub?.customer?.id && sub.title)
             .map(sub => ({ customer_id: sub.customer.id, title: String(sub.title).trim() }));
         const attemptedSubscriberChunkKeys = await writeChunkedBlob(prisma, sessionId, 'attempted-subscribers', attemptedSubscriberRecords);
         const anyStatusSubscriptionChunkKeys = await writeChunkedBlob(prisma, sessionId, 'any-status-subscriptions', allStatusSubscriptions);

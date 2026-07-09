@@ -16,7 +16,7 @@ import queueConsumer, { JobType } from "./controllers/queueConsumer";
 import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
 import { Role } from "@prisma/client";
-import { fetchAllPvData, fetchPvPage, readAuditChunks } from "@/services/peopleVineService";
+import { fetchAllPvData, fetchPvPage, readAuditChunks, fetchAllMembershipCards } from "@/services/peopleVineService";
 
 
 type Bindings = {
@@ -232,6 +232,7 @@ app.get("/api/sync/raw-export", async (c) => {
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
 
   const { subscriptions } = await fetchAllPvData(c);
+  const { cards: membershipCards } = await fetchAllMembershipCards(c, null);
 
   const filename = `pv-raw-${new Date().toISOString().slice(0, 10)}.json`;
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
@@ -247,6 +248,14 @@ app.get("/api/sync/raw-export", async (c) => {
         if (!firstSub) await w(',\n');
         await w('  ' + JSON.stringify(sub));
         firstSub = false;
+      }
+
+      await w(`\n],\n"membershipCards":[\n`);
+      let firstCard = true;
+      for (const card of membershipCards) {
+        if (!firstCard) await w(',\n');
+        await w('  ' + JSON.stringify(card));
+        firstCard = false;
       }
 
       await w(`\n],\n"customers":[\n`);

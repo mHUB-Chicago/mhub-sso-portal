@@ -191,13 +191,6 @@ export const getUserByEmail = (c: Context, email: string): Promise<User | null> 
   });
 }
 
-export const getUserByUsername = (c: Context, username: string): Promise<User | null> => {
-  const prisma: PrismaClient = c.get("db");
-  return prisma.user.findFirst({
-    where: { username, active: true },
-  });
-}
-
 export const getUserById = (c: Context, id: string): Promise<User | null> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.user.findUnique({
@@ -210,18 +203,12 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
   const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
-  // Checked separately (not one OR query) so the thrown error names the exact
-  // conflicting field — callers parse this via getUniqueConstraintField() to
-  // decide whether the conflict is safe to retry without (e.g. username).
+  // Only email is actually unique on User (username is display-only now — login only ever
+  // uses email, see loginController). Named in the thrown error so callers parsing it via
+  // getUniqueConstraintField() know it's a genuine, unretryable duplicate.
   const existingByEmail = await prisma.user.findFirst({ where: { email: normalizedEmail } });
   if (existingByEmail) {
     throw new Error("UNIQUE constraint failed: User.email");
-  }
-  if (normalizedUsername) {
-    const existingByUsername = await prisma.user.findFirst({ where: { username: normalizedUsername } });
-    if (existingByUsername) {
-      throw new Error("UNIQUE constraint failed: User.username");
-    }
   }
   let hashedPassword = password ? await hashPassword(password) : undefined;
   const createdUser = await prisma.user.create({

@@ -51,7 +51,7 @@ model User {
   active               Boolean               @default(true)
   name                 String
   email                String                @unique
-  username             String?               @unique
+  username             String?
   passwordHashed       String?
   role                 Role
   companyId            String

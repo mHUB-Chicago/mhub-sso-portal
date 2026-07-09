@@ -1,7 +1,7 @@
 import { Context } from "hono";
 import { AppType, JsonInput } from "..";
 import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
-import { getUserByEmail, getUserByUsername, getUserById, updateUser } from "@/services/userService";
+import { getUserByEmail, getUserById, updateUser } from "@/services/userService";
 import { hasPortalAccess } from "@/services/peopleVineService";
 import { createSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
@@ -11,7 +11,7 @@ import { getAllowedServiceProvidersForUser } from "@/services/userServiceProvide
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
     const { email } = c.req.valid("json");
-    const user = await getUserByEmail(c, email) ?? await getUserByUsername(c, email);
+    const user = await getUserByEmail(c, email);
     if (!user) {
       throw new Error("User not found");
     }
@@ -51,7 +51,7 @@ export const handleForgotPassword = async (c: Context<AppType, string, JsonInput
   // Very similar to handleStartLogin, but ensures mustResetPassword is true
   try {
     const { email } = c.req.valid("json");
-    const user = await getUserByEmail(c, email) ?? await getUserByUsername(c, email);
+    const user = await getUserByEmail(c, email);
     if (!user) {
       throw new Error("User not found");
     }
