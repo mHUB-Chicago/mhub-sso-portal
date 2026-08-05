@@ -1295,9 +1295,14 @@ export function AdminSyncPage() {
     const { type, includeFreeMembers } = syncConfirm
     setSyncConfirm(null)
     setActiveTab(type)
-    await startSync({ type, includeFreeMembers })
-    setPollingInterval(POLL_INTERVAL_MS)
-    refetch()
+    try {
+      await startSync({ type, includeFreeMembers }).unwrap()
+      setPollingInterval(POLL_INTERVAL_MS)
+      refetch()
+    } catch {
+      toast.error('A sync is already in progress. Wait for it to finish before starting another.')
+      refetch()
+    }
   }
 
   const handleCancel = async () => {
