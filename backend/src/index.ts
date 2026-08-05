@@ -8,6 +8,7 @@ import { handleError } from "@/utils/handleError";
 import loginRoutes from "@/routes/login";
 import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
+import onboardingRoutes from "@/routes/onboarding";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
 // import seedRoute from "@/database/seed";
@@ -62,6 +63,7 @@ app.use("/api/*", corsMiddleware, databaseMiddleware, authMiddleware);
 app.route("/api/login", loginRoutes);
 app.route("/api/user", userRoutes);
 app.route("/api/company", companyRoutes);
+app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/provider", serviceProviderRoutes);
 
 app.use("/webhook/*", corsMiddleware, databaseMiddleware);
@@ -87,6 +89,12 @@ app.post("/api/sync/start", async (c) => {
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
   const { type, includeFreeMembers = true } = await c.req.json<{ type: 'ALL' | 'CONTINUE'; includeFreeMembers?: boolean }>();
   const prisma = c.get('db');
+  const activeSession = await prisma.syncSession.findFirst({
+    where: { status: { in: ['running', 'pending'] }, type: { in: ['ALL', 'CONTINUE', 'FILTERED'] } },
+  });
+  if (activeSession) {
+    return c.json({ success: false, error: 'A sync is already in progress.', data: { sessionId: activeSession.id } }, 409);
+  }
   const session = await prisma.syncSession.create({
     data: {
       type,

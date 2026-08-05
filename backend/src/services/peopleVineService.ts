@@ -23,7 +23,7 @@ const findCompanyByNameCI = async (prisma: PrismaClient, name: string): Promise<
     const row = rows[0];
     return { ...row, active: Boolean(row.active), isPersonal: Boolean(row.isPersonal) } as Company;
 };
-const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
+export const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
 export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined, addOnsJson?: string | null): Promise<boolean> => {
     const prisma: PrismaClient = c.get('db');
     const candidates: string[] = [];
@@ -40,7 +40,7 @@ export const hasPortalAccess = async (c: Context, primaryMembership: string | nu
     const count = await prisma.portalAccessType.count({ where: { name: { in: candidates } } });
     return count > 0;
 };
-interface RequestOptions {
+export interface RequestOptions {
     tokenType: PeopleVineTokenType;
     endpoint: string;
     method: 'GET';
@@ -257,7 +257,7 @@ const exchangeUserToCompanyToken = async (c: Context, userTokenRecord: PeopleVin
     const data: any = await response.json();
     return setToken(c, PeopleVineTokenType.USER_COMPANY, data.access_token, data.refresh_token, new Date(Date.now() + data.expires_in * 1000));
 };
-const getUserCompanyToken = async (c: Context): Promise<PeopleVineToken> => {
+export const getUserCompanyToken = async (c: Context): Promise<PeopleVineToken> => {
     const storedToken = await getStoredToken(c, PeopleVineTokenType.USER_COMPANY);
     const expiresAtMs = storedToken ? new Date(storedToken.expiresAt).getTime() : 0;
     if (storedToken && expiresAtMs > Date.now() + 60000) {
@@ -287,7 +287,7 @@ const getAuthToken = async (c: Context, tokenType: PeopleVineTokenType): Promise
         return getUserCompanyToken(c);
     throw new Error('Invalid token type requested');
 };
-const apiRequest = async (c: Context, options: RequestOptions): Promise<any> => {
+export const apiRequest = async (c: Context, options: RequestOptions): Promise<any> => {
     const { endpoint, method, headers, queryParams } = options;
     if ((method as string) !== 'GET') {
         const msg = `[PeopleVine] BLOCKED: ${method} ${endpoint} — PeopleVine is read-only. Write operations are not permitted.`;
@@ -1317,10 +1317,8 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const hasRealSubErrors = skippedSubPages.some(p => p !== 2);
     if (hasRealSubErrors || meta.userHadErrors) {
         log('warn', '[sync] Skipping deactivation — previous phase had errors.');
-        log('info', 'PeopleVine synchronization complete (deactivation skipped).');
-        await flush(100, 'Complete', 'completed');
-        if (sessionId)
-            await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => { });
+        log('info', 'Deactivation skipped — continuing to verification phases.');
+        await flush(93, 'Deactivation skipped — starting verification');
         return;
     }
     if (skippedSubPages.length > 0) {
@@ -1330,9 +1328,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     const activatedCompanyIds = new Set<string>(phase1Data.activatedCompanyIds);
     if (activePVCompanyIds.length === 0 && activePVUserIds.length === 0) {
         log('warn', '[sync] No active PV IDs in session metadata, skipping deactivation.');
-        await flush(100, 'Complete', 'completed');
-        if (sessionId)
-            await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => { });
+        await flush(93, 'Deactivation skipped — starting verification');
         return;
     }
     log('info', 'Deactivating removed companies and users');
@@ -1379,7 +1375,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
             }
         }, () => checkCancelled(prisma, sessionId));
     }
-    log('info', 'PeopleVine synchronization complete.');
+    log('info', 'Deactivation phase complete — continuing to verification phases.');
     await appendAuditChunk(prisma, sessionId, 'companiesDeactivated', auditCompaniesDeactivated);
     await appendAuditChunk(prisma, sessionId, 'usersDeactivated', auditUsersDeactivated);
     if (sessionId) {
@@ -1388,9 +1384,7 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
         auditCounts.usersDeactivated = (auditCounts.usersDeactivated ?? 0) + auditUsersDeactivated.length;
         await saveMeta({ auditCounts });
     }
-    await flush(100, 'Complete', 'completed');
-    if (sessionId)
-        await prisma.syncSession.update({ where: { id: sessionId }, data: { completedAt: new Date() } }).catch(() => { });
+    await flush(93, 'Deactivation complete — starting verification');
 };
 export const cleanupCorrectionExport = async (c: Context, sessionId: string): Promise<void> => {
     const prisma: PrismaClient = c.get('db');

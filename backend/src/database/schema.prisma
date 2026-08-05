@@ -256,3 +256,22 @@ model FreeMemberExclusionType {
   name      String   @id
   createdAt DateTime @default(now())
 }
+
+model OnboardingSubmission {
+  id                 String    @id @default(uuid())
+  mode               String
+  status             String    @default("submitted")
+  formData           String
+  submittedBy        String?
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  reviewNote         String?
+  duplicateMatchType String?
+  matchedCompanyId   String?
+  matchedUserId      String?
+  resolutionNote     String?
+  pvCustomerId       String?
+  pvMembershipCardId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}

@@ -5,6 +5,10 @@ FRONTEND_URL="http://localhost:5173"
 PEOPLEVINE_ADMIN_PASSWORD="your_peoplevine_admin_password"
 PEOPLEVINE_ADMIN_USERNAME="your_peoplevine_admin_username"
 PEOPLEVINE_COMPANY_ID="your_peoplevine_company_id"
+# Gates the write-capable PV client (register/cart/checkout/attach-member) used by the
+# onboarding "approve" action. Leave unset/false — only set to "true" when you're ready
+# to test a real push to PeopleVine.
+# PEOPLEVINE_WRITE_ENABLED="true"
 SAML_ENTITY_ID="https://example.com/"
 SAML_PRIVATE_KEY="your_saml_private_key"
 SAML_PUBLIC_CERT="your_saml_public_certificate"
