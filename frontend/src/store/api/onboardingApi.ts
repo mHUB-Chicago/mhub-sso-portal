@@ -137,6 +137,11 @@ export const onboardingApi = createApi({
       query: (id) => `/onboarding/${id}`,
     }),
 
+    updateOnboardingSubmission: builder.mutation<SubmissionResponse, { id: string; formData: OnboardingFormData }>({
+      query: ({ id, formData }) => ({ url: `/onboarding/${id}`, method: 'PATCH', body: { formData } }),
+      invalidatesTags: ['OnboardingSubmissions'],
+    }),
+
     approveOnboardingSubmission: builder.mutation<SubmissionResponse, string>({
       query: (id) => ({ url: `/onboarding/${id}/approve`, method: 'POST' }),
       invalidatesTags: ['OnboardingSubmissions'],
@@ -172,6 +177,7 @@ export const {
   useCreateOnboardingSubmissionMutation,
   useGetOnboardingSubmissionsQuery,
   useGetOnboardingSubmissionByIdQuery,
+  useUpdateOnboardingSubmissionMutation,
   useApproveOnboardingSubmissionMutation,
   useReactivateOnboardingSubmissionMutation,
   useTreatOnboardingSubmissionAsNewMutation,

@@ -109,6 +109,14 @@ export const ApproveOnboardingSubmissionResponseSchema = SuccessResponseSchema(
   z.object({ submission: OnboardingSubmissionSchema })
 );
 
+export const UpdateOnboardingSubmissionRequestSchema = z.object({
+  formData: OnboardingFormDataSchema,
+});
+
+export const UpdateOnboardingSubmissionResponseSchema = SuccessResponseSchema(
+  z.object({ submission: OnboardingSubmissionSchema })
+);
+
 export const ReactivateOnboardingSubmissionResponseSchema = SuccessResponseSchema(
   z.object({ submission: OnboardingSubmissionSchema })
 );

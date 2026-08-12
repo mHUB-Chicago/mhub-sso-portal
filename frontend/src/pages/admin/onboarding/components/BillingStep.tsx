@@ -1,6 +1,5 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiNote } from "./ApiNote";
 import { cn } from "@/lib/utils";
 import type { Address, BillingDetails, PaymentType } from "../types";
 
@@ -142,12 +141,6 @@ export const BillingStep = ({ value, onChange, onAddressChange, onPaymentTypeCha
           onChange={(e) => onAddressChange("country", e.target.value)}
         />
       </div>
-
-      <ApiNote>
-        Card and bank details can be sent to PeopleVine wallet endpoints, but whether they accept a
-        processor token instead of a raw card number is unconfirmed. Until confirmed, this step should stay
-        address and payment-type collection only — no card data should be persisted locally.
-      </ApiNote>
     </div>
   );
 };

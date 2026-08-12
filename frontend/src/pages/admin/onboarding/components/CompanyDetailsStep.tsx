@@ -1,7 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiNote } from "./ApiNote";
 import type { CompanyDetails } from "../types";
 
 interface CompanyDetailsStepProps {
@@ -117,13 +116,6 @@ export const CompanyDetailsStep = ({ value, onChange }: CompanyDetailsStepProps)
           />
         </div>
       </div>
-
-      <ApiNote>
-        Company Name and Website map to standard PeopleVine fields. Registration requires a first and last
-        name, but the sync expects a blank name on the company profile — resolved with a placeholder name
-        that gets cleared after creation. Size, Founded, Industry, Incorporation, Funding Stage, Problem,
-        and Target Market are custom attributes pending key confirmation from PeopleVine.
-      </ApiNote>
     </div>
   );
 };

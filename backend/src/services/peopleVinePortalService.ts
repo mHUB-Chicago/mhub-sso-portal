@@ -108,14 +108,25 @@ export const pvRegisterCustomer = async (
 // matches — otherwise the whole update would fail over an unrelated typo.
 const PV_GENDER_CODES = new Set(["U", "F", "M", "T", "N", "O"]);
 
-// Address/birthdate/gender have no create-time equivalent in PV's register schema —
-// PATCH /api/account is the only endpoint that accepts them. This ONLY ever includes
-// the specific fields being set below, never the full customer object, so a call here
-// can't accidentally blank out or overwrite anything else on the PV record.
+// Address/birthdate/gender/company info have no create-time equivalent in PV's register
+// schema — PATCH /api/account is the only endpoint that accepts them. `company_name` /
+// `company_title` / `website` live directly on the customer's own record (confirmed via
+// PV's CustomerUpdate schema) — this is how PV natively associates a person with a
+// company (see e.g. any existing PV contact showing "(view all people at X)" on their
+// profile), so there's no separate "company" record to create at all. This ONLY ever
+// includes the specific fields being set below, never the full customer object, so a
+// call here can't accidentally blank out or overwrite anything else on the PV record.
 export const pvUpdateAccountProfile = async (
   c: Context,
   customerId: number,
-  input: { birthday: string; gender: string; address: OnboardingFormData["user"]["address"] }
+  input: {
+    birthday: string;
+    gender: string;
+    address: OnboardingFormData["user"]["address"];
+    companyName: string;
+    companyTitle?: string;
+    companyWebsite?: string;
+  }
 ): Promise<unknown> => {
   const body: Record<string, unknown> = {};
 
@@ -130,6 +141,15 @@ export const pvUpdateAccountProfile = async (
   if (street || city || state || zip || country) {
     body.address = { address: street, city, state, zip_code: zip, country };
   }
+  if (input.companyName) {
+    body.company_name = input.companyName;
+  }
+  if (input.companyTitle) {
+    body.company_title = input.companyTitle;
+  }
+  if (input.companyWebsite) {
+    body.website = input.companyWebsite;
+  }
 
   if (Object.keys(body).length === 0) {
     return null;
@@ -143,83 +163,8 @@ export const pvUpdateAccountProfile = async (
   });
 };
 
-export const pvAddToCart = async (
-  c: Context,
-  customerId: number,
-  productId: number,
-  quantity = 1
-): Promise<unknown> => {
-  return pvPortalRequest(c, {
-    method: "POST",
-    endpoint: "/cart/products",
-    onBehalfOfCustomerId: customerId,
-    body: { id: productId, quantity },
-  });
-};
-
-// PV's checkout requires a tokenized payment method (`PaymentMethod.id`), not a raw
-// card/account number — and this codebase intentionally never collects/forwards raw
-// card data (see OnboardingBillingSchema, which only keeps `cardLast4`). Which
-// processor PV tokenizes staff/admin-entered cards through is still unconfirmed
-// (open item from the original onboarding plan), so this throws instead of
-// fabricating a payload PV would reject anyway. Wire in the real token source here
-// once that's confirmed.
-export const pvCheckout = async (
-  _c: Context,
-  _customerId: number,
-  _billing: OnboardingFormData["billing"]
-): Promise<never> => {
-  throw new HTTPException(501, {
-    message:
-      "PeopleVine checkout is not wired yet — card tokenization processor for admin-entered payments is unconfirmed. See onboarding plan notes.",
-  });
-};
-
-interface PvSubMember {
-  customer_id: number;
-}
-
-export const pvGetMembershipCardId = async (c: Context, customerId: number): Promise<string> => {
-  const result = await pvPortalRequest(c, {
-    method: "GET",
-    endpoint: "/memberships/members",
-    queryParams: { Customer_Id: String(customerId) },
-  });
-  const members: (PvSubMember & { id?: number })[] = Array.isArray(result) ? result : result?.data ?? [];
-  const match = members.find((m) => m.customer_id === customerId && m.id != null);
-  if (!match?.id) {
-    throw new HTTPException(502, {
-      message: `[PeopleVinePortal] No membership card found for customer ${customerId}`,
-    });
-  }
-  return String(match.id);
-};
-
-interface PvSubMembershipCard {
-  id: number;
-  customer_id: number;
-}
-
-export const pvAttachCompanyMember = async (
-  c: Context,
-  membershipCardId: string,
-  company: { name: string; website?: string }
-): Promise<PvSubMembershipCard> => {
-  return pvPortalRequest(c, {
-    method: "POST",
-    endpoint: `/account/memberships/${membershipCardId}/members`,
-    body: {
-      type: "company",
-      company_name: company.name,
-      ...(company.website ? { website: company.website } : {}),
-    },
-  });
-};
-
 export interface OnboardingPvPushResult {
   pvCustomerId: string;
-  pvMembershipCardId: string | null;
-  warning?: string;
 }
 
 export const pushOnboardingSubmissionToPeopleVine = async (
@@ -240,33 +185,16 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     birthday: formData.user.birthday,
     gender: formData.user.gender,
     address: formData.user.address,
+    companyName: formData.company.name,
+    companyTitle: formData.user.title,
+    companyWebsite: formData.company.website,
   });
 
-  const productId = parseInt(formData.membershipPackage, 10);
-  if (Number.isNaN(productId)) {
-    // Customer + profile are already created in PV at this point — that's a real,
-    // partial success worth keeping, not a reason to fail the whole approval. Skip
-    // cart/checkout/company-attach (there's no package to sell) and surface this as
-    // a warning on the result instead of throwing.
-    const warning = `Membership package is missing or invalid ("${formData.membershipPackage}") — customer was created in PeopleVine, but no package/company was attached. Pick a package and approve again to finish.`;
-    console.warn(`[PeopleVinePortal] ${warning}`);
-    return {
-      pvCustomerId: String(customer.id),
-      pvMembershipCardId: null,
-      warning,
-    };
-  }
-  await pvAddToCart(c, customer.id, productId);
-  await pvCheckout(c, customer.id, formData.billing);
-
-  const membershipCardId = await pvGetMembershipCardId(c, customer.id);
-  await pvAttachCompanyMember(c, membershipCardId, {
-    name: formData.company.name,
-    website: formData.company.website,
-  });
-
+  // PV has no API to create a subscription/membership — confirmed platform limitation.
+  // The requested membership package (formData.membershipPackage) is intentionally not
+  // pushed anywhere here; it stays recorded on the submission itself so mHub staff know
+  // which membership to assign manually in the PV Control Panel.
   return {
     pvCustomerId: String(customer.id),
-    pvMembershipCardId: membershipCardId,
   };
 };

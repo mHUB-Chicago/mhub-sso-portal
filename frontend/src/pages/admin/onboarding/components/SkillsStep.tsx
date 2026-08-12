@@ -1,6 +1,5 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiNote } from "./ApiNote";
 import { TagInput } from "./TagInput";
 import type { SkillsDetails } from "../types";
 
@@ -73,11 +72,6 @@ export const SkillsStep = ({ value, onChange, onSkillsChange, onShopSkillsChange
 
       <TagInput label="Skills & Knowledge" values={value.skills} onValuesChange={onSkillsChange} />
       <TagInput label="Shop Skills" values={value.shopSkills} onValuesChange={onShopSkillsChange} />
-
-      <ApiNote>
-        This entire step is custom attributes — none are standard PeopleVine schema fields. Each entry
-        needs a matching attribute key confirmed writable before this step can submit to PeopleVine.
-      </ApiNote>
     </div>
   );
 };

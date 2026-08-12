@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useApproveOnboardingSubmissionMutation,
   useFlagOnboardingSubmissionMutation,
+  useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingSubmissionsQuery,
   useReactivateOnboardingSubmissionMutation,
   useTreatOnboardingSubmissionAsNewMutation,
@@ -62,6 +63,9 @@ export function AdminOnboardingHistoryPage() {
 
   const { data, isLoading, isFetching, error, refetch } = useGetOnboardingSubmissionsQuery();
   const submissions = data?.data?.submissions ?? [];
+  const { data: packagesData } = useGetOnboardingMembershipPackagesQuery();
+  const membershipPackageName = (id: string): string =>
+    packagesData?.data?.packages.find((pkg) => pkg.id === id)?.name ?? id;
 
   const pendingReview = submissions.filter((s) => s.status === "pending_review");
   const needsAttention = submissions.filter((s) => s.status === "needs_attention");
@@ -85,12 +89,7 @@ export function AdminOnboardingHistoryPage() {
       switch (confirm.type) {
         case "approve": {
           const result = await approve(confirm.submission.id).unwrap();
-          const message = result.message || "Submission pushed to PeopleVine.";
-          if (result.data.submission.pvMembershipCardId) {
-            toast.success(message);
-          } else {
-            toast.warning(message);
-          }
+          toast.success(result.message || "Submission pushed to PeopleVine.");
           break;
         }
         case "reactivate":
@@ -221,7 +220,9 @@ export function AdminOnboardingHistoryPage() {
                         matchLabel(submission)
                       )
                     ) : (
-                      submission.formData.membershipPackage || "—"
+                      (submission.formData.membershipPackage &&
+                        membershipPackageName(submission.formData.membershipPackage)) ||
+                      "—"
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -297,7 +298,7 @@ export function AdminOnboardingHistoryPage() {
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   {confirm.type === "approve" &&
-                    "This performs a real write to PeopleVine (register, add package, checkout, attach company)."}
+                    "This registers the member in PeopleVine with their company info attached. PeopleVine has no API to assign a membership — mHub staff still need to do that manually afterward."}
                   {confirm.type === "reactivate" &&
                     "Flips the matched company/user back to active locally. Does not resurrect a cancelled PeopleVine subscription."}
                   {confirm.type === "treat_as_new" &&

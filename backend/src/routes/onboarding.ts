@@ -13,6 +13,8 @@ import {
   GetOnboardingSubmissionsResponseSchema,
   ReactivateOnboardingSubmissionResponseSchema,
   TreatOnboardingSubmissionAsNewResponseSchema,
+  UpdateOnboardingSubmissionRequestSchema,
+  UpdateOnboardingSubmissionResponseSchema,
 } from "@common/schemas/onboarding";
 import { validate } from "@/middleware/validate";
 import { roleMiddleware } from "@/middleware/role";
@@ -26,6 +28,7 @@ import {
   handleGetOnboardingSubmissions,
   handleReactivateOnboardingSubmission,
   handleTreatOnboardingSubmissionAsNew,
+  handleUpdateOnboardingSubmission,
 } from "@/controllers/onboardingController";
 
 const app = new Hono<AppType>();
@@ -76,6 +79,19 @@ app.get(
     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
   }),
   handleGetOnboardingSubmissionById
+);
+
+app.patch(
+  "/:id",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Update a Pending Review or Needs Attention submission's form data",
+    successMessage: "Onboarding submission updated",
+    responseSchema: UpdateOnboardingSubmissionResponseSchema,
+    parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+  }),
+  validate(UpdateOnboardingSubmissionRequestSchema),
+  handleUpdateOnboardingSubmission
 );
 
 app.post(

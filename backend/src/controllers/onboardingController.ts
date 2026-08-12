@@ -13,12 +13,14 @@ import {
   GetOnboardingSubmissionsResponseSchema,
   ReactivateOnboardingSubmissionResponseSchema,
   TreatOnboardingSubmissionAsNewResponseSchema,
+  UpdateOnboardingSubmissionRequestSchema,
+  UpdateOnboardingSubmissionResponseSchema,
 } from "@common/schemas/onboarding";
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { updateCompany } from "@/services/companyService";
 import { updateUser } from "@/services/userService";
 import { assertPeopleVineWritesEnabled, pushOnboardingSubmissionToPeopleVine } from "@/services/peopleVinePortalService";
-import { apiRequest } from "@/services/peopleVineService";
+import { apiRequestWithPagination } from "@/services/peopleVineService";
 import { PeopleVineTokenType } from "@prisma/client";
 
 const toSubmissionDTO = (row: {
@@ -108,6 +110,36 @@ export const handleGetOnboardingSubmissionById = async (c: Context<AppType>) => 
   return c.json(response);
 };
 
+const EDITABLE_STATUSES = new Set(["pending_review", "needs_attention"]);
+
+export const handleUpdateOnboardingSubmission = async (
+  c: Context<AppType, string, JsonInput<typeof UpdateOnboardingSubmissionRequestSchema>>
+) => {
+  const prisma: PrismaClient = c.get("db");
+  const id = c.req.param("id");
+  const { formData } = c.req.valid("json");
+
+  const row = await prisma.onboardingSubmission.findUnique({ where: { id } });
+  if (!row) {
+    throw "Onboarding submission not found";
+  }
+  if (!EDITABLE_STATUSES.has(row.status)) {
+    throw "Only submissions in Pending Review or Needs Attention can be edited";
+  }
+
+  const updated = await prisma.onboardingSubmission.update({
+    where: { id },
+    data: { formData: JSON.stringify(formData) },
+  });
+
+  const response = UpdateOnboardingSubmissionResponseSchema.parse({
+    success: true,
+    message: "Onboarding submission updated",
+    data: { submission: toSubmissionDTO(updated) },
+  });
+  return c.json(response);
+};
+
 export const handleApproveOnboardingSubmission = async (c: Context<AppType>) => {
   const prisma: PrismaClient = c.get("db");
   const user = c.get("user");
@@ -135,14 +167,13 @@ export const handleApproveOnboardingSubmission = async (c: Context<AppType>) => 
       reviewedBy: user?.id ?? null,
       reviewedAt: new Date(),
       pvCustomerId: result.pvCustomerId,
-      pvMembershipCardId: result.pvMembershipCardId,
-      reviewNote: result.warning ?? null,
     },
   });
 
   const response = ApproveOnboardingSubmissionResponseSchema.parse({
     success: true,
-    message: result.warning ?? "Onboarding submission pushed to PeopleVine",
+    message:
+      "Onboarding submission pushed to PeopleVine — mHub staff still need to assign the requested membership package manually in the PV Control Panel.",
     data: { submission: toSubmissionDTO(updated) },
   });
   return c.json(response);
@@ -258,17 +289,43 @@ export const handleFlagOnboardingSubmission = async (
 };
 
 export const handleGetOnboardingMembershipPackages = async (c: Context<AppType>) => {
-  const products: any[] = await apiRequest(c, {
-    tokenType: PeopleVineTokenType.USER_COMPANY,
-    endpoint: "/products",
-    method: "GET",
-    queryParams: { Page_Size: "200" },
-  });
+  // Real membership plans (Enterprise Membership, Garage - Large, etc.) don't live in
+  // /products at all — confirmed by checking PV's OpenAPI spec and a raw pull of every
+  // Type=service product, none of which were membership plans (all were operational fees:
+  // table reservations, event charges, day passes). PV models memberships through their
+  // own dedicated /memberships endpoint (MembershipDTO) instead. Type=subscription +
+  // Status=active scopes this to real, currently-sellable membership plans, excluding
+  // PV's other membership kinds (add-on, id badge, temp).
+  const fetchAllActiveMemberships = async (): Promise<any[]> => {
+    const memberships: any[] = [];
+    let pageNumber = 1;
+    while (true) {
+      const { data, pagination } = await apiRequestWithPagination(c, {
+        tokenType: PeopleVineTokenType.USER_COMPANY,
+        endpoint: "/memberships",
+        method: "GET",
+        queryParams: {
+          Page_Size: "100",
+          Page_Number: String(pageNumber),
+          Type: "subscription",
+          Status: "active",
+        },
+      });
+      memberships.push(...data);
+      if (!pagination?.has_next_page) break;
+      pageNumber++;
+    }
+    return memberships;
+  };
 
-  const packages = (Array.isArray(products) ? products : []).map((p) => ({
-    id: String(p.id),
-    name: p.name ?? p.title ?? `Product ${p.id}`,
-  }));
+  const memberships = await fetchAllActiveMemberships();
+
+  const packages = memberships
+    .filter((m) => m.title)
+    .map((m) => ({
+      id: String(m.id),
+      name: m.title as string,
+    }));
 
   const response = GetOnboardingMembershipPackagesResponseSchema.parse({
     success: true,

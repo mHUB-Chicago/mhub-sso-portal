@@ -1,7 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiNote } from "./ApiNote";
 import type { Address, PrimaryUserDetails } from "../types";
 
 interface PrimaryUserStepProps {
@@ -193,14 +192,6 @@ export const PrimaryUserStep = ({ value, onChange, onAddressChange }: PrimaryUse
           onChange={(e) => onAddressChange("country", e.target.value)}
         />
       </div>
-
-      <ApiNote>
-        Name, email, birthday, phone, LinkedIn, and address map to standard PeopleVine fields. PeopleVine
-        requires a country code on the phone number — enter it separately (e.g. 1 for US, 63 for
-        Philippines) so it doesn't have to be guessed. Gender, pronouns, ethnicity, and bio are custom
-        attributes pending key confirmation. The email entered here is the only identifier collected — no
-        separate username field.
-      </ApiNote>
     </div>
   );
 };

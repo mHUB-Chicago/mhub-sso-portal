@@ -336,7 +336,7 @@ interface PvPagination {
     has_previous_page: boolean;
     has_next_page: boolean;
 }
-const apiRequestWithPagination = async (c: Context, options: RequestOptions): Promise<{
+export const apiRequestWithPagination = async (c: Context, options: RequestOptions): Promise<{
     data: any[];
     pagination: PvPagination | null;
 }> => {
