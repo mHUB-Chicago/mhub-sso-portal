@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 
 export const corsOptions = {
   allowHeaders: ["Content-Type", "Authorization"],
-  allowMethods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowCredentials: true,
   credentials: true,
 };

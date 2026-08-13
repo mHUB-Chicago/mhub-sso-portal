@@ -26,6 +26,7 @@ import { IDPAddPage } from '@/pages/admin/idp/add'
 import { AdminSyncPage } from '@/pages/admin/sync'
 import { AdminWebhookLogsPage } from '@/pages/admin/webhook-logs'
 import { AdminReportsPage } from '@/pages/admin/reports'
+import PublicOnboardingPage from '@/pages/onboard'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { AdminRoute } from '@/components/AdminRoute'
 
@@ -77,6 +78,10 @@ export const router = createBrowserRouter([
         <ChangePasswordPage />
       </ProtectedRoute>
     )
+  },
+  {
+    path: '/onboard/:token',
+    element: <PublicOnboardingPage />
   },
   {
     path: '/admin',

@@ -111,25 +111,28 @@ const PV_GENDER_CODES = new Set(["U", "F", "M", "T", "N", "O"]);
 // Address/birthdate/gender/company info have no create-time equivalent in PV's register
 // schema — PATCH /api/account is the only endpoint that accepts them. `company_name` /
 // `company_title` / `website` live directly on the customer's own record (confirmed via
-// PV's CustomerUpdate schema) — this is how PV natively associates a person with a
-// company (see e.g. any existing PV contact showing "(view all people at X)" on their
-// profile), so there's no separate "company" record to create at all. This ONLY ever
-// includes the specific fields being set below, never the full customer object, so a
-// call here can't accidentally blank out or overwrite anything else on the PV record.
+// PV's CustomerUpdate schema). This ONLY ever includes the specific fields being set
+// below, never the full customer object, so a call here can't accidentally blank out or
+// overwrite anything else on the PV record.
 export const pvUpdateAccountProfile = async (
   c: Context,
   customerId: number,
   input: {
-    birthday: string;
-    gender: string;
-    address: OnboardingFormData["user"]["address"];
-    companyName: string;
+    type?: "company" | "customer";
+    birthday?: string;
+    gender?: string;
+    address?: OnboardingFormData["user"]["address"];
+    companyName?: string;
     companyTitle?: string;
     companyWebsite?: string;
+    customerReference?: string;
   }
 ): Promise<unknown> => {
   const body: Record<string, unknown> = {};
 
+  if (input.type) {
+    body.type = input.type;
+  }
   if (input.birthday) {
     body.birthdate = input.birthday;
   }
@@ -150,6 +153,9 @@ export const pvUpdateAccountProfile = async (
   if (input.companyWebsite) {
     body.website = input.companyWebsite;
   }
+  if (input.customerReference) {
+    body.customer_reference = input.customerReference;
+  }
 
   if (Object.keys(body).length === 0) {
     return null;
@@ -163,31 +169,177 @@ export const pvUpdateAccountProfile = async (
   });
 };
 
+// PV's `/account/memberships` "List Memberships" endpoint, called on-behalf-of a
+// customer, returns that customer's own membership cards. Used to find an existing
+// company's active card so a new user can be attached to it as a real, linked sub
+// member — the only native FK PV offers between two Customer rows.
+const pvFindActiveMembershipCardId = async (c: Context, companyCustomerId: number): Promise<number | null> => {
+  const cards = await pvPortalRequest(c, {
+    method: "GET",
+    endpoint: "/account/memberships",
+    onBehalfOfCustomerId: companyCustomerId,
+    queryParams: { Status: "active" },
+  });
+  if (!Array.isArray(cards) || cards.length === 0) {
+    return null;
+  }
+  const primary = cards.find((card: any) => card.primary);
+  return (primary ?? cards[0]).id ?? null;
+};
+
+// "Add Sub Member" — attaches a brand-new customer to an existing membership card.
+// This is the one PV-documented way to create a customer with a genuine, PV-side link
+// back to another customer (here, the company). Falls back to plain register+patch
+// (best-effort `customer_reference` link only) when the company has no active card yet.
+const pvAddSubMember = async (
+  c: Context,
+  membershipCardId: number,
+  input: { email: string; firstName: string; lastName: string; companyName?: string; companyTitle?: string }
+): Promise<PvRegisteredCustomer> => {
+  return pvPortalRequest(c, {
+    method: "POST",
+    endpoint: `/account/memberships/${membershipCardId}/members`,
+    body: {
+      type: "customer",
+      email: input.email,
+      first_name: input.firstName,
+      last_name: input.lastName,
+      password: crypto.randomUUID(),
+      ...(input.companyName ? { company_name: input.companyName } : {}),
+      ...(input.companyTitle ? { company_title: input.companyTitle } : {}),
+    },
+  });
+};
+
+// PV requires a unique, non-empty email per customer, but our onboarding form only ever
+// collects one email (the person's). The company-type customer still needs its own,
+// distinct address — "+tag" sub-addressing on the real user's own domain guarantees
+// uniqueness per company without inventing a fake/undeliverable domain, and any mail
+// providers that support it (Gmail, Google Workspace, Outlook, etc.) will still deliver
+// it to the same real inbox rather than bouncing.
+const buildCompanyPlaceholderEmail = (userEmail: string, companyName: string): string => {
+  const [localPart, domain] = userEmail.split("@");
+  const slug = companyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "company";
+  return `${localPart}+company-${slug}@${domain}`;
+};
+
 export interface OnboardingPvPushResult {
-  pvCustomerId: string;
+  // Set only for the new_company scenario — the PV customer created to represent the
+  // company itself (type: "company").
+  companyPvCustomerId: string | null;
+  // The PV customer created for the actual person being onboarded.
+  userPvCustomerId: string;
+  // True when the user was attached to the company's PV membership card via Add Sub
+  // Member (a real PV-side link). False means the best-effort `customer_reference`
+  // link was used instead (new company, or an existing company with no active card).
+  linkedViaMembershipCard: boolean;
+}
+
+export interface PushOnboardingSubmissionOptions {
+  // existing_company scenario: the local Company's already-known PV customer id.
+  existingCompanyPeopleVineId?: string | null;
+  // new_company scenario: a PV company customer id from a previous, partially-failed
+  // Approve attempt. When set, registration of the company customer is skipped
+  // entirely and this id is reused, so a retry never creates a second, duplicate
+  // company customer in PV.
+  resumeCompanyPvCustomerId?: string | null;
+  // new_company scenario: called immediately after the company customer is created in
+  // PV — before the (separately failure-prone) user registration is attempted — so the
+  // caller can persist it right away and make the above resume path possible.
+  onCompanyCreated?: (companyPvCustomerId: string) => Promise<void>;
 }
 
 export const pushOnboardingSubmissionToPeopleVine = async (
   c: Context,
-  formData: OnboardingFormData
+  formData: OnboardingFormData,
+  options: PushOnboardingSubmissionOptions = {}
 ): Promise<OnboardingPvPushResult> => {
   assertPeopleVineWritesEnabled(c);
+  const { existingCompanyPeopleVineId, resumeCompanyPvCustomerId, onCompanyCreated } = options;
 
-  const customer = await pvRegisterCustomer(c, {
+  if (formData.scenario === "existing_company") {
+    const companyPvId = existingCompanyPeopleVineId ? Number(existingCompanyPeopleVineId) : null;
+    const membershipCardId = companyPvId ? await pvFindActiveMembershipCardId(c, companyPvId) : null;
+
+    if (membershipCardId) {
+      const subMember = await pvAddSubMember(c, membershipCardId, {
+        email: formData.user.email,
+        firstName: formData.user.firstName,
+        lastName: formData.user.lastName,
+        companyTitle: formData.user.title,
+      });
+      await pvUpdateAccountProfile(c, subMember.id, {
+        birthday: formData.user.birthday,
+        gender: formData.user.gender,
+        address: formData.user.address,
+      });
+      return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true };
+    }
+
+    // No active PV membership card found for this company (or it has no PV record at
+    // all yet) — fall back to a standalone customer, best-effort linked by name only.
+    // The caller records a resolutionNote so staff know to attach it manually in PV.
+    const user = await pvRegisterCustomer(c, {
+      email: formData.user.email,
+      firstName: formData.user.firstName,
+      lastName: formData.user.lastName,
+      phone: formData.user.phone,
+      phoneCountryCode: formData.user.phoneCountryCode,
+    });
+    await pvUpdateAccountProfile(c, user.id, {
+      birthday: formData.user.birthday,
+      gender: formData.user.gender,
+      address: formData.user.address,
+      companyTitle: formData.user.title,
+      ...(companyPvId ? { customerReference: `pv_company:${companyPvId}` } : {}),
+    });
+    return { companyPvCustomerId: null, userPvCustomerId: String(user.id), linkedViaMembershipCard: false };
+  }
+
+  // new_company: register two distinct PV customers (company + user) — there's no PV
+  // API to create a subscription/membership card up front, so Add Sub Member isn't
+  // available here; the link back to the company is best-effort via customer_reference.
+  const companyName = formData.company.name ?? "";
+  let companyId: number;
+  if (resumeCompanyPvCustomerId) {
+    companyId = Number(resumeCompanyPvCustomerId);
+  } else {
+    const company = await pvRegisterCustomer(c, {
+      email: buildCompanyPlaceholderEmail(formData.user.email, companyName),
+      firstName: companyName,
+      lastName: "Company",
+    });
+    await pvUpdateAccountProfile(c, company.id, {
+      type: "company",
+      companyName,
+      companyWebsite: formData.company.website,
+      // The onboarding form has no separate "company address" field — reusing the
+      // primary user's address here avoids leaving PV's Location column blank (it
+      // renders as a bare "," when address/city/state are all empty) for a company
+      // that, at this stage, has no address of its own.
+      address: formData.user.address,
+    });
+    companyId = company.id;
+    // Persisted immediately — if the user registration below fails, a retry must not
+    // register a second company customer in PV.
+    await onCompanyCreated?.(String(companyId));
+  }
+
+  const user = await pvRegisterCustomer(c, {
     email: formData.user.email,
     firstName: formData.user.firstName,
     lastName: formData.user.lastName,
     phone: formData.user.phone,
     phoneCountryCode: formData.user.phoneCountryCode,
   });
-
-  await pvUpdateAccountProfile(c, customer.id, {
+  await pvUpdateAccountProfile(c, user.id, {
     birthday: formData.user.birthday,
     gender: formData.user.gender,
     address: formData.user.address,
-    companyName: formData.company.name,
+    companyName,
     companyTitle: formData.user.title,
     companyWebsite: formData.company.website,
+    customerReference: `pv_company:${companyId}`,
   });
 
   // PV has no API to create a subscription/membership — confirmed platform limitation.
@@ -195,6 +347,8 @@ export const pushOnboardingSubmissionToPeopleVine = async (
   // pushed anywhere here; it stays recorded on the submission itself so mHub staff know
   // which membership to assign manually in the PV Control Panel.
   return {
-    pvCustomerId: String(customer.id),
+    companyPvCustomerId: String(companyId),
+    userPvCustomerId: String(user.id),
+    linkedViaMembershipCard: false,
   };
 };

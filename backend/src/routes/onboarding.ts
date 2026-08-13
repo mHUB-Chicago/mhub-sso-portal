@@ -3,6 +3,8 @@ import { AppType } from "@/index";
 import { describeRoute } from "@/utils/describeRoute";
 import {
   ApproveOnboardingSubmissionResponseSchema,
+  CreateOnboardingLinkRequestSchema,
+  CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
   CreateOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
@@ -21,6 +23,7 @@ import { roleMiddleware } from "@/middleware/role";
 import { Role } from "@/database/models";
 import {
   handleApproveOnboardingSubmission,
+  handleCreateOnboardingLink,
   handleCreateOnboardingSubmission,
   handleFlagOnboardingSubmission,
   handleGetOnboardingMembershipPackages,
@@ -56,6 +59,18 @@ app.get(
   }),
   validate(GetOnboardingSubmissionsQuerySchema, "query"),
   handleGetOnboardingSubmissions
+);
+
+app.post(
+  "/links",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Generate a shareable public onboarding link",
+    successMessage: "Onboarding link created",
+    responseSchema: CreateOnboardingLinkResponseSchema,
+  }),
+  validate(CreateOnboardingLinkRequestSchema),
+  handleCreateOnboardingLink
 );
 
 app.get(

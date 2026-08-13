@@ -9,6 +9,7 @@ import loginRoutes from "@/routes/login";
 import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
 import onboardingRoutes from "@/routes/onboarding";
+import publicOnboardingRoutes from "@/routes/publicOnboarding";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
 // import seedRoute from "@/database/seed";
@@ -58,12 +59,14 @@ app.use("*", async (c, next) => {
 app.use("/api/login/start", markPublic);
 app.use("/api/login/verify", markPublic);
 app.use("/api/login/forgot-password", markPublic);
+app.use("/api/public-onboarding/*", markPublic);
 
 app.use("/api/*", corsMiddleware, databaseMiddleware, authMiddleware);
 app.route("/api/login", loginRoutes);
 app.route("/api/user", userRoutes);
 app.route("/api/company", companyRoutes);
 app.route("/api/onboarding", onboardingRoutes);
+app.route("/api/public-onboarding", publicOnboardingRoutes);
 app.route("/api/provider", serviceProviderRoutes);
 
 app.use("/webhook/*", corsMiddleware, databaseMiddleware);

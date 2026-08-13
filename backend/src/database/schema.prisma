@@ -272,6 +272,22 @@ model OnboardingSubmission {
   resolutionNote     String?
   pvCustomerId       String?
   pvMembershipCardId String?
+  // Set immediately after the company-side PV customer is created for the new_company
+  // scenario — before the user's own PV registration is attempted. If that later step
+  // fails, a retried Approve reuses this instead of registering a second, duplicate
+  // company customer in PV.
+  pvCompanyCustomerId String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+}
+
+model OnboardingLink {
+  id           String    @id @default(uuid())
+  token        String    @unique
+  scenario     String
+  status       String    @default("active")
+  createdBy    String?
+  submissionId String?
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime?
 }

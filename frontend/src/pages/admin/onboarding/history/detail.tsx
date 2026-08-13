@@ -170,10 +170,17 @@ export function AdminOnboardingHistoryDetailPage() {
 
       <div>
         <p className="text-xs text-gray-400">Home / Onboarding</p>
-        <h1 className="text-2xl font-bold">{company.name || "Untitled Company"}</h1>
+        <h1 className="text-2xl font-bold">
+          {company.name || [user.firstName, user.lastName].filter(Boolean).join(" ") || "Untitled Submission"}
+        </h1>
         <p className="text-sm text-gray-500 mt-1">
           Submitted {new Date(submission.createdAt).toLocaleString()}
         </p>
+        {submission.resolutionNote && (
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {submission.resolutionNote}
+          </p>
+        )}
       </div>
 
       {isEditing && draft ? (

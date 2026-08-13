@@ -7,15 +7,15 @@ export interface Address {
 }
 
 export interface CompanyDetails {
-  name: string;
-  website: string;
-  size: string;
-  founded: string;
-  industry: string;
-  incorporation: string;
-  fundingStage: string;
-  problem: string;
-  targetMarket: string;
+  name?: string;
+  website?: string;
+  size?: string;
+  founded?: string;
+  industry?: string;
+  incorporation?: string;
+  fundingStage?: string;
+  problem?: string;
+  targetMarket?: string;
 }
 
 export interface PrimaryUserDetails {
@@ -57,8 +57,12 @@ export interface BillingDetails {
 
 export type OnboardingMode = "admin" | "link";
 
+export type OnboardingScenario = "new_company" | "existing_company";
+
 export interface OnboardingFormData {
   mode: OnboardingMode;
+  scenario: OnboardingScenario;
+  companyId?: string;
   company: CompanyDetails;
   user: PrimaryUserDetails;
   membershipPackage: string;

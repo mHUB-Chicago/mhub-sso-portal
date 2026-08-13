@@ -4,29 +4,32 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useCreateOnboardingSubmissionMutation } from "@/store/api/onboardingApi";
+import { useCreateOnboardingSubmissionMutation, useCreateOnboardingLinkMutation } from "@/store/api/onboardingApi";
 import { OnboardingStepper } from "./components/OnboardingStepper";
+import { ScenarioChooserStep } from "./components/ScenarioChooserStep";
+import { LinkGeneratedStep } from "./components/LinkGeneratedStep";
 import { CompanyDetailsStep } from "./components/CompanyDetailsStep";
+import { SelectCompanyStep } from "./components/SelectCompanyStep";
 import { PrimaryUserStep } from "./components/PrimaryUserStep";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
 import { SkillsStep } from "./components/SkillsStep";
-import { BillingStep } from "./components/BillingStep";
 import { NextStepsStep } from "./components/NextStepsStep";
 import type {
   Address,
-  BillingDetails,
   CompanyDetails,
   OnboardingFormData,
   OnboardingMode,
-  PaymentType,
+  OnboardingScenario,
   PrimaryUserDetails,
   SkillsDetails,
 } from "./types";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 5;
 
 const createInitialFormData = (): OnboardingFormData => ({
   mode: "admin",
+  scenario: "new_company",
+  companyId: undefined,
   company: {
     name: "",
     website: "",
@@ -75,13 +78,24 @@ const createInitialFormData = (): OnboardingFormData => ({
 
 const OnboardingPage = () => {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [generatedLinkUrl, setGeneratedLinkUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState<OnboardingFormData>(createInitialFormData);
   const [createOnboardingSubmission] = useCreateOnboardingSubmissionMutation();
+  const [createOnboardingLink] = useCreateOnboardingLinkMutation();
 
   const setMode = (mode: OnboardingMode) => {
     setFormData((prev) => ({ ...prev, mode }));
+    setGeneratedLinkUrl(null);
+  };
+
+  const updateScenario = (scenario: OnboardingScenario) => {
+    setFormData((prev) => ({ ...prev, scenario, companyId: undefined }));
+  };
+
+  const updateCompanyId = (companyId: string) => {
+    setFormData((prev) => ({ ...prev, companyId }));
   };
 
   const updateCompanyField = (field: keyof CompanyDetails, fieldValue: string) => {
@@ -118,39 +132,26 @@ const OnboardingPage = () => {
     setFormData((prev) => ({ ...prev, skills: { ...prev.skills, shopSkills } }));
   };
 
-  const updateBillingField = (
-    field: keyof Omit<BillingDetails, "address" | "paymentType">,
-    fieldValue: string
-  ) => {
-    setFormData((prev) => ({ ...prev, billing: { ...prev.billing, [field]: fieldValue } }));
-  };
-
-  const updateBillingAddress = (field: keyof Address, fieldValue: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      billing: { ...prev.billing, address: { ...prev.billing.address, [field]: fieldValue } },
-    }));
-  };
-
-  const updatePaymentType = (paymentType: PaymentType) => {
-    setFormData((prev) => ({ ...prev, billing: { ...prev.billing, paymentType } }));
-  };
-
   const goNext = () => setCurrentStep((step) => Math.min(step + 1, TOTAL_STEPS));
-  const goBack = () => setCurrentStep((step) => Math.max(step - 1, 1));
+  const goBack = () => setCurrentStep((step) => Math.max(step - 1, 0));
 
-  const handleSubmit = async () => {
+  const handleChooserContinue = async () => {
     if (formData.mode === "link") {
       setIsSubmitting(true);
       try {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        toast.info("Link generation is not yet wired to the backend.");
+        const result = await createOnboardingLink({ scenario: formData.scenario }).unwrap();
+        setGeneratedLinkUrl(result.data.url);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to generate link.");
       } finally {
         setIsSubmitting(false);
       }
       return;
     }
+    goNext();
+  };
 
+  const handleSubmit = async () => {
     setIsSubmitting(true);
     try {
       const { cardNumber, cvc: _cvc, ...billingRest } = formData.billing;
@@ -174,16 +175,28 @@ const OnboardingPage = () => {
     }
   };
 
+  const isExistingCompany = formData.scenario === "existing_company";
+
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return <CompanyDetailsStep value={formData.company} onChange={updateCompanyField} />;
+        return isExistingCompany ? (
+          <SelectCompanyStep value={formData.companyId} onChange={updateCompanyId} />
+        ) : (
+          <CompanyDetailsStep value={formData.company} onChange={updateCompanyField} />
+        );
       case 2:
         return (
           <PrimaryUserStep value={formData.user} onChange={updateUserField} onAddressChange={updateUserAddress} />
         );
       case 3:
-        return <MembershipPackageStep value={formData.membershipPackage} onChange={updateMembershipPackage} />;
+        return (
+          <MembershipPackageStep
+            value={formData.membershipPackage}
+            onChange={updateMembershipPackage}
+            optional={isExistingCompany}
+          />
+        );
       case 4:
         return (
           <SkillsStep
@@ -194,15 +207,6 @@ const OnboardingPage = () => {
           />
         );
       case 5:
-        return (
-          <BillingStep
-            value={formData.billing}
-            onChange={updateBillingField}
-            onAddressChange={updateBillingAddress}
-            onPaymentTypeChange={updatePaymentType}
-          />
-        );
-      case 6:
         return <NextStepsStep mode={formData.mode} isSubmitting={isSubmitting} onSubmit={handleSubmit} />;
       default:
         return null;
@@ -245,30 +249,54 @@ const OnboardingPage = () => {
         </div>
       </div>
 
-      <OnboardingStepper currentStep={currentStep} />
+      {currentStep === 0 ? (
+        <div className="rounded-xl border bg-white p-10">
+          <ScenarioChooserStep
+            mode={formData.mode}
+            value={formData.scenario}
+            onChange={updateScenario}
+            onContinue={handleChooserContinue}
+            isSubmitting={isSubmitting}
+          />
+        </div>
+      ) : generatedLinkUrl ? (
+        <div className="rounded-xl border bg-white p-10">
+          <LinkGeneratedStep
+            url={generatedLinkUrl}
+            onCreateAnother={() => {
+              setGeneratedLinkUrl(null);
+              setCurrentStep(0);
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <OnboardingStepper currentStep={currentStep} scenario={formData.scenario} />
 
-      <div className="rounded-xl border bg-white p-10">
-        {renderStep()}
+          <div className="rounded-xl border bg-white p-10">
+            {renderStep()}
 
-        {currentStep < TOTAL_STEPS && (
-          <div className="mt-8 flex justify-between">
-            <Button variant="outline" onClick={goBack} disabled={currentStep === 1}>
-              Back
-            </Button>
-            <Button onClick={goNext} className="bg-brand hover:bg-brand-hover">
-              Continue
-            </Button>
+            {currentStep < TOTAL_STEPS && (
+              <div className="mt-8 flex justify-between">
+                <Button variant="outline" onClick={goBack}>
+                  Back
+                </Button>
+                <Button onClick={goNext} className="bg-brand hover:bg-brand-hover">
+                  Continue
+                </Button>
+              </div>
+            )}
+
+            {currentStep === TOTAL_STEPS && (
+              <div className="mt-8">
+                <Button variant="outline" onClick={goBack}>
+                  Back
+                </Button>
+              </div>
+            )}
           </div>
-        )}
-
-        {currentStep === TOTAL_STEPS && (
-          <div className="mt-8">
-            <Button variant="outline" onClick={goBack}>
-              Back
-            </Button>
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 };

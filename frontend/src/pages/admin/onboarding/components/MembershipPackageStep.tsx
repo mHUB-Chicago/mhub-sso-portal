@@ -9,9 +9,10 @@ import { useGetOnboardingMembershipPackagesQuery } from "@/store/api/onboardingA
 interface MembershipPackageStepProps {
   value: string;
   onChange: (value: string) => void;
+  optional?: boolean;
 }
 
-export const MembershipPackageStep = ({ value, onChange }: MembershipPackageStepProps) => {
+export const MembershipPackageStep = ({ value, onChange, optional }: MembershipPackageStepProps) => {
   const { data, isLoading, error } = useGetOnboardingMembershipPackagesQuery();
   const packages = data?.data?.packages ?? [];
   const selected = packages.find((pkg) => pkg.id === value);
@@ -28,7 +29,8 @@ export const MembershipPackageStep = ({ value, onChange }: MembershipPackageStep
 
       <div>
         <Label htmlFor="membershipPackage">
-          Requested Package <span className="text-red-500">*</span>
+          Requested Package{" "}
+          {optional ? <span className="text-gray-400">(optional)</span> : <span className="text-red-500">*</span>}
         </Label>
         {isLoading ? (
           <div className="mt-1 flex h-9 items-center gap-2 text-sm text-gray-500">

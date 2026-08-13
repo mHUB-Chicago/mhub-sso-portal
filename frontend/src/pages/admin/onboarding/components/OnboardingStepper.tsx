@@ -1,13 +1,18 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const STEPS = ["Company", "Primary User", "Package", "Skills", "Billing", "Next Steps"];
+import type { OnboardingScenario } from "../types";
 
 interface OnboardingStepperProps {
   currentStep: number;
+  scenario?: OnboardingScenario;
 }
 
-export const OnboardingStepper = ({ currentStep }: OnboardingStepperProps) => {
+export const OnboardingStepper = ({ currentStep, scenario = "new_company" }: OnboardingStepperProps) => {
+  const STEPS =
+    scenario === "existing_company"
+      ? ["Select Company", "Primary User", "Package (optional)", "Skills", "Next Steps"]
+      : ["Company", "Primary User", "Package", "Skills", "Next Steps"];
+
   return (
     <div className="mb-10">
       <div className="flex items-center justify-between">

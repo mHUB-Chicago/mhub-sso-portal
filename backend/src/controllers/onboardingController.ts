@@ -3,6 +3,8 @@ import { PrismaClient } from "@prisma/client";
 import { AppType, JsonInput, QueryInput } from "..";
 import {
   ApproveOnboardingSubmissionResponseSchema,
+  CreateOnboardingLinkRequestSchema,
+  CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
   CreateOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
@@ -15,13 +17,69 @@ import {
   TreatOnboardingSubmissionAsNewResponseSchema,
   UpdateOnboardingSubmissionRequestSchema,
   UpdateOnboardingSubmissionResponseSchema,
+  type OnboardingFormData,
 } from "@common/schemas/onboarding";
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
-import { updateCompany } from "@/services/companyService";
-import { updateUser } from "@/services/userService";
+import { createCompany, updateCompany } from "@/services/companyService";
+import { createUser, updateUser } from "@/services/userService";
 import { assertPeopleVineWritesEnabled, pushOnboardingSubmissionToPeopleVine } from "@/services/peopleVinePortalService";
 import { apiRequestWithPagination } from "@/services/peopleVineService";
-import { PeopleVineTokenType } from "@prisma/client";
+import { PeopleVineTokenType, Role } from "@prisma/client";
+
+// Shared by the admin-authenticated create endpoint and the public onboarding-link
+// submit endpoint — both land in the same review queue with the same duplicate check.
+export const createOnboardingSubmissionRecord = async (
+  c: Context,
+  formData: OnboardingFormData,
+  submittedBy: string | null
+) => {
+  const prisma: PrismaClient = c.get("db");
+  const duplicate = await findOnboardingDuplicate(c, formData.user.email);
+
+  return prisma.onboardingSubmission.create({
+    data: {
+      mode: formData.mode,
+      status: duplicate.duplicateMatchType ? "needs_attention" : "pending_review",
+      formData: JSON.stringify(formData),
+      submittedBy,
+      duplicateMatchType: duplicate.duplicateMatchType,
+      matchedCompanyId: duplicate.matchedCompanyId,
+      matchedUserId: duplicate.matchedUserId,
+    },
+  });
+};
+
+// Real membership plans (Enterprise Membership, Garage - Large, etc.) don't live in
+// /products at all — confirmed by checking PV's OpenAPI spec and a raw pull of every
+// Type=service product, none of which were membership plans (all were operational fees:
+// table reservations, event charges, day passes). PV models memberships through their
+// own dedicated /memberships endpoint (MembershipDTO) instead. Type=subscription +
+// Status=active scopes this to real, currently-sellable membership plans, excluding
+// PV's other membership kinds (add-on, id badge, temp).
+export const fetchActiveMembershipPackages = async (c: Context): Promise<{ id: string; name: string }[]> => {
+  const memberships: any[] = [];
+  let pageNumber = 1;
+  while (true) {
+    const { data, pagination } = await apiRequestWithPagination(c, {
+      tokenType: PeopleVineTokenType.USER_COMPANY,
+      endpoint: "/memberships",
+      method: "GET",
+      queryParams: {
+        Page_Size: "100",
+        Page_Number: String(pageNumber),
+        Type: "subscription",
+        Status: "active",
+      },
+    });
+    memberships.push(...data);
+    if (!pagination?.has_next_page) break;
+    pageNumber++;
+  }
+
+  return memberships
+    .filter((m) => m.title)
+    .map((m) => ({ id: String(m.id), name: m.title as string }));
+};
 
 const toSubmissionDTO = (row: {
   id: string;
@@ -48,23 +106,14 @@ const toSubmissionDTO = (row: {
 export const handleCreateOnboardingSubmission = async (
   c: Context<AppType, string, JsonInput<typeof CreateOnboardingSubmissionRequestSchema>>
 ) => {
-  const prisma: PrismaClient = c.get("db");
   const user = c.get("user");
   const { formData } = c.req.valid("json");
 
-  const duplicate = await findOnboardingDuplicate(c, formData.user.email);
-
-  const created = await prisma.onboardingSubmission.create({
-    data: {
-      mode: formData.mode,
-      status: duplicate.duplicateMatchType ? "needs_attention" : "pending_review",
-      formData: JSON.stringify(formData),
-      submittedBy: formData.mode === "admin" ? user?.id ?? null : null,
-      duplicateMatchType: duplicate.duplicateMatchType,
-      matchedCompanyId: duplicate.matchedCompanyId,
-      matchedUserId: duplicate.matchedUserId,
-    },
-  });
+  const created = await createOnboardingSubmissionRecord(
+    c,
+    formData,
+    formData.mode === "admin" ? user?.id ?? null : null
+  );
 
   const response = CreateOnboardingSubmissionResponseSchema.parse({
     success: true,
@@ -158,7 +207,59 @@ export const handleApproveOnboardingSubmission = async (c: Context<AppType>) => 
   }
 
   const formData = JSON.parse(row.formData);
-  const result = await pushOnboardingSubmissionToPeopleVine(c, formData);
+
+  let targetCompanyId: string;
+  let existingCompanyPeopleVineId: string | null = null;
+  if (formData.scenario === "existing_company") {
+    const existingCompany = await prisma.company.findUnique({ where: { id: formData.companyId } });
+    if (!existingCompany) {
+      throw "Selected company no longer exists";
+    }
+    targetCompanyId = existingCompany.id;
+    existingCompanyPeopleVineId = existingCompany.peopleVineId;
+  } else {
+    targetCompanyId = ""; // created below once we have the PV push result
+  }
+
+  const result = await pushOnboardingSubmissionToPeopleVine(c, formData, {
+    existingCompanyPeopleVineId,
+    resumeCompanyPvCustomerId: row.pvCompanyCustomerId,
+    onCompanyCreated: async (companyPvCustomerId) => {
+      await prisma.onboardingSubmission.update({
+        where: { id },
+        data: { pvCompanyCustomerId: companyPvCustomerId },
+      });
+    },
+  });
+
+  if (formData.scenario === "new_company") {
+    const newCompany = await createCompany(c, {
+      name: formData.company.name,
+      peopleVineId: result.companyPvCustomerId,
+      active: true,
+      email: formData.user.email.toLowerCase(),
+    });
+    targetCompanyId = newCompany.id;
+  }
+
+  await createUser(c, {
+    name: `${formData.user.firstName} ${formData.user.lastName}`.trim(),
+    email: formData.user.email,
+    role: Role.USER,
+    companyId: targetCompanyId,
+    peopleVineId: result.userPvCustomerId,
+    phone: formData.user.phone || null,
+    address: formData.user.address?.street || null,
+    city: formData.user.address?.city || null,
+    state: formData.user.address?.state || null,
+    zipCode: formData.user.address?.zip || null,
+    memberSource: "subscription",
+  });
+
+  const resolutionNote =
+    formData.scenario === "existing_company" && !result.linkedViaMembershipCard
+      ? "No active PeopleVine membership card found for this company — the new user was linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
+      : null;
 
   const updated = await prisma.onboardingSubmission.update({
     where: { id },
@@ -166,7 +267,9 @@ export const handleApproveOnboardingSubmission = async (c: Context<AppType>) => 
       status: "pushed_to_pv",
       reviewedBy: user?.id ?? null,
       reviewedAt: new Date(),
-      pvCustomerId: result.pvCustomerId,
+      pvCustomerId: result.userPvCustomerId,
+      matchedCompanyId: targetCompanyId,
+      ...(resolutionNote ? { resolutionNote } : {}),
     },
   });
 
@@ -289,48 +392,37 @@ export const handleFlagOnboardingSubmission = async (
 };
 
 export const handleGetOnboardingMembershipPackages = async (c: Context<AppType>) => {
-  // Real membership plans (Enterprise Membership, Garage - Large, etc.) don't live in
-  // /products at all — confirmed by checking PV's OpenAPI spec and a raw pull of every
-  // Type=service product, none of which were membership plans (all were operational fees:
-  // table reservations, event charges, day passes). PV models memberships through their
-  // own dedicated /memberships endpoint (MembershipDTO) instead. Type=subscription +
-  // Status=active scopes this to real, currently-sellable membership plans, excluding
-  // PV's other membership kinds (add-on, id badge, temp).
-  const fetchAllActiveMemberships = async (): Promise<any[]> => {
-    const memberships: any[] = [];
-    let pageNumber = 1;
-    while (true) {
-      const { data, pagination } = await apiRequestWithPagination(c, {
-        tokenType: PeopleVineTokenType.USER_COMPANY,
-        endpoint: "/memberships",
-        method: "GET",
-        queryParams: {
-          Page_Size: "100",
-          Page_Number: String(pageNumber),
-          Type: "subscription",
-          Status: "active",
-        },
-      });
-      memberships.push(...data);
-      if (!pagination?.has_next_page) break;
-      pageNumber++;
-    }
-    return memberships;
-  };
-
-  const memberships = await fetchAllActiveMemberships();
-
-  const packages = memberships
-    .filter((m) => m.title)
-    .map((m) => ({
-      id: String(m.id),
-      name: m.title as string,
-    }));
+  const packages = await fetchActiveMembershipPackages(c);
 
   const response = GetOnboardingMembershipPackagesResponseSchema.parse({
     success: true,
     message: "Success",
     data: { packages },
+  });
+  return c.json(response);
+};
+
+export const handleCreateOnboardingLink = async (
+  c: Context<AppType, string, JsonInput<typeof CreateOnboardingLinkRequestSchema>>
+) => {
+  const prisma: PrismaClient = c.get("db");
+  const user = c.get("user");
+  const { scenario } = c.req.valid("json");
+
+  const token = crypto.randomUUID();
+  await prisma.onboardingLink.create({
+    data: {
+      token,
+      scenario,
+      createdBy: user?.id ?? null,
+    },
+  });
+
+  const frontendUrl = c.env.FRONTEND_URL ?? "";
+  const response = CreateOnboardingLinkResponseSchema.parse({
+    success: true,
+    message: "Onboarding link created",
+    data: { url: `${frontendUrl}/onboard/${token}`, token },
   });
   return c.json(response);
 };

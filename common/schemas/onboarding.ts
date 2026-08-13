@@ -10,15 +10,15 @@ export const OnboardingAddressSchema = z.object({
 });
 
 export const OnboardingCompanySchema = z.object({
-  name: z.string(),
-  website: z.string(),
-  size: z.string(),
-  founded: z.string(),
-  industry: z.string(),
-  incorporation: z.string(),
-  fundingStage: z.string(),
-  problem: z.string(),
-  targetMarket: z.string(),
+  name: z.string().optional(),
+  website: z.string().optional(),
+  size: z.string().optional(),
+  founded: z.string().optional(),
+  industry: z.string().optional(),
+  incorporation: z.string().optional(),
+  fundingStage: z.string().optional(),
+  problem: z.string().optional(),
+  targetMarket: z.string().optional(),
 });
 
 export const OnboardingUserSchema = z.object({
@@ -55,14 +55,31 @@ export const OnboardingBillingSchema = z.object({
   address: OnboardingAddressSchema,
 });
 
-export const OnboardingFormDataSchema = z.object({
-  mode: z.enum(["admin", "link"]),
-  company: OnboardingCompanySchema,
-  user: OnboardingUserSchema,
-  membershipPackage: z.string(),
-  skills: OnboardingSkillsSchema,
-  billing: OnboardingBillingSchema,
-});
+export const OnboardingFormDataSchema = z
+  .object({
+    mode: z.enum(["admin", "link"]),
+    // Defaulted for backward compatibility: submissions created before this field existed
+    // have no `scenario` in their stored formData blob and were all effectively the
+    // new-company flow, so that's the safe default when it's missing.
+    scenario: z.enum(["new_company", "existing_company"]).default("new_company"),
+    companyId: z.string().optional(),
+    company: OnboardingCompanySchema,
+    user: OnboardingUserSchema,
+    membershipPackage: z.string(),
+    skills: OnboardingSkillsSchema,
+    billing: OnboardingBillingSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.scenario === "new_company") {
+      if (!data.company.name) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["company", "name"], message: "Company name is required" });
+      }
+    } else if (data.scenario === "existing_company") {
+      if (!data.companyId) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["companyId"], message: "companyId is required for existing_company" });
+      }
+    }
+  });
 
 export type OnboardingFormData = z.infer<typeof OnboardingFormDataSchema>;
 
@@ -141,3 +158,30 @@ export const OnboardingMembershipPackageSchema = z.object({
 export const GetOnboardingMembershipPackagesResponseSchema = SuccessResponseSchema(
   z.object({ packages: z.array(OnboardingMembershipPackageSchema) })
 );
+
+export const CreateOnboardingLinkRequestSchema = z.object({
+  scenario: z.enum(["new_company", "existing_company"]),
+});
+
+export const CreateOnboardingLinkResponseSchema = SuccessResponseSchema(
+  z.object({ url: z.string(), token: z.string() })
+);
+
+export const OnboardingLinkCompanyOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
+export const GetOnboardingLinkResponseSchema = SuccessResponseSchema(
+  z.object({
+    scenario: z.enum(["new_company", "existing_company"]),
+    packages: z.array(OnboardingMembershipPackageSchema),
+    companies: z.array(OnboardingLinkCompanyOptionSchema).optional(),
+  })
+);
+
+export const SubmitOnboardingLinkRequestSchema = z.object({
+  formData: OnboardingFormDataSchema,
+});
+
+export const SubmitOnboardingLinkResponseSchema = SuccessResponseSchema(z.object({}));

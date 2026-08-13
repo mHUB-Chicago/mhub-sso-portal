@@ -9,15 +9,15 @@ export interface OnboardingAddress {
 }
 
 export interface OnboardingCompany {
-  name: string
-  website: string
-  size: string
-  founded: string
-  industry: string
-  incorporation: string
-  fundingStage: string
-  problem: string
-  targetMarket: string
+  name?: string
+  website?: string
+  size?: string
+  founded?: string
+  industry?: string
+  incorporation?: string
+  fundingStage?: string
+  problem?: string
+  targetMarket?: string
 }
 
 export interface OnboardingUser {
@@ -56,6 +56,8 @@ export interface OnboardingBilling {
 
 export interface OnboardingFormData {
   mode: 'admin' | 'link'
+  scenario: 'new_company' | 'existing_company'
+  companyId?: string
   company: OnboardingCompany
   user: OnboardingUser
   membershipPackage: string
@@ -103,6 +105,12 @@ interface MembershipPackagesResponse {
   success: boolean
   message: string
   data: { packages: OnboardingMembershipPackage[] }
+}
+
+interface CreateOnboardingLinkResponse {
+  success: boolean
+  message: string
+  data: { url: string; token: string }
 }
 
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
@@ -170,6 +178,10 @@ export const onboardingApi = createApi({
       query: () => '/onboarding/membership-packages',
       providesTags: ['OnboardingMembershipPackages'],
     }),
+
+    createOnboardingLink: builder.mutation<CreateOnboardingLinkResponse, { scenario: 'new_company' | 'existing_company' }>({
+      query: (body) => ({ url: '/onboarding/links', method: 'POST', body }),
+    }),
   }),
 })
 
@@ -183,4 +195,5 @@ export const {
   useTreatOnboardingSubmissionAsNewMutation,
   useFlagOnboardingSubmissionMutation,
   useGetOnboardingMembershipPackagesQuery,
+  useCreateOnboardingLinkMutation,
 } = onboardingApi
