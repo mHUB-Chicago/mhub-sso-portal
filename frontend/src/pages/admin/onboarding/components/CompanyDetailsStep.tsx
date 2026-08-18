@@ -1,14 +1,22 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormSelect } from "@/components/ui/form-select";
 import { Textarea } from "@/components/ui/textarea";
+import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
+import { findAttributeOptionValues } from "../attributeOptionsUtil";
 import type { CompanyDetails } from "../types";
 
 interface CompanyDetailsStepProps {
   value: CompanyDetails;
   onChange: (field: keyof CompanyDetails, fieldValue: string) => void;
+  attributeOptions?: OnboardingAttributeOption[];
 }
 
-export const CompanyDetailsStep = ({ value, onChange }: CompanyDetailsStepProps) => {
+export const CompanyDetailsStep = ({ value, onChange, attributeOptions }: CompanyDetailsStepProps) => {
+  const companySizeOptions = findAttributeOptionValues(attributeOptions, "Total Number of Employees").map(
+    (label) => ({ value: label, label })
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -40,17 +48,14 @@ export const CompanyDetailsStep = ({ value, onChange }: CompanyDetailsStepProps)
             className="mt-1"
           />
         </div>
-        <div>
-          <Label htmlFor="companySize">Company Size (# employees)</Label>
-          <Input
-            id="companySize"
-            type="number"
-            min={0}
-            value={value.size}
-            onChange={(e) => onChange("size", e.target.value)}
-            className="mt-1"
-          />
-        </div>
+        <FormSelect
+          id="companySize"
+          label="Company Size (# employees)"
+          placeholder="Select company size"
+          value={value.size ?? ""}
+          options={companySizeOptions}
+          onChange={(fieldValue) => onChange("size", fieldValue)}
+        />
         <div>
           <Label htmlFor="companyFounded">Founded</Label>
           <Input

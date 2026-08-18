@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  useGetOnboardingAttributeOptionsQuery,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingSubmissionByIdQuery,
   useUpdateOnboardingSubmissionMutation,
@@ -44,6 +45,8 @@ export function AdminOnboardingHistoryDetailPage() {
   const { data, isLoading, error, refetch } = useGetOnboardingSubmissionByIdQuery(id ?? "", { skip: !id });
   const [updateSubmission, { isLoading: isSaving }] = useUpdateOnboardingSubmissionMutation();
   const { data: packagesData } = useGetOnboardingMembershipPackagesQuery();
+  const { data: attributeOptionsData } = useGetOnboardingAttributeOptionsQuery();
+  const attributeOptions = attributeOptionsData?.data?.options;
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<OnboardingFormData | null>(null);
@@ -89,8 +92,15 @@ export function AdminOnboardingHistoryDetailPage() {
     setDraft((prev) => (prev ? { ...prev, company: { ...prev.company, [field]: fieldValue } } : prev));
   };
 
-  const updateUserField = (field: keyof Omit<PrimaryUserDetails, "address">, fieldValue: string) => {
+  const updateUserField = (
+    field: keyof Omit<PrimaryUserDetails, "address" | "ethnicity">,
+    fieldValue: string
+  ) => {
     setDraft((prev) => (prev ? { ...prev, user: { ...prev.user, [field]: fieldValue } } : prev));
+  };
+
+  const updateUserEthnicity = (ethnicity: string[]) => {
+    setDraft((prev) => (prev ? { ...prev, user: { ...prev.user, ethnicity } } : prev));
   };
 
   const updateUserAddress = (field: keyof Address, fieldValue: string) => {
@@ -186,11 +196,17 @@ export function AdminOnboardingHistoryDetailPage() {
       {isEditing && draft ? (
         <>
           <div className="rounded-lg border p-5">
-            <CompanyDetailsStep value={draft.company} onChange={updateCompanyField} />
+            <CompanyDetailsStep value={draft.company} onChange={updateCompanyField} attributeOptions={attributeOptions} />
           </div>
 
           <div className="rounded-lg border p-5">
-            <PrimaryUserStep value={draft.user} onChange={updateUserField} onAddressChange={updateUserAddress} />
+            <PrimaryUserStep
+              value={draft.user}
+              onChange={updateUserField}
+              onAddressChange={updateUserAddress}
+              onEthnicityChange={updateUserEthnicity}
+              attributeOptions={attributeOptions}
+            />
           </div>
 
           <div className="rounded-lg border p-5">
@@ -203,6 +219,7 @@ export function AdminOnboardingHistoryDetailPage() {
               onChange={updateSkillsField}
               onSkillsChange={updateSkills}
               onShopSkillsChange={updateShopSkills}
+              attributeOptions={attributeOptions}
             />
           </div>
 
@@ -301,7 +318,7 @@ export function AdminOnboardingHistoryDetailPage() {
             <Field label="LinkedIn" value={user.linkedin} />
             <Field label="Gender" value={user.gender} />
             <Field label="Pronouns" value={user.pronouns} />
-            <Field label="Ethnicity" value={user.ethnicity} />
+            <Field label="Ethnicity" value={user.ethnicity.join(", ")} />
             <Field
               label="Address"
               value={[user.address.street, user.address.city, user.address.state, user.address.zip, user.address.country]

@@ -32,7 +32,7 @@ export interface OnboardingUser {
   bio: string
   gender: string
   pronouns: string
-  ethnicity: string
+  ethnicity: string[]
   address: OnboardingAddress
 }
 
@@ -89,6 +89,14 @@ export interface OnboardingMembershipPackage {
   name: string
 }
 
+// One PV "Attribute" that offers a fixed set of choices — matched by exact `name`
+// against PV's own configured attribute (e.g. "Shop Skills", "Pronoun").
+export interface OnboardingAttributeOption {
+  id: number
+  name: string
+  values: string[]
+}
+
 interface SubmissionResponse {
   success: boolean
   message: string
@@ -107,10 +115,22 @@ interface MembershipPackagesResponse {
   data: { packages: OnboardingMembershipPackage[] }
 }
 
+interface AttributeOptionsResponse {
+  success: boolean
+  message: string
+  data: { options: OnboardingAttributeOption[] }
+}
+
 interface CreateOnboardingLinkResponse {
   success: boolean
   message: string
   data: { url: string; token: string }
+}
+
+interface SendOnboardingLinkEmailResponse {
+  success: boolean
+  message: string
+  data: Record<string, never>
 }
 
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
@@ -179,8 +199,19 @@ export const onboardingApi = createApi({
       providesTags: ['OnboardingMembershipPackages'],
     }),
 
+    getOnboardingAttributeOptions: builder.query<AttributeOptionsResponse, void>({
+      query: () => '/onboarding/attribute-options',
+    }),
+
     createOnboardingLink: builder.mutation<CreateOnboardingLinkResponse, { scenario: 'new_company' | 'existing_company' }>({
       query: (body) => ({ url: '/onboarding/links', method: 'POST', body }),
+    }),
+
+    sendOnboardingLinkEmail: builder.mutation<
+      SendOnboardingLinkEmailResponse,
+      { token: string; to: string; toName?: string; subject: string; html: string }
+    >({
+      query: ({ token, ...body }) => ({ url: `/onboarding/links/${token}/send`, method: 'POST', body }),
     }),
   }),
 })
@@ -195,5 +226,7 @@ export const {
   useTreatOnboardingSubmissionAsNewMutation,
   useFlagOnboardingSubmissionMutation,
   useGetOnboardingMembershipPackagesQuery,
+  useGetOnboardingAttributeOptionsQuery,
   useCreateOnboardingLinkMutation,
+  useSendOnboardingLinkEmailMutation,
 } = onboardingApi

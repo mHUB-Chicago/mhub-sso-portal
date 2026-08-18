@@ -17,6 +17,12 @@ interface SendEmailInput {
   text?: string;
 }
 
+// Generic send, exported for callers (e.g. onboarding link emails) that need to send an
+// admin-composed subject/body rather than one of this file's fixed templates. Reuses the
+// same SendGrid call — including the @example.com skip and single-recipient limits — so
+// behavior stays identical to every other email this service sends.
+export const sendCustomEmail = async (c: Context, input: SendEmailInput): Promise<void> => sendEmail(c, input);
+
 const sendEmail = async (c: Context, sendEmailInput: SendEmailInput): Promise<void> => {
   // Skip sending emails to example.com addresses (for testing)
   if (sendEmailInput.to.endsWith("@example.com")) {

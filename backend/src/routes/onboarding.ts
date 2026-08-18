@@ -9,11 +9,14 @@ import {
   CreateOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
   FlagOnboardingSubmissionResponseSchema,
+  GetOnboardingAttributeOptionsResponseSchema,
   GetOnboardingMembershipPackagesResponseSchema,
   GetOnboardingSubmissionResponseSchema,
   GetOnboardingSubmissionsQuerySchema,
   GetOnboardingSubmissionsResponseSchema,
   ReactivateOnboardingSubmissionResponseSchema,
+  SendOnboardingLinkEmailRequestSchema,
+  SendOnboardingLinkEmailResponseSchema,
   TreatOnboardingSubmissionAsNewResponseSchema,
   UpdateOnboardingSubmissionRequestSchema,
   UpdateOnboardingSubmissionResponseSchema,
@@ -26,10 +29,12 @@ import {
   handleCreateOnboardingLink,
   handleCreateOnboardingSubmission,
   handleFlagOnboardingSubmission,
+  handleGetOnboardingAttributeOptions,
   handleGetOnboardingMembershipPackages,
   handleGetOnboardingSubmissionById,
   handleGetOnboardingSubmissions,
   handleReactivateOnboardingSubmission,
+  handleSendOnboardingLinkEmail,
   handleTreatOnboardingSubmissionAsNew,
   handleUpdateOnboardingSubmission,
 } from "@/controllers/onboardingController";
@@ -73,6 +78,19 @@ app.post(
   handleCreateOnboardingLink
 );
 
+app.post(
+  "/links/:token/send",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Send an onboarding link to a recipient by email",
+    successMessage: "Email sent",
+    responseSchema: SendOnboardingLinkEmailResponseSchema,
+    parameters: [{ name: "token", in: "path", required: true, schema: { type: "string" } }],
+  }),
+  validate(SendOnboardingLinkEmailRequestSchema),
+  handleSendOnboardingLinkEmail
+);
+
 app.get(
   "/membership-packages",
   roleMiddleware([Role.ADMIN]),
@@ -82,6 +100,17 @@ app.get(
     responseSchema: GetOnboardingMembershipPackagesResponseSchema,
   }),
   handleGetOnboardingMembershipPackages
+);
+
+app.get(
+  "/attribute-options",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "List PeopleVine's fixed-choice attribute options (schools, degrees, pronouns, etc.)",
+    successMessage: "Success",
+    responseSchema: GetOnboardingAttributeOptionsResponseSchema,
+  }),
+  handleGetOnboardingAttributeOptions
 );
 
 app.get(

@@ -1,5 +1,5 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
-import type { OnboardingFormData, OnboardingMembershipPackage } from './onboardingApi'
+import type { OnboardingAttributeOption, OnboardingFormData, OnboardingMembershipPackage } from './onboardingApi'
 
 export interface PublicOnboardingCompanyOption {
   id: string
@@ -22,6 +22,12 @@ interface SubmitOnboardingLinkResponse {
   data: Record<string, never>
 }
 
+interface AttributeOptionsResponse {
+  success: boolean
+  message: string
+  data: { options: OnboardingAttributeOption[] }
+}
+
 const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
 const basePath = import.meta.env.VITE_API_BASE_PATH ?? '/api'
 
@@ -31,6 +37,10 @@ export const publicOnboardingApi = createApi({
   endpoints: (builder) => ({
     getOnboardingLink: builder.query<GetOnboardingLinkResponse, string>({
       query: (token) => `/links/${token}`,
+    }),
+
+    getOnboardingAttributeOptions: builder.query<AttributeOptionsResponse, void>({
+      query: () => '/attribute-options',
     }),
 
     submitOnboardingLink: builder.mutation<SubmitOnboardingLinkResponse, { token: string; formData: OnboardingFormData }>({
@@ -43,4 +53,8 @@ export const publicOnboardingApi = createApi({
   }),
 })
 
-export const { useGetOnboardingLinkQuery, useSubmitOnboardingLinkMutation } = publicOnboardingApi
+export const {
+  useGetOnboardingLinkQuery,
+  useSubmitOnboardingLinkMutation,
+  useGetOnboardingAttributeOptionsQuery,
+} = publicOnboardingApi

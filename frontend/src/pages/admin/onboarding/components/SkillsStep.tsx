@@ -1,6 +1,8 @@
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { TagInput } from "./TagInput";
+import { FormSelect } from "@/components/ui/form-select";
+import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
+import { findAttributeOptionValues } from "../attributeOptionsUtil";
+import { CheckboxGroup } from "./CheckboxGroup";
+import { SearchableSelect } from "./SearchableSelect";
 import type { SkillsDetails } from "../types";
 
 type SkillsTextField = keyof Omit<SkillsDetails, "skills" | "shopSkills">;
@@ -10,9 +12,28 @@ interface SkillsStepProps {
   onChange: (field: SkillsTextField, fieldValue: string) => void;
   onSkillsChange: (skills: string[]) => void;
   onShopSkillsChange: (shopSkills: string[]) => void;
+  attributeOptions?: OnboardingAttributeOption[];
 }
 
-export const SkillsStep = ({ value, onChange, onSkillsChange, onShopSkillsChange }: SkillsStepProps) => {
+export const SkillsStep = ({
+  value,
+  onChange,
+  onSkillsChange,
+  onShopSkillsChange,
+  attributeOptions,
+}: SkillsStepProps) => {
+  const toOptions = (values: string[]) => values.map((label) => ({ value: label, label }));
+
+  const undergradSchoolOptions = findAttributeOptionValues(attributeOptions, "Undergraduate Alma Mater");
+  const gradSchoolOptions = findAttributeOptionValues(attributeOptions, "Graduate School Alma Mater");
+  const undergradDegreeOptions = toOptions(findAttributeOptionValues(attributeOptions, "Primary Undergrad Degree"));
+  const gradDegreeOptions = toOptions(
+    findAttributeOptionValues(attributeOptions, "Primary Graduate School Degree")
+  );
+  const industryExperienceOptions = toOptions(findAttributeOptionValues(attributeOptions, "Industry Experience"));
+  const professionOptions = findAttributeOptionValues(attributeOptions, "Profession/ Knowledge");
+  const shopSkillsOptions = findAttributeOptionValues(attributeOptions, "Shop Skills");
+
   return (
     <div className="space-y-6">
       <div>
@@ -23,55 +44,59 @@ export const SkillsStep = ({ value, onChange, onSkillsChange, onShopSkillsChange
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="undergradSchool">Undergraduate Alma Mater</Label>
-          <Input
-            id="undergradSchool"
-            value={value.undergradSchool}
-            onChange={(e) => onChange("undergradSchool", e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="undergradDegree">Undergraduate Degree</Label>
-          <Input
-            id="undergradDegree"
-            value={value.undergradDegree}
-            onChange={(e) => onChange("undergradDegree", e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="gradSchool">Graduate Alma Mater</Label>
-          <Input
-            id="gradSchool"
-            value={value.gradSchool}
-            onChange={(e) => onChange("gradSchool", e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="gradDegree">Graduate Degree</Label>
-          <Input
-            id="gradDegree"
-            value={value.gradDegree}
-            onChange={(e) => onChange("gradDegree", e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div className="col-span-2">
-          <Label htmlFor="industryExperience">Industry Experience</Label>
-          <Input
-            id="industryExperience"
-            value={value.industryExperience}
-            onChange={(e) => onChange("industryExperience", e.target.value)}
-            className="mt-1"
-          />
-        </div>
+        <SearchableSelect
+          id="undergradSchool"
+          label="Undergraduate Alma Mater"
+          value={value.undergradSchool}
+          options={undergradSchoolOptions}
+          onChange={(fieldValue) => onChange("undergradSchool", fieldValue)}
+        />
+        <FormSelect
+          id="undergradDegree"
+          label="Undergraduate Degree"
+          placeholder="Select degree"
+          value={value.undergradDegree}
+          options={undergradDegreeOptions}
+          onChange={(fieldValue) => onChange("undergradDegree", fieldValue)}
+        />
+        <SearchableSelect
+          id="gradSchool"
+          label="Graduate Alma Mater"
+          value={value.gradSchool}
+          options={gradSchoolOptions}
+          onChange={(fieldValue) => onChange("gradSchool", fieldValue)}
+        />
+        <FormSelect
+          id="gradDegree"
+          label="Graduate Degree"
+          placeholder="Select degree"
+          value={value.gradDegree}
+          options={gradDegreeOptions}
+          onChange={(fieldValue) => onChange("gradDegree", fieldValue)}
+        />
+        <FormSelect
+          id="industryExperience"
+          label="Industry Experience"
+          placeholder="Select years of experience"
+          value={value.industryExperience}
+          options={industryExperienceOptions}
+          onChange={(fieldValue) => onChange("industryExperience", fieldValue)}
+          className="col-span-2"
+        />
       </div>
 
-      <TagInput label="Skills & Knowledge" values={value.skills} onValuesChange={onSkillsChange} />
-      <TagInput label="Shop Skills" values={value.shopSkills} onValuesChange={onShopSkillsChange} />
+      <CheckboxGroup
+        label="Skills & Knowledge"
+        options={professionOptions}
+        values={value.skills}
+        onValuesChange={onSkillsChange}
+      />
+      <CheckboxGroup
+        label="Shop Skills"
+        options={shopSkillsOptions}
+        values={value.shopSkills}
+        onValuesChange={onShopSkillsChange}
+      />
     </div>
   );
 };

@@ -2,14 +2,26 @@ import { Hono } from "hono";
 import { AppType } from "@/index";
 import { describeRoute } from "@/utils/describeRoute";
 import {
+  GetOnboardingAttributeOptionsResponseSchema,
   GetOnboardingLinkResponseSchema,
   SubmitOnboardingLinkRequestSchema,
   SubmitOnboardingLinkResponseSchema,
 } from "@common/schemas/onboarding";
 import { validate } from "@/middleware/validate";
 import { handleGetOnboardingLink, handleSubmitOnboardingLink } from "@/controllers/publicOnboardingController";
+import { handleGetOnboardingAttributeOptions } from "@/controllers/onboardingController";
 
 const app = new Hono<AppType>();
+
+app.get(
+  "/attribute-options",
+  describeRoute({
+    summary: "List PeopleVine's fixed-choice attribute options (unauthenticated)",
+    successMessage: "Success",
+    responseSchema: GetOnboardingAttributeOptionsResponseSchema,
+  }),
+  handleGetOnboardingAttributeOptions
+);
 
 app.get(
   "/links/:token",

@@ -4,7 +4,11 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useCreateOnboardingSubmissionMutation, useCreateOnboardingLinkMutation } from "@/store/api/onboardingApi";
+import {
+  useCreateOnboardingSubmissionMutation,
+  useCreateOnboardingLinkMutation,
+  useGetOnboardingAttributeOptionsQuery,
+} from "@/store/api/onboardingApi";
 import { OnboardingStepper } from "./components/OnboardingStepper";
 import { ScenarioChooserStep } from "./components/ScenarioChooserStep";
 import { LinkGeneratedStep } from "./components/LinkGeneratedStep";
@@ -53,7 +57,7 @@ const createInitialFormData = (): OnboardingFormData => ({
     bio: "",
     gender: "",
     pronouns: "",
-    ethnicity: "",
+    ethnicity: [],
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
   membershipPackage: "",
@@ -80,14 +84,16 @@ const OnboardingPage = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [generatedLinkUrl, setGeneratedLinkUrl] = useState<string | null>(null);
+  const [generatedLink, setGeneratedLink] = useState<{ url: string; token: string } | null>(null);
   const [formData, setFormData] = useState<OnboardingFormData>(createInitialFormData);
   const [createOnboardingSubmission] = useCreateOnboardingSubmissionMutation();
   const [createOnboardingLink] = useCreateOnboardingLinkMutation();
+  const { data: attributeOptionsData } = useGetOnboardingAttributeOptionsQuery();
+  const attributeOptions = attributeOptionsData?.data?.options;
 
   const setMode = (mode: OnboardingMode) => {
     setFormData((prev) => ({ ...prev, mode }));
-    setGeneratedLinkUrl(null);
+    setGeneratedLink(null);
   };
 
   const updateScenario = (scenario: OnboardingScenario) => {
@@ -102,8 +108,15 @@ const OnboardingPage = () => {
     setFormData((prev) => ({ ...prev, company: { ...prev.company, [field]: fieldValue } }));
   };
 
-  const updateUserField = (field: keyof Omit<PrimaryUserDetails, "address">, fieldValue: string) => {
+  const updateUserField = (
+    field: keyof Omit<PrimaryUserDetails, "address" | "ethnicity">,
+    fieldValue: string
+  ) => {
     setFormData((prev) => ({ ...prev, user: { ...prev.user, [field]: fieldValue } }));
+  };
+
+  const updateUserEthnicity = (ethnicity: string[]) => {
+    setFormData((prev) => ({ ...prev, user: { ...prev.user, ethnicity } }));
   };
 
   const updateUserAddress = (field: keyof Address, fieldValue: string) => {
@@ -140,7 +153,11 @@ const OnboardingPage = () => {
       setIsSubmitting(true);
       try {
         const result = await createOnboardingLink({ scenario: formData.scenario }).unwrap();
-        setGeneratedLinkUrl(result.data.url);
+        setGeneratedLink({ url: result.data.url, token: result.data.token });
+        // currentStep stays 0 (link mode skips the wizard steps), but the top-level
+        // render branches on `currentStep === 0` first — advance it so that check falls
+        // through to the `generatedLink` branch instead of re-rendering the chooser.
+        goNext();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to generate link.");
       } finally {
@@ -183,11 +200,17 @@ const OnboardingPage = () => {
         return isExistingCompany ? (
           <SelectCompanyStep value={formData.companyId} onChange={updateCompanyId} />
         ) : (
-          <CompanyDetailsStep value={formData.company} onChange={updateCompanyField} />
+          <CompanyDetailsStep value={formData.company} onChange={updateCompanyField} attributeOptions={attributeOptions} />
         );
       case 2:
         return (
-          <PrimaryUserStep value={formData.user} onChange={updateUserField} onAddressChange={updateUserAddress} />
+          <PrimaryUserStep
+            value={formData.user}
+            onChange={updateUserField}
+            onAddressChange={updateUserAddress}
+            onEthnicityChange={updateUserEthnicity}
+            attributeOptions={attributeOptions}
+          />
         );
       case 3:
         return (
@@ -204,6 +227,7 @@ const OnboardingPage = () => {
             onChange={updateSkillsField}
             onSkillsChange={updateSkills}
             onShopSkillsChange={updateShopSkills}
+            attributeOptions={attributeOptions}
           />
         );
       case 5:
@@ -259,12 +283,13 @@ const OnboardingPage = () => {
             isSubmitting={isSubmitting}
           />
         </div>
-      ) : generatedLinkUrl ? (
+      ) : generatedLink ? (
         <div className="rounded-xl border bg-white p-10">
           <LinkGeneratedStep
-            url={generatedLinkUrl}
+            url={generatedLink.url}
+            token={generatedLink.token}
             onCreateAnother={() => {
-              setGeneratedLinkUrl(null);
+              setGeneratedLink(null);
               setCurrentStep(0);
             }}
           />

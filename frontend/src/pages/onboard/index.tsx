@@ -3,7 +3,11 @@ import { useParams } from "react-router-dom";
 import { Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { useGetOnboardingLinkQuery, useSubmitOnboardingLinkMutation } from "@/store/api/publicOnboardingApi";
+import {
+  useGetOnboardingLinkQuery,
+  useSubmitOnboardingLinkMutation,
+  useGetOnboardingAttributeOptionsQuery,
+} from "@/store/api/publicOnboardingApi";
 import { CompanyDetailsStep } from "@/pages/admin/onboarding/components/CompanyDetailsStep";
 import { PrimaryUserStep } from "@/pages/admin/onboarding/components/PrimaryUserStep";
 import { SkillsStep } from "@/pages/admin/onboarding/components/SkillsStep";
@@ -46,7 +50,7 @@ const createInitialFormData = (scenario: "new_company" | "existing_company"): On
     bio: "",
     gender: "",
     pronouns: "",
-    ethnicity: "",
+    ethnicity: [],
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
   membershipPackage: "",
@@ -73,6 +77,8 @@ const PublicOnboardingPage = () => {
   const { token } = useParams<{ token: string }>();
   const { data, isLoading, error } = useGetOnboardingLinkQuery(token ?? "", { skip: !token });
   const [submitOnboardingLink] = useSubmitOnboardingLinkMutation();
+  const { data: attributeOptionsData } = useGetOnboardingAttributeOptionsQuery();
+  const attributeOptions = attributeOptionsData?.data?.options;
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -133,8 +139,15 @@ const PublicOnboardingPage = () => {
     setFormData((prev) => (prev ? { ...prev, company: { ...prev.company, [field]: fieldValue } } : prev));
   };
 
-  const updateUserField = (field: keyof Omit<PrimaryUserDetails, "address">, fieldValue: string) => {
+  const updateUserField = (
+    field: keyof Omit<PrimaryUserDetails, "address" | "ethnicity">,
+    fieldValue: string
+  ) => {
     setFormData((prev) => (prev ? { ...prev, user: { ...prev.user, [field]: fieldValue } } : prev));
+  };
+
+  const updateUserEthnicity = (ethnicity: string[]) => {
+    setFormData((prev) => (prev ? { ...prev, user: { ...prev.user, ethnicity } } : prev));
   };
 
   const updateUserAddress = (field: keyof Address, fieldValue: string) => {
@@ -182,11 +195,17 @@ const PublicOnboardingPage = () => {
         return isExistingCompany ? (
           <PublicSelectCompanyStep value={formData.companyId} onChange={updateCompanyId} companies={linkInfo.companies ?? []} />
         ) : (
-          <CompanyDetailsStep value={formData.company} onChange={updateCompanyField} />
+          <CompanyDetailsStep value={formData.company} onChange={updateCompanyField} attributeOptions={attributeOptions} />
         );
       case 2:
         return (
-          <PrimaryUserStep value={formData.user} onChange={updateUserField} onAddressChange={updateUserAddress} />
+          <PrimaryUserStep
+            value={formData.user}
+            onChange={updateUserField}
+            onAddressChange={updateUserAddress}
+            onEthnicityChange={updateUserEthnicity}
+            attributeOptions={attributeOptions}
+          />
         );
       case 3:
         return (
@@ -204,6 +223,7 @@ const PublicOnboardingPage = () => {
             onChange={updateSkillsField}
             onSkillsChange={updateSkills}
             onShopSkillsChange={updateShopSkills}
+            attributeOptions={attributeOptions}
           />
         );
       default:

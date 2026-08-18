@@ -33,7 +33,7 @@ export const OnboardingUserSchema = z.object({
   bio: z.string(),
   gender: z.string(),
   pronouns: z.string(),
-  ethnicity: z.string(),
+  ethnicity: z.array(z.string()),
   address: OnboardingAddressSchema,
 });
 
@@ -185,3 +185,26 @@ export const SubmitOnboardingLinkRequestSchema = z.object({
 });
 
 export const SubmitOnboardingLinkResponseSchema = SuccessResponseSchema(z.object({}));
+
+export const SendOnboardingLinkEmailRequestSchema = z.object({
+  to: z.string().email(),
+  toName: z.string().optional(),
+  subject: z.string().min(1),
+  html: z.string().min(1),
+});
+
+export const SendOnboardingLinkEmailResponseSchema = SuccessResponseSchema(z.object({}));
+
+// One PV "Attribute" (a custom field configured in the PV Control Panel) that offers a
+// fixed set of choices (select/radio/checkbox) — matched by `name` against the exact
+// PV-configured attribute name. Fetched live rather than hardcoded so onboarding always
+// offers the same choices PV itself has configured, and stays in sync if those change.
+export const OnboardingAttributeOptionSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  values: z.array(z.string()),
+});
+
+export const GetOnboardingAttributeOptionsResponseSchema = SuccessResponseSchema(
+  z.object({ options: z.array(OnboardingAttributeOptionSchema) })
+);

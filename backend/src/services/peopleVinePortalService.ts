@@ -67,6 +67,47 @@ const pvPortalRequest = async (c: Context, options: PvPortalRequestOptions): Pro
   return response.json();
 };
 
+// The onboarding form's fixed-choice fields (schools, degrees, pronouns, ethnicity,
+// shop skills, ...) need to offer the exact same option strings as PV's own "Attribute"
+// definitions, or a later attribute push would fail to match. GET /account/attributes
+// requires an on-behalf-of customer, but the option lists themselves (unlike the
+// `selected`/`value` state) are account-wide, not specific to that customer — so any
+// existing, synced PV customer works as the lookup anchor. Configured once via
+// PEOPLEVINE_ATTRIBUTE_REFERENCE_CUSTOMER_ID rather than picked arbitrarily from the
+// local DB, so the anchor is stable and admin-controlled instead of silently shifting
+// to whichever record happens to sync first.
+export interface PvAttributeOption {
+  id: number;
+  name: string;
+  values: string[];
+}
+
+export const fetchPvAttributeOptions = async (c: Context): Promise<PvAttributeOption[]> => {
+  const referenceCustomerId = c.env.PEOPLEVINE_ATTRIBUTE_REFERENCE_CUSTOMER_ID;
+  if (!referenceCustomerId) {
+    throw new HTTPException(500, {
+      message:
+        "PEOPLEVINE_ATTRIBUTE_REFERENCE_CUSTOMER_ID is not configured — it's needed as a reference customer to look up PV's fixed-choice attribute lists (schools, degrees, pronouns, etc.).",
+    });
+  }
+
+  const attributes = await pvPortalRequest(c, {
+    method: "GET",
+    endpoint: "/account/attributes",
+    onBehalfOfCustomerId: Number(referenceCustomerId),
+  });
+
+  return (attributes as any[])
+    .filter((attribute) => Array.isArray(attribute?.field?.values) && attribute.field.values.length > 0)
+    .map((attribute) => ({
+      id: attribute.id,
+      name: attribute.name,
+      values: attribute.field.values
+        .map((option: { value: string }) => option.value)
+        .filter((value: string) => value !== ""),
+    }));
+};
+
 interface PvRegisteredCustomer {
   id: number;
   email: string;
@@ -104,9 +145,19 @@ export const pvRegisterCustomer = async (
 };
 
 // PV's own gender enum (U=Unspecified, F=Female, M=Male, T=Transgender, N=Non-binary,
-// O=Other). Our form field is freeform text, so only forward it when it actually
-// matches — otherwise the whole update would fail over an unrelated typo.
-const PV_GENDER_CODES = new Set(["U", "F", "M", "T", "N", "O"]);
+// O=Other) on CustomerUpdate.gender — separate from, and coarser than, the "Gender"
+// Attribute (id 572: Male/Female/Nonbinary/Intersex/Other/Choose not to answer...) that
+// the onboarding form's dropdown now offers. Map the form's exact dropdown label to the
+// closest PV code; anything unrecognized is dropped rather than sent, since a bad enum
+// value would fail the whole update.
+const GENDER_LABEL_TO_PV_CODE: Record<string, string> = {
+  Male: "M",
+  Female: "F",
+  Nonbinary: "N",
+  Intersex: "O",
+  Other: "O",
+  "Choose not to answer...": "U",
+};
 
 // Address/birthdate/gender/company info have no create-time equivalent in PV's register
 // schema — PATCH /api/account is the only endpoint that accepts them. `company_name` /
@@ -114,6 +165,14 @@ const PV_GENDER_CODES = new Set(["U", "F", "M", "T", "N", "O"]);
 // PV's CustomerUpdate schema). This ONLY ever includes the specific fields being set
 // below, never the full customer object, so a call here can't accidentally blank out or
 // overwrite anything else on the PV record.
+// One PV "Attribute" answer — `name` must match a PV-configured attribute exactly
+// (case/spacing and all, e.g. "Ethnicity (choose all that apply)"); `values` is a
+// single-item array for single-choice attributes, multi-item for checkbox ones.
+export interface PvAttributeInput {
+  name: string;
+  values: string[];
+}
+
 export const pvUpdateAccountProfile = async (
   c: Context,
   customerId: number,
@@ -126,6 +185,7 @@ export const pvUpdateAccountProfile = async (
     companyTitle?: string;
     companyWebsite?: string;
     customerReference?: string;
+    attributes?: PvAttributeInput[];
   }
 ): Promise<unknown> => {
   const body: Record<string, unknown> = {};
@@ -136,9 +196,9 @@ export const pvUpdateAccountProfile = async (
   if (input.birthday) {
     body.birthdate = input.birthday;
   }
-  const normalizedGender = input.gender?.trim().toUpperCase();
-  if (normalizedGender && PV_GENDER_CODES.has(normalizedGender)) {
-    body.gender = normalizedGender;
+  const genderCode = input.gender ? GENDER_LABEL_TO_PV_CODE[input.gender] : undefined;
+  if (genderCode) {
+    body.gender = genderCode;
   }
   const { street, city, state, zip, country } = input.address ?? {};
   if (street || city || state || zip || country) {
@@ -155,6 +215,9 @@ export const pvUpdateAccountProfile = async (
   }
   if (input.customerReference) {
     body.customer_reference = input.customerReference;
+  }
+  if (input.attributes && input.attributes.length > 0) {
+    body.attributes = input.attributes;
   }
 
   if (Object.keys(body).length === 0) {
@@ -211,16 +274,52 @@ const pvAddSubMember = async (
   });
 };
 
+// Maps our onboarding form's own field names to the exact PV attribute names they were
+// built to match (see fetchPvAttributeOptions) — never sends a blank/empty entry, so an
+// unanswered field simply doesn't touch that attribute on the PV side (never blanks out
+// something already set there from a prior partial submission or manual PV edit).
+const buildAttribute = (name: string, values: string[]): PvAttributeInput | null =>
+  values.length > 0 ? { name, values } : null;
+
+const buildUserAttributes = (formData: OnboardingFormData): PvAttributeInput[] => {
+  const { user, skills } = formData;
+  return [
+    buildAttribute("Personal Bio", user.bio ? [user.bio] : []),
+    buildAttribute("LinkedIn Profile URL", user.linkedin ? [user.linkedin] : []),
+    buildAttribute("Pronoun", user.pronouns ? [user.pronouns] : []),
+    buildAttribute("Gender", user.gender ? [user.gender] : []),
+    buildAttribute("Ethnicity (choose all that apply)", user.ethnicity),
+    buildAttribute("Undergraduate Alma Mater", skills.undergradSchool ? [skills.undergradSchool] : []),
+    buildAttribute("Primary Undergrad Degree", skills.undergradDegree ? [skills.undergradDegree] : []),
+    buildAttribute("Graduate School Alma Mater", skills.gradSchool ? [skills.gradSchool] : []),
+    buildAttribute("Primary Graduate School Degree", skills.gradDegree ? [skills.gradDegree] : []),
+    buildAttribute("Industry Experience", skills.industryExperience ? [skills.industryExperience] : []),
+    buildAttribute("Profession/ Knowledge", skills.skills),
+    buildAttribute("Shop Skills", skills.shopSkills),
+  ].filter((attribute): attribute is PvAttributeInput => attribute !== null);
+};
+
+// Company-side attributes only apply to the new_company scenario, where we already
+// create/update the company's own PV customer record below — existing_company never
+// touches the already-known company record beyond linking, so it's left alone here too.
+const buildCompanyAttributes = (formData: OnboardingFormData): PvAttributeInput[] => {
+  const { company } = formData;
+  return [buildAttribute("Total Number of Employees", company.size ? [company.size] : [])].filter(
+    (attribute): attribute is PvAttributeInput => attribute !== null
+  );
+};
+
 // PV requires a unique, non-empty email per customer, but our onboarding form only ever
 // collects one email (the person's). The company-type customer still needs its own,
-// distinct address — "+tag" sub-addressing on the real user's own domain guarantees
-// uniqueness per company without inventing a fake/undeliverable domain, and any mail
-// providers that support it (Gmail, Google Workspace, Outlook, etc.) will still deliver
-// it to the same real inbox rather than bouncing.
-const buildCompanyPlaceholderEmail = (userEmail: string, companyName: string): string => {
+// distinct address — "+company" sub-addressing on the real user's own domain gives it
+// one without inventing a fake/undeliverable domain, and any mail providers that support
+// it (Gmail, Google Workspace, Outlook, etc.) will still deliver it to the same real
+// inbox rather than bouncing. Kept short and constant rather than including the company
+// name: if the same person ever onboards a second company, that collides with the first
+// company's placeholder in PV (accepted trade-off — this is the rare case, not the norm).
+const buildCompanyPlaceholderEmail = (userEmail: string): string => {
   const [localPart, domain] = userEmail.split("@");
-  const slug = companyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "company";
-  return `${localPart}+company-${slug}@${domain}`;
+  return `${localPart}+company@${domain}`;
 };
 
 export interface OnboardingPvPushResult {
@@ -256,6 +355,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
 ): Promise<OnboardingPvPushResult> => {
   assertPeopleVineWritesEnabled(c);
   const { existingCompanyPeopleVineId, resumeCompanyPvCustomerId, onCompanyCreated } = options;
+  const userAttributes = buildUserAttributes(formData);
 
   if (formData.scenario === "existing_company") {
     const companyPvId = existingCompanyPeopleVineId ? Number(existingCompanyPeopleVineId) : null;
@@ -272,6 +372,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
         birthday: formData.user.birthday,
         gender: formData.user.gender,
         address: formData.user.address,
+        attributes: userAttributes,
       });
       return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true };
     }
@@ -291,6 +392,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       gender: formData.user.gender,
       address: formData.user.address,
       companyTitle: formData.user.title,
+      attributes: userAttributes,
       ...(companyPvId ? { customerReference: `pv_company:${companyPvId}` } : {}),
     });
     return { companyPvCustomerId: null, userPvCustomerId: String(user.id), linkedViaMembershipCard: false };
@@ -305,7 +407,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     companyId = Number(resumeCompanyPvCustomerId);
   } else {
     const company = await pvRegisterCustomer(c, {
-      email: buildCompanyPlaceholderEmail(formData.user.email, companyName),
+      email: buildCompanyPlaceholderEmail(formData.user.email),
       firstName: companyName,
       lastName: "Company",
     });
@@ -318,6 +420,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       // renders as a bare "," when address/city/state are all empty) for a company
       // that, at this stage, has no address of its own.
       address: formData.user.address,
+      attributes: buildCompanyAttributes(formData),
     });
     companyId = company.id;
     // Persisted immediately — if the user registration below fails, a retry must not
@@ -340,6 +443,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     companyTitle: formData.user.title,
     companyWebsite: formData.company.website,
     customerReference: `pv_company:${companyId}`,
+    attributes: userAttributes,
   });
 
   // PV has no API to create a subscription/membership — confirmed platform limitation.

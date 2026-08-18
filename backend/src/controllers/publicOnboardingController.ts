@@ -10,7 +10,9 @@ import { fetchActiveMembershipPackages, createOnboardingSubmissionRecord } from 
 
 const OPEN_LINK_STATUSES = new Set(["active"]);
 
-const loadOpenLink = async (c: Context) => {
+// Exported for the admin "send this link by email" action, which needs the same
+// exists/active/not-expired checks before sending — no reason to duplicate them.
+export const loadOpenLink = async (c: Context) => {
   const prisma: PrismaClient = c.get("db");
   const token = c.req.param("token");
 

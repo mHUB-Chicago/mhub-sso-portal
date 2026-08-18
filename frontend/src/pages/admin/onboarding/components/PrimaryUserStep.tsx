@@ -1,16 +1,37 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormSelect } from "@/components/ui/form-select";
 import { Textarea } from "@/components/ui/textarea";
+import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
+import { findAttributeOptionValues } from "../attributeOptionsUtil";
+import { MultiSelectDropdown } from "./MultiSelectDropdown";
 import type { Address, PrimaryUserDetails } from "../types";
 
 interface PrimaryUserStepProps {
   value: PrimaryUserDetails;
-  onChange: (field: keyof Omit<PrimaryUserDetails, "address">, fieldValue: string) => void;
+  onChange: (field: keyof Omit<PrimaryUserDetails, "address" | "ethnicity">, fieldValue: string) => void;
   onAddressChange: (field: keyof Address, fieldValue: string) => void;
+  onEthnicityChange: (ethnicity: string[]) => void;
+  attributeOptions?: OnboardingAttributeOption[];
 }
 
-export const PrimaryUserStep = ({ value, onChange, onAddressChange }: PrimaryUserStepProps) => {
+export const PrimaryUserStep = ({
+  value,
+  onChange,
+  onAddressChange,
+  onEthnicityChange,
+  attributeOptions,
+}: PrimaryUserStepProps) => {
   const aliasPreview = value.email.includes("@") ? value.email.replace("@", "+company@") : "";
+  const genderOptions = findAttributeOptionValues(attributeOptions, "Gender").map((label) => ({
+    value: label,
+    label,
+  }));
+  const pronounOptions = findAttributeOptionValues(attributeOptions, "Pronoun").map((label) => ({
+    value: label,
+    label,
+  }));
+  const ethnicityOptions = findAttributeOptionValues(attributeOptions, "Ethnicity (choose all that apply)");
 
   return (
     <div className="space-y-6">
@@ -127,35 +148,33 @@ export const PrimaryUserStep = ({ value, onChange, onAddressChange }: PrimaryUse
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <Label htmlFor="userGender">Gender</Label>
-          <Input
-            id="userGender"
-            value={value.gender}
-            onChange={(e) => onChange("gender", e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="userPronouns">Pronouns</Label>
-          <Input
-            id="userPronouns"
-            value={value.pronouns}
-            onChange={(e) => onChange("pronouns", e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="userEthnicity">Ethnicity</Label>
-          <Input
-            id="userEthnicity"
-            value={value.ethnicity}
-            onChange={(e) => onChange("ethnicity", e.target.value)}
-            className="mt-1"
-          />
-        </div>
+      <div className="grid grid-cols-2 gap-4">
+        <FormSelect
+          id="userGender"
+          label="Gender"
+          placeholder="Select gender"
+          value={value.gender}
+          options={genderOptions}
+          onChange={(fieldValue) => onChange("gender", fieldValue)}
+        />
+        <FormSelect
+          id="userPronouns"
+          label="Pronouns"
+          placeholder="Select pronouns"
+          value={value.pronouns}
+          options={pronounOptions}
+          onChange={(fieldValue) => onChange("pronouns", fieldValue)}
+        />
       </div>
+
+      <MultiSelectDropdown
+        id="userEthnicity"
+        label="Ethnicity (choose all that apply)"
+        placeholder="Select ethnicity"
+        options={ethnicityOptions}
+        values={value.ethnicity}
+        onValuesChange={onEthnicityChange}
+      />
 
       <div className="space-y-3">
         <Label>Personal Address</Label>

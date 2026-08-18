@@ -30,7 +30,7 @@ export interface PrimaryUserDetails {
   bio: string;
   gender: string;
   pronouns: string;
-  ethnicity: string;
+  ethnicity: string[];
   address: Address;
 }
 

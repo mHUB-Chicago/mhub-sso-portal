@@ -5,6 +5,9 @@ FRONTEND_URL="http://localhost:5173"
 PEOPLEVINE_ADMIN_PASSWORD="your_peoplevine_admin_password"
 PEOPLEVINE_ADMIN_USERNAME="your_peoplevine_admin_username"
 PEOPLEVINE_COMPANY_ID="your_peoplevine_company_id"
+# Any existing, synced PV customer id — used as the on-behalf-of anchor when looking up
+# PV's fixed-choice attribute option lists (schools, degrees, pronouns, etc.).
+PEOPLEVINE_ATTRIBUTE_REFERENCE_CUSTOMER_ID="your_peoplevine_reference_customer_id"
 # Gates the write-capable PV client (register/cart/checkout/attach-member) used by the
 # onboarding "approve" action. Leave unset/false — only set to "true" when you're ready
 # to test a real push to PeopleVine.

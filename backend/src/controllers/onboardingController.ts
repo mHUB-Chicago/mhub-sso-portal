@@ -9,11 +9,14 @@ import {
   CreateOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
   FlagOnboardingSubmissionResponseSchema,
+  GetOnboardingAttributeOptionsResponseSchema,
   GetOnboardingMembershipPackagesResponseSchema,
   GetOnboardingSubmissionResponseSchema,
   GetOnboardingSubmissionsQuerySchema,
   GetOnboardingSubmissionsResponseSchema,
   ReactivateOnboardingSubmissionResponseSchema,
+  SendOnboardingLinkEmailRequestSchema,
+  SendOnboardingLinkEmailResponseSchema,
   TreatOnboardingSubmissionAsNewResponseSchema,
   UpdateOnboardingSubmissionRequestSchema,
   UpdateOnboardingSubmissionResponseSchema,
@@ -22,8 +25,14 @@ import {
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { createCompany, updateCompany } from "@/services/companyService";
 import { createUser, updateUser } from "@/services/userService";
-import { assertPeopleVineWritesEnabled, pushOnboardingSubmissionToPeopleVine } from "@/services/peopleVinePortalService";
+import {
+  assertPeopleVineWritesEnabled,
+  fetchPvAttributeOptions,
+  pushOnboardingSubmissionToPeopleVine,
+} from "@/services/peopleVinePortalService";
 import { apiRequestWithPagination } from "@/services/peopleVineService";
+import { sendCustomEmail } from "@/services/emailService";
+import { loadOpenLink } from "@/controllers/publicOnboardingController";
 import { PeopleVineTokenType, Role } from "@prisma/client";
 
 // Shared by the admin-authenticated create endpoint and the public onboarding-link
@@ -398,6 +407,40 @@ export const handleGetOnboardingMembershipPackages = async (c: Context<AppType>)
     success: true,
     message: "Success",
     data: { packages },
+  });
+  return c.json(response);
+};
+
+// Shared by the admin-authenticated onboarding routes and the public onboarding-link
+// routes — both forms need the same PV-sourced fixed-choice lists (schools, degrees,
+// pronouns, ethnicity, shop skills, ...) to render their dropdowns/checkboxes.
+export const handleGetOnboardingAttributeOptions = async (c: Context<AppType>) => {
+  const options = await fetchPvAttributeOptions(c);
+
+  const response = GetOnboardingAttributeOptionsResponseSchema.parse({
+    success: true,
+    message: "Success",
+    data: { options },
+  });
+  return c.json(response);
+};
+
+// Admin composes the subject/body themselves (rich text editor on the frontend) —
+// this only ever forwards exactly what they wrote, plus the recipient. Requires the
+// link to still be open (not yet submitted/expired/revoked) so staff can't send out a
+// dead link by mistake.
+export const handleSendOnboardingLinkEmail = async (
+  c: Context<AppType, string, JsonInput<typeof SendOnboardingLinkEmailRequestSchema>>
+) => {
+  await loadOpenLink(c);
+  const { to, toName, subject, html } = c.req.valid("json");
+
+  await sendCustomEmail(c, { to, to_name: toName, subject, html });
+
+  const response = SendOnboardingLinkEmailResponseSchema.parse({
+    success: true,
+    message: "Email sent",
+    data: {},
   });
   return c.json(response);
 };
