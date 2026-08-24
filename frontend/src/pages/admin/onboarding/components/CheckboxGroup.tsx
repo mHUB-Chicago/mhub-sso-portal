@@ -1,5 +1,6 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { SectionHeading } from "./SectionHeading";
 
 interface CheckboxGroupProps {
   label: string;
@@ -15,7 +16,7 @@ export const CheckboxGroup = ({ label, options, values, onValuesChange }: Checkb
 
   return (
     <div>
-      <Label>{label}</Label>
+      <SectionHeading>{label}</SectionHeading>
       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
         {options.map((option) => {
           const id = `${label}-${option}`;

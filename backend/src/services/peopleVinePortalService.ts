@@ -304,9 +304,11 @@ const buildUserAttributes = (formData: OnboardingFormData): PvAttributeInput[] =
 // touches the already-known company record beyond linking, so it's left alone here too.
 const buildCompanyAttributes = (formData: OnboardingFormData): PvAttributeInput[] => {
   const { company } = formData;
-  return [buildAttribute("Total Number of Employees", company.size ? [company.size] : [])].filter(
-    (attribute): attribute is PvAttributeInput => attribute !== null
-  );
+  return [
+    buildAttribute("Total Number of Employees", company.size ? [company.size] : []),
+    buildAttribute("Company Concentration", company.industry ? [company.industry] : []),
+    buildAttribute("Business Stage", company.fundingStage ? [company.fundingStage] : []),
+  ].filter((attribute): attribute is PvAttributeInput => attribute !== null);
 };
 
 // PV requires a unique, non-empty email per customer, but our onboarding form only ever

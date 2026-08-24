@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import { useGetOnboardingMembershipPackagesQuery } from "@/store/api/onboardingApi";
 
 interface MembershipPackageStepProps {
@@ -17,6 +17,18 @@ export const MembershipPackageStep = ({ value, onChange, optional }: MembershipP
   const packages = data?.data?.packages ?? [];
   const selected = packages.find((pkg) => pkg.id === value);
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
 
   return (
     <div className="space-y-6">
@@ -27,7 +39,7 @@ export const MembershipPackageStep = ({ value, onChange, optional }: MembershipP
         </p>
       </div>
 
-      <div>
+      <div ref={containerRef}>
         <Label htmlFor="membershipPackage">
           Requested Package{" "}
           {optional ? <span className="text-gray-400">(optional)</span> : <span className="text-red-500">*</span>}
@@ -42,26 +54,22 @@ export const MembershipPackageStep = ({ value, onChange, optional }: MembershipP
             Failed to load membership packages from PeopleVine.
           </p>
         ) : (
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                id="membershipPackage"
-                variant="outline"
-                role="combobox"
-                aria-expanded={open}
-                className="mt-1 w-full justify-between font-normal"
-              >
-                <span className="truncate">{selected ? selected.name : "Select a package"}</span>
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              className="w-(--radix-popover-trigger-width) p-0"
-              align="start"
-              collisionPadding={16}
+          <>
+            <Button
+              id="membershipPackage"
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              onClick={() => setOpen((prev) => !prev)}
+              className="mt-1 w-full justify-between font-normal"
             >
-              <Command>
-                <CommandInput placeholder="Search packages…" />
+              <span className="truncate">{selected ? selected.name : "Select a package"}</span>
+              <ChevronDown className={cn("ml-2 h-4 w-4 shrink-0 opacity-50 transition-transform", open && "rotate-180")} />
+            </Button>
+            {open && (
+              <Command className="mt-2 rounded-md border shadow-sm">
+                <CommandInput placeholder="Search packages…" autoFocus />
                 <CommandList className="max-h-64">
                   <CommandEmpty>No packages found.</CommandEmpty>
                   <CommandGroup>
@@ -81,8 +89,8 @@ export const MembershipPackageStep = ({ value, onChange, optional }: MembershipP
                   </CommandGroup>
                 </CommandList>
               </Command>
-            </PopoverContent>
-          </Popover>
+            )}
+          </>
         )}
       </div>
     </div>

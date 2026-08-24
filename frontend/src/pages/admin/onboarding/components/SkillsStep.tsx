@@ -3,6 +3,7 @@ import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
 import { findAttributeOptionValues } from "../attributeOptionsUtil";
 import { CheckboxGroup } from "./CheckboxGroup";
 import { SearchableSelect } from "./SearchableSelect";
+import { SectionHeading } from "./SectionHeading";
 import type { SkillsDetails } from "../types";
 
 type SkillsTextField = keyof Omit<SkillsDetails, "skills" | "shopSkills">;
@@ -43,6 +44,7 @@ export const SkillsStep = ({
         </p>
       </div>
 
+      <SectionHeading>Education</SectionHeading>
       <div className="grid grid-cols-2 gap-4">
         <SearchableSelect
           id="undergradSchool"

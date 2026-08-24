@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
 import { findAttributeOptionValues } from "../attributeOptionsUtil";
 import { MultiSelectDropdown } from "./MultiSelectDropdown";
+import { SectionHeading } from "./SectionHeading";
 import type { Address, PrimaryUserDetails } from "../types";
 
 interface PrimaryUserStepProps {
@@ -40,26 +41,30 @@ export const PrimaryUserStep = ({
         <p className="text-gray-600">Creates the main user profile — the primary contact for the company.</p>
       </div>
 
-      <div>
-        <Label htmlFor="userEmail">
-          Email <span className="text-red-500">*</span>
-        </Label>
-        <Input
-          id="userEmail"
-          type="email"
-          autoComplete="email"
-          value={value.email}
-          onChange={(e) => onChange("email", e.target.value)}
-          className="mt-1"
-        />
-        {aliasPreview && (
-          <p className="mt-1.5 text-xs text-emerald-700">
-            The company profile will use {aliasPreview} automatically. Both addresses deliver to the same
-            inbox.
-          </p>
-        )}
+      <div className="space-y-4">
+        <SectionHeading>Account Email</SectionHeading>
+        <div>
+          <Label htmlFor="userEmail">
+            Email <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="userEmail"
+            type="email"
+            autoComplete="email"
+            value={value.email}
+            onChange={(e) => onChange("email", e.target.value)}
+            className="mt-1"
+          />
+          {aliasPreview && (
+            <p className="mt-1.5 text-xs text-emerald-700">
+              The company profile will use {aliasPreview} automatically. Both addresses deliver to the same
+              inbox.
+            </p>
+          )}
+        </div>
       </div>
 
+      <SectionHeading>Member Information</SectionHeading>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label htmlFor="userFirstName">
@@ -148,6 +153,7 @@ export const PrimaryUserStep = ({
         />
       </div>
 
+      <SectionHeading>Member Identity</SectionHeading>
       <div className="grid grid-cols-2 gap-4">
         <FormSelect
           id="userGender"
@@ -177,7 +183,7 @@ export const PrimaryUserStep = ({
       />
 
       <div className="space-y-3">
-        <Label>Personal Address</Label>
+        <SectionHeading>Personal Address</SectionHeading>
         <Input
           placeholder="Street address"
           autoComplete="street-address"

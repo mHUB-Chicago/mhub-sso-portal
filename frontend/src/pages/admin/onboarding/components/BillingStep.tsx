@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { SectionHeading } from "./SectionHeading";
 import type { Address, BillingDetails, PaymentType } from "../types";
 
 type BillingTextField = keyof Omit<BillingDetails, "address" | "paymentType">;
@@ -24,6 +25,7 @@ export const BillingStep = ({ value, onChange, onAddressChange, onPaymentTypeCha
         </p>
       </div>
 
+      <SectionHeading>Payment Method</SectionHeading>
       <div>
         <Label>Payment Type</Label>
         <div className="mt-1 inline-flex overflow-hidden rounded-md border border-gray-300">
@@ -107,7 +109,7 @@ export const BillingStep = ({ value, onChange, onAddressChange, onPaymentTypeCha
       )}
 
       <div className="space-y-3">
-        <Label>Billing Address</Label>
+        <SectionHeading>Billing Address</SectionHeading>
         <Input
           placeholder="Street address"
           autoComplete="street-address"
