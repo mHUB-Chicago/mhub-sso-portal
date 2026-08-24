@@ -6,6 +6,7 @@ import { Link } from "react-router-dom"
 import { useGetUsersQuery, useLazyGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
 import { useGetMembershipTypesQuery, useGetPortalAccessTypesQuery } from "@/store/api/syncApi"
+import { SyncStatusGate } from "@/components/sync-status-overlay"
 import { useMemo, useState } from "react"
 import { toCsv, downloadCsv } from "@/utils/csv"
 import { toast } from "sonner"
@@ -167,6 +168,7 @@ export function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
+      <SyncStatusGate />
       <div>
         <nav className="text-sm text-gray-500 mb-2">
           <Link to="/dashboard" className="hover:text-gray-700 cursor-pointer">Home</Link>

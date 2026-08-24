@@ -14,6 +14,7 @@ import {
   type OnboardingSubmission,
 } from "@/store/api/onboardingApi";
 import { DuplicateMatchModal } from "./DuplicateMatchModal";
+import { SyncStatusGate } from "@/components/sync-status-overlay";
 
 type TabKey = "pending_review" | "needs_attention";
 
@@ -137,6 +138,7 @@ export function AdminOnboardingHistoryPage() {
 
   return (
     <div className="space-y-6">
+      <SyncStatusGate />
       <div className="flex items-center justify-between">
         <div>
           <nav className="text-sm text-gray-500 mb-2">

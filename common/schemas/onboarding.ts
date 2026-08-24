@@ -33,7 +33,12 @@ export const OnboardingUserSchema = z.object({
   bio: z.string(),
   gender: z.string(),
   pronouns: z.string(),
-  ethnicity: z.array(z.string()),
+  // Coerced for backward compatibility: submissions created before ethnicity
+  // became a multi-select stored it as a plain string.
+  ethnicity: z.preprocess(
+    (val) => (typeof val === "string" ? (val ? [val] : []) : val),
+    z.array(z.string())
+  ),
   address: OnboardingAddressSchema,
 });
 

@@ -4,6 +4,7 @@ import { useGetSyncStatusQuery } from '@/store/api/syncApi'
 import { Loader2, TrendingUp, Users, Activity, Building2, RefreshCw, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Minus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
+import { SyncStatusGate } from '@/components/sync-status-overlay'
 
 const MIN_OFFSET = -104
 const MAX_OFFSET = 0
@@ -141,6 +142,7 @@ export function AdminReportsPage() {
 
   return (
     <div className="space-y-6">
+      <SyncStatusGate />
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Reports</h1>
