@@ -194,6 +194,15 @@ export const onboardingApi = createApi({
       invalidatesTags: ['OnboardingSubmissions'],
     }),
 
+    disapproveOnboardingSubmission: builder.mutation<SubmissionResponse, { id: string; resolutionNote?: string }>({
+      query: ({ id, resolutionNote }) => ({
+        url: `/onboarding/${id}/disapprove`,
+        method: 'POST',
+        body: { resolutionNote },
+      }),
+      invalidatesTags: ['OnboardingSubmissions'],
+    }),
+
     getOnboardingMembershipPackages: builder.query<MembershipPackagesResponse, void>({
       query: () => '/onboarding/membership-packages',
       providesTags: ['OnboardingMembershipPackages'],
@@ -225,6 +234,7 @@ export const {
   useReactivateOnboardingSubmissionMutation,
   useTreatOnboardingSubmissionAsNewMutation,
   useFlagOnboardingSubmissionMutation,
+  useDisapproveOnboardingSubmissionMutation,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingAttributeOptionsQuery,
   useCreateOnboardingLinkMutation,

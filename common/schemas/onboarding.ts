@@ -155,6 +155,14 @@ export const FlagOnboardingSubmissionResponseSchema = SuccessResponseSchema(
   z.object({ submission: OnboardingSubmissionSchema })
 );
 
+export const DisapproveOnboardingSubmissionRequestSchema = z.object({
+  resolutionNote: z.string().optional(),
+});
+
+export const DisapproveOnboardingSubmissionResponseSchema = SuccessResponseSchema(
+  z.object({ submission: OnboardingSubmissionSchema })
+);
+
 export const OnboardingMembershipPackageSchema = z.object({
   id: z.string(),
   name: z.string(),

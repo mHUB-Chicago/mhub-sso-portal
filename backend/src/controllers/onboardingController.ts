@@ -7,6 +7,8 @@ import {
   CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
   CreateOnboardingSubmissionResponseSchema,
+  DisapproveOnboardingSubmissionRequestSchema,
+  DisapproveOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
   FlagOnboardingSubmissionResponseSchema,
   GetOnboardingAttributeOptionsResponseSchema,
@@ -395,6 +397,40 @@ export const handleFlagOnboardingSubmission = async (
   const response = FlagOnboardingSubmissionResponseSchema.parse({
     success: true,
     message: "Submission flagged for manual cleanup",
+    data: { submission: toSubmissionDTO(updated) },
+  });
+  return c.json(response);
+};
+
+export const handleDisapproveOnboardingSubmission = async (
+  c: Context<AppType, string, JsonInput<typeof DisapproveOnboardingSubmissionRequestSchema>>
+) => {
+  const prisma: PrismaClient = c.get("db");
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const { resolutionNote } = c.req.valid("json");
+
+  const row = await prisma.onboardingSubmission.findUnique({ where: { id } });
+  if (!row) {
+    throw "Onboarding submission not found";
+  }
+  if (row.status !== "pending_review") {
+    throw "Only submissions in Pending Review can be disapproved";
+  }
+
+  const updated = await prisma.onboardingSubmission.update({
+    where: { id },
+    data: {
+      status: "disapproved",
+      resolutionNote: resolutionNote ?? null,
+      reviewedBy: user?.id ?? null,
+      reviewedAt: new Date(),
+    },
+  });
+
+  const response = DisapproveOnboardingSubmissionResponseSchema.parse({
+    success: true,
+    message: "Submission disapproved",
     data: { submission: toSubmissionDTO(updated) },
   });
   return c.json(response);

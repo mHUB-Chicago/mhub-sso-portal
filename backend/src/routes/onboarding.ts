@@ -7,6 +7,8 @@ import {
   CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
   CreateOnboardingSubmissionResponseSchema,
+  DisapproveOnboardingSubmissionRequestSchema,
+  DisapproveOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
   FlagOnboardingSubmissionResponseSchema,
   GetOnboardingAttributeOptionsResponseSchema,
@@ -28,6 +30,7 @@ import {
   handleApproveOnboardingSubmission,
   handleCreateOnboardingLink,
   handleCreateOnboardingSubmission,
+  handleDisapproveOnboardingSubmission,
   handleFlagOnboardingSubmission,
   handleGetOnboardingAttributeOptions,
   handleGetOnboardingMembershipPackages,
@@ -148,6 +151,19 @@ app.post(
     parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
   }),
   handleApproveOnboardingSubmission
+);
+
+app.post(
+  "/:id/disapprove",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Disapprove a Pending Review submission",
+    successMessage: "Submission disapproved",
+    responseSchema: DisapproveOnboardingSubmissionResponseSchema,
+    parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+  }),
+  validate(DisapproveOnboardingSubmissionRequestSchema),
+  handleDisapproveOnboardingSubmission
 );
 
 app.post(

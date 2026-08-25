@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, RotateCcw, UserPlus, Flag, Search } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, RotateCcw, UserPlus, Flag, Search, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useApproveOnboardingSubmissionMutation,
+  useDisapproveOnboardingSubmissionMutation,
   useFlagOnboardingSubmissionMutation,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingSubmissionsQuery,
@@ -20,6 +21,7 @@ type TabKey = "pending_review" | "needs_attention";
 
 type ConfirmAction =
   | { type: "approve"; submission: OnboardingSubmission }
+  | { type: "disapprove"; submission: OnboardingSubmission }
   | { type: "reactivate"; submission: OnboardingSubmission }
   | { type: "treat_as_new"; submission: OnboardingSubmission }
   | { type: "flag"; submission: OnboardingSubmission };
@@ -73,11 +75,12 @@ export function AdminOnboardingHistoryPage() {
   const rows = activeTab === "pending_review" ? pendingReview : needsAttention;
 
   const [approve, { isLoading: isApproving }] = useApproveOnboardingSubmissionMutation();
+  const [disapprove, { isLoading: isDisapproving }] = useDisapproveOnboardingSubmissionMutation();
   const [reactivate, { isLoading: isReactivating }] = useReactivateOnboardingSubmissionMutation();
   const [treatAsNew, { isLoading: isTreatingAsNew }] = useTreatOnboardingSubmissionAsNewMutation();
   const [flag, { isLoading: isFlagging }] = useFlagOnboardingSubmissionMutation();
 
-  const isActing = isApproving || isReactivating || isTreatingAsNew || isFlagging;
+  const isActing = isApproving || isDisapproving || isReactivating || isTreatingAsNew || isFlagging;
 
   const closeConfirm = () => {
     setConfirm(null);
@@ -93,6 +96,10 @@ export function AdminOnboardingHistoryPage() {
           toast.success(result.message || "Submission pushed to PeopleVine.");
           break;
         }
+        case "disapprove":
+          await disapprove({ id: confirm.submission.id, resolutionNote: flagNote || undefined }).unwrap();
+          toast.success("Submission disapproved.");
+          break;
         case "reactivate":
           await reactivate(confirm.submission.id).unwrap();
           toast.success("Existing record reactivated.");
@@ -237,15 +244,26 @@ export function AdminOnboardingHistoryPage() {
                         <Eye className="h-4 w-4" />
                       </Link>
                       {activeTab === "pending_review" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2"
-                          onClick={() => setConfirm({ type: "approve", submission })}
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                          Approve
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2"
+                            onClick={() => setConfirm({ type: "approve", submission })}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-red-600 hover:text-red-700"
+                            onClick={() => setConfirm({ type: "disapprove", submission })}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            Disapprove
+                          </Button>
+                        </>
                       ) : (
                         <>
                           <Button
@@ -294,6 +312,7 @@ export function AdminOnboardingHistoryPage() {
               <div>
                 <p className="text-sm font-semibold text-gray-900">
                   {confirm.type === "approve" && "Approve and push to PeopleVine?"}
+                  {confirm.type === "disapprove" && "Disapprove this submission?"}
                   {confirm.type === "reactivate" && "Reactivate the existing record?"}
                   {confirm.type === "treat_as_new" && "Treat as a genuinely new customer?"}
                   {confirm.type === "flag" && "Flag for manual cleanup?"}
@@ -301,6 +320,8 @@ export function AdminOnboardingHistoryPage() {
                 <p className="text-sm text-gray-500 mt-1">
                   {confirm.type === "approve" &&
                     "This registers the member in PeopleVine with their company info attached. PeopleVine has no API to assign a membership — mHub staff still need to do that manually afterward."}
+                  {confirm.type === "disapprove" &&
+                    "Marks this submission as disapproved and removes it from Pending Review. Nothing is sent to PeopleVine."}
                   {confirm.type === "reactivate" &&
                     "Flips the matched company/user back to active locally. Does not resurrect a cancelled PeopleVine subscription."}
                   {confirm.type === "treat_as_new" &&
@@ -311,9 +332,13 @@ export function AdminOnboardingHistoryPage() {
               </div>
             </div>
 
-            {confirm.type === "flag" && (
+            {(confirm.type === "flag" || confirm.type === "disapprove") && (
               <Textarea
-                placeholder="Optional note for whoever cleans this up…"
+                placeholder={
+                  confirm.type === "disapprove"
+                    ? "Optional reason for disapproving…"
+                    : "Optional note for whoever cleans this up…"
+                }
                 value={flagNote}
                 onChange={(e) => setFlagNote(e.target.value)}
                 className="text-sm"
