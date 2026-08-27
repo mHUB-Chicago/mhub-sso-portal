@@ -3,6 +3,7 @@ import { AppType } from "@/index";
 import { describeRoute } from "@/utils/describeRoute";
 import {
   ApproveOnboardingSubmissionResponseSchema,
+  CompleteOnboardingSubmissionResponseSchema,
   CreateOnboardingLinkRequestSchema,
   CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
@@ -28,6 +29,7 @@ import { roleMiddleware } from "@/middleware/role";
 import { Role } from "@/database/models";
 import {
   handleApproveOnboardingSubmission,
+  handleCompleteOnboardingSubmission,
   handleCreateOnboardingLink,
   handleCreateOnboardingSubmission,
   handleDisapproveOnboardingSubmission,
@@ -164,6 +166,18 @@ app.post(
   }),
   validate(DisapproveOnboardingSubmissionRequestSchema),
   handleDisapproveOnboardingSubmission
+);
+
+app.post(
+  "/:id/complete",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Mark a submission pushed to PeopleVine as onboarding completed",
+    successMessage: "Submission marked as onboarding completed",
+    responseSchema: CompleteOnboardingSubmissionResponseSchema,
+    parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+  }),
+  handleCompleteOnboardingSubmission
 );
 
 app.post(

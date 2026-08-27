@@ -183,7 +183,7 @@ const OnboardingPage = () => {
       };
 
       const result = await createOnboardingSubmission(submissionPayload).unwrap();
-      toast.success("Onboarding submission recorded.");
+      toast.success(result.message || "Onboarding submission recorded.");
       navigate(`/admin/onboarding/${result.data.submission.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to submit onboarding request.");

@@ -3,9 +3,11 @@ import { Link } from "react-router-dom";
 import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, RotateCcw, UserPlus, Flag, Search, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useApproveOnboardingSubmissionMutation,
+  useCompleteOnboardingSubmissionMutation,
   useDisapproveOnboardingSubmissionMutation,
   useFlagOnboardingSubmissionMutation,
   useGetOnboardingMembershipPackagesQuery,
@@ -17,14 +19,15 @@ import {
 import { DuplicateMatchModal } from "./DuplicateMatchModal";
 import { SyncStatusGate } from "@/components/sync-status-overlay";
 
-type TabKey = "pending_review" | "needs_attention";
+type TabKey = "pending_review" | "needs_attention" | "reviewed";
 
 type ConfirmAction =
   | { type: "approve"; submission: OnboardingSubmission }
   | { type: "disapprove"; submission: OnboardingSubmission }
   | { type: "reactivate"; submission: OnboardingSubmission }
   | { type: "treat_as_new"; submission: OnboardingSubmission }
-  | { type: "flag"; submission: OnboardingSubmission };
+  | { type: "flag"; submission: OnboardingSubmission }
+  | { type: "complete"; submission: OnboardingSubmission };
 
 type ViewMatch = { matchType: "company_email" | "user_email"; matchId: string };
 
@@ -63,6 +66,7 @@ export function AdminOnboardingHistoryPage() {
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
   const [flagNote, setFlagNote] = useState("");
   const [viewMatch, setViewMatch] = useState<ViewMatch | null>(null);
+  const [reviewedSearch, setReviewedSearch] = useState("");
 
   const { data, isLoading, isFetching, error, refetch } = useGetOnboardingSubmissionsQuery();
   const submissions = data?.data?.submissions ?? [];
@@ -72,15 +76,28 @@ export function AdminOnboardingHistoryPage() {
 
   const pendingReview = submissions.filter((s) => s.status === "pending_review");
   const needsAttention = submissions.filter((s) => s.status === "needs_attention");
-  const rows = activeTab === "pending_review" ? pendingReview : needsAttention;
+  const reviewed = submissions.filter((s) => s.status === "pushed_to_pv");
+
+  const reviewedQuery = reviewedSearch.trim().toLowerCase();
+  const reviewedRows = reviewedQuery
+    ? reviewed.filter((s) => {
+        const company = s.formData.company.name ?? "";
+        const contact = primaryContact(s);
+        const email = s.formData.user.email ?? "";
+        return [company, contact, email].some((field) => field.toLowerCase().includes(reviewedQuery));
+      })
+    : reviewed;
+
+  const rows = activeTab === "pending_review" ? pendingReview : activeTab === "needs_attention" ? needsAttention : reviewedRows;
 
   const [approve, { isLoading: isApproving }] = useApproveOnboardingSubmissionMutation();
   const [disapprove, { isLoading: isDisapproving }] = useDisapproveOnboardingSubmissionMutation();
   const [reactivate, { isLoading: isReactivating }] = useReactivateOnboardingSubmissionMutation();
   const [treatAsNew, { isLoading: isTreatingAsNew }] = useTreatOnboardingSubmissionAsNewMutation();
   const [flag, { isLoading: isFlagging }] = useFlagOnboardingSubmissionMutation();
+  const [complete, { isLoading: isCompleting }] = useCompleteOnboardingSubmissionMutation();
 
-  const isActing = isApproving || isDisapproving || isReactivating || isTreatingAsNew || isFlagging;
+  const isActing = isApproving || isDisapproving || isReactivating || isTreatingAsNew || isFlagging || isCompleting;
 
   const closeConfirm = () => {
     setConfirm(null);
@@ -112,6 +129,10 @@ export function AdminOnboardingHistoryPage() {
           await flag({ id: confirm.submission.id, resolutionNote: flagNote || undefined }).unwrap();
           toast.success("Flagged for manual cleanup.");
           break;
+        case "complete":
+          await complete(confirm.submission.id).unwrap();
+          toast.success("Marked as onboarding completed.");
+          break;
       }
       closeConfirm();
     } catch (err) {
@@ -122,6 +143,7 @@ export function AdminOnboardingHistoryPage() {
   const tabs: { key: TabKey; label: string; badge: number }[] = [
     { key: "pending_review", label: "Pending Review", badge: pendingReview.length },
     { key: "needs_attention", label: "Needs Attention", badge: needsAttention.length },
+    { key: "reviewed", label: "Reviewed", badge: reviewed.length },
   ];
 
   if (isLoading) {
@@ -184,6 +206,18 @@ export function AdminOnboardingHistoryPage() {
         </nav>
       </div>
 
+      {activeTab === "reviewed" && (
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            value={reviewedSearch}
+            onChange={(e) => setReviewedSearch(e.target.value)}
+            placeholder="Search by company, contact, or email…"
+            className="pl-9"
+          />
+        </div>
+      )}
+
       <div className="border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
@@ -203,7 +237,9 @@ export function AdminOnboardingHistoryPage() {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                  {activeTab === "pending_review" ? "No submissions pending review" : "No duplicates flagged"}
+                  {activeTab === "pending_review" && "No submissions pending review"}
+                  {activeTab === "needs_attention" && "No duplicates flagged"}
+                  {activeTab === "reviewed" && (reviewedQuery ? "No matches found" : "Nothing reviewed yet")}
                 </td>
               </tr>
             ) : (
@@ -264,7 +300,7 @@ export function AdminOnboardingHistoryPage() {
                             Disapprove
                           </Button>
                         </>
-                      ) : (
+                      ) : activeTab === "needs_attention" ? (
                         <>
                           <Button
                             variant="outline"
@@ -294,7 +330,7 @@ export function AdminOnboardingHistoryPage() {
                             Flag
                           </Button>
                         </>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -316,6 +352,7 @@ export function AdminOnboardingHistoryPage() {
                   {confirm.type === "reactivate" && "Reactivate the existing record?"}
                   {confirm.type === "treat_as_new" && "Treat as a genuinely new customer?"}
                   {confirm.type === "flag" && "Flag for manual cleanup?"}
+                  {confirm.type === "complete" && "Mark onboarding as completed?"}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   {confirm.type === "approve" &&
@@ -328,6 +365,8 @@ export function AdminOnboardingHistoryPage() {
                     "Moves this submission to Pending Review, ignoring the email match found."}
                   {confirm.type === "flag" &&
                     "Marks this submission for manual review — no automatic action is taken."}
+                  {confirm.type === "complete" &&
+                    "Removes this record from the Reviewed list. The record itself is kept, so mHub does not lose track of who was added — only submissions still marked as reviewed show as needing a membership charge in PeopleVine."}
                 </p>
               </div>
             </div>

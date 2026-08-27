@@ -107,6 +107,8 @@ export const OnboardingSubmissionSchema = z.object({
   resolutionNote: z.string().nullable(),
   pvCustomerId: z.string().nullable(),
   pvMembershipCardId: z.string().nullable(),
+  completedBy: z.string().nullable(),
+  completedAt: z.coerce.date().transform((d) => d.toISOString()).nullable(),
   createdAt: z.coerce.date().transform((d) => d.toISOString()),
   updatedAt: z.coerce.date().transform((d) => d.toISOString()),
 });
@@ -140,6 +142,10 @@ export const UpdateOnboardingSubmissionResponseSchema = SuccessResponseSchema(
 );
 
 export const ReactivateOnboardingSubmissionResponseSchema = SuccessResponseSchema(
+  z.object({ submission: OnboardingSubmissionSchema })
+);
+
+export const CompleteOnboardingSubmissionResponseSchema = SuccessResponseSchema(
   z.object({ submission: OnboardingSubmissionSchema })
 );
 

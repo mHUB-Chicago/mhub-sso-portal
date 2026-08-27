@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { AppType, JsonInput, QueryInput } from "..";
 import {
   ApproveOnboardingSubmissionResponseSchema,
+  CompleteOnboardingSubmissionResponseSchema,
   CreateOnboardingLinkRequestSchema,
   CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
@@ -60,6 +61,82 @@ export const createOnboardingSubmissionRecord = async (
   });
 };
 
+// Shared by the manual Approve action and the auto-approve path for admin-entered
+// submissions in handleCreateOnboardingSubmission below — same PV push either way.
+const finalizeSubmissionPushToPeopleVine = async (
+  c: Context<AppType>,
+  row: { id: string; pvCompanyCustomerId: string | null },
+  formData: OnboardingFormData,
+  reviewerUserId: string | null
+) => {
+  const prisma: PrismaClient = c.get("db");
+
+  let targetCompanyId: string;
+  let existingCompanyPeopleVineId: string | null = null;
+  if (formData.scenario === "existing_company") {
+    const existingCompany = await prisma.company.findUnique({ where: { id: formData.companyId } });
+    if (!existingCompany) {
+      throw "Selected company no longer exists";
+    }
+    targetCompanyId = existingCompany.id;
+    existingCompanyPeopleVineId = existingCompany.peopleVineId;
+  } else {
+    targetCompanyId = ""; // created below once we have the PV push result
+  }
+
+  const result = await pushOnboardingSubmissionToPeopleVine(c, formData, {
+    existingCompanyPeopleVineId,
+    resumeCompanyPvCustomerId: row.pvCompanyCustomerId,
+    onCompanyCreated: async (companyPvCustomerId) => {
+      await prisma.onboardingSubmission.update({
+        where: { id: row.id },
+        data: { pvCompanyCustomerId: companyPvCustomerId },
+      });
+    },
+  });
+
+  if (formData.scenario === "new_company") {
+    const newCompany = await createCompany(c, {
+      name: formData.company.name,
+      peopleVineId: result.companyPvCustomerId,
+      active: true,
+      email: formData.user.email.toLowerCase(),
+    });
+    targetCompanyId = newCompany.id;
+  }
+
+  await createUser(c, {
+    name: `${formData.user.firstName} ${formData.user.lastName}`.trim(),
+    email: formData.user.email,
+    role: Role.USER,
+    companyId: targetCompanyId,
+    peopleVineId: result.userPvCustomerId,
+    phone: formData.user.phone || null,
+    address: formData.user.address?.street || null,
+    city: formData.user.address?.city || null,
+    state: formData.user.address?.state || null,
+    zipCode: formData.user.address?.zip || null,
+    memberSource: "subscription",
+  });
+
+  const resolutionNote =
+    formData.scenario === "existing_company" && !result.linkedViaMembershipCard
+      ? "No active PeopleVine membership card found for this company — the new user was linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
+      : null;
+
+  return prisma.onboardingSubmission.update({
+    where: { id: row.id },
+    data: {
+      status: "pushed_to_pv",
+      reviewedBy: reviewerUserId,
+      reviewedAt: new Date(),
+      pvCustomerId: result.userPvCustomerId,
+      matchedCompanyId: targetCompanyId,
+      ...(resolutionNote ? { resolutionNote } : {}),
+    },
+  });
+};
+
 // Real membership plans (Enterprise Membership, Garage - Large, etc.) don't live in
 // /products at all — confirmed by checking PV's OpenAPI spec and a raw pull of every
 // Type=service product, none of which were membership plans (all were operational fees:
@@ -107,6 +184,8 @@ const toSubmissionDTO = (row: {
   resolutionNote: string | null;
   pvCustomerId: string | null;
   pvMembershipCardId: string | null;
+  completedBy: string | null;
+  completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }) => ({
@@ -126,10 +205,22 @@ export const handleCreateOnboardingSubmission = async (
     formData.mode === "admin" ? user?.id ?? null : null
   );
 
+  // Admin-entered submissions skip Pending Review entirely when there's no duplicate
+  // match — staff already vetted the data by typing it in themselves. Public
+  // onboarding-link submissions (mode "link", forced in handleSubmitOnboardingLink)
+  // always land in the review queue regardless of this, since an unauthenticated
+  // customer filled them out.
+  const canAutoApprove =
+    formData.mode === "admin" && created.status === "pending_review" && c.env.PEOPLEVINE_WRITE_ENABLED === "true";
+  const submission = canAutoApprove
+    ? await finalizeSubmissionPushToPeopleVine(c, created, formData, user?.id ?? null)
+    : created;
+
   const response = CreateOnboardingSubmissionResponseSchema.parse({
     success: true,
-    message: "Onboarding submission recorded",
-    data: { submission: toSubmissionDTO(created) },
+    message:
+      submission.status === "pushed_to_pv" ? "Onboarding submission pushed to PeopleVine" : "Onboarding submission recorded",
+    data: { submission: toSubmissionDTO(submission) },
   });
   return c.json(response);
 };
@@ -218,71 +309,7 @@ export const handleApproveOnboardingSubmission = async (c: Context<AppType>) => 
   }
 
   const formData = JSON.parse(row.formData);
-
-  let targetCompanyId: string;
-  let existingCompanyPeopleVineId: string | null = null;
-  if (formData.scenario === "existing_company") {
-    const existingCompany = await prisma.company.findUnique({ where: { id: formData.companyId } });
-    if (!existingCompany) {
-      throw "Selected company no longer exists";
-    }
-    targetCompanyId = existingCompany.id;
-    existingCompanyPeopleVineId = existingCompany.peopleVineId;
-  } else {
-    targetCompanyId = ""; // created below once we have the PV push result
-  }
-
-  const result = await pushOnboardingSubmissionToPeopleVine(c, formData, {
-    existingCompanyPeopleVineId,
-    resumeCompanyPvCustomerId: row.pvCompanyCustomerId,
-    onCompanyCreated: async (companyPvCustomerId) => {
-      await prisma.onboardingSubmission.update({
-        where: { id },
-        data: { pvCompanyCustomerId: companyPvCustomerId },
-      });
-    },
-  });
-
-  if (formData.scenario === "new_company") {
-    const newCompany = await createCompany(c, {
-      name: formData.company.name,
-      peopleVineId: result.companyPvCustomerId,
-      active: true,
-      email: formData.user.email.toLowerCase(),
-    });
-    targetCompanyId = newCompany.id;
-  }
-
-  await createUser(c, {
-    name: `${formData.user.firstName} ${formData.user.lastName}`.trim(),
-    email: formData.user.email,
-    role: Role.USER,
-    companyId: targetCompanyId,
-    peopleVineId: result.userPvCustomerId,
-    phone: formData.user.phone || null,
-    address: formData.user.address?.street || null,
-    city: formData.user.address?.city || null,
-    state: formData.user.address?.state || null,
-    zipCode: formData.user.address?.zip || null,
-    memberSource: "subscription",
-  });
-
-  const resolutionNote =
-    formData.scenario === "existing_company" && !result.linkedViaMembershipCard
-      ? "No active PeopleVine membership card found for this company — the new user was linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
-      : null;
-
-  const updated = await prisma.onboardingSubmission.update({
-    where: { id },
-    data: {
-      status: "pushed_to_pv",
-      reviewedBy: user?.id ?? null,
-      reviewedAt: new Date(),
-      pvCustomerId: result.userPvCustomerId,
-      matchedCompanyId: targetCompanyId,
-      ...(resolutionNote ? { resolutionNote } : {}),
-    },
-  });
+  const updated = await finalizeSubmissionPushToPeopleVine(c, row, formData, user?.id ?? null);
 
   const response = ApproveOnboardingSubmissionResponseSchema.parse({
     success: true,
@@ -330,6 +357,36 @@ export const handleReactivateOnboardingSubmission = async (c: Context<AppType>) 
   const response = ReactivateOnboardingSubmissionResponseSchema.parse({
     success: true,
     message: "Existing record reactivated",
+    data: { submission: toSubmissionDTO(updated) },
+  });
+  return c.json(response);
+};
+
+export const handleCompleteOnboardingSubmission = async (c: Context<AppType>) => {
+  const prisma: PrismaClient = c.get("db");
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const row = await prisma.onboardingSubmission.findUnique({ where: { id } });
+  if (!row) {
+    throw "Onboarding submission not found";
+  }
+  if (row.status !== "pushed_to_pv") {
+    throw "Only submissions pushed to PeopleVine can be marked as onboarding completed";
+  }
+
+  const updated = await prisma.onboardingSubmission.update({
+    where: { id },
+    data: {
+      status: "completed",
+      completedBy: user?.id ?? null,
+      completedAt: new Date(),
+    },
+  });
+
+  const response = CompleteOnboardingSubmissionResponseSchema.parse({
+    success: true,
+    message: "Submission marked as onboarding completed",
     data: { submission: toSubmissionDTO(updated) },
   });
   return c.json(response);

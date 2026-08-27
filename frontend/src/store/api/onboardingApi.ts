@@ -80,6 +80,8 @@ export interface OnboardingSubmission {
   resolutionNote: string | null
   pvCustomerId: string | null
   pvMembershipCardId: string | null
+  completedBy: string | null
+  completedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -180,6 +182,11 @@ export const onboardingApi = createApi({
       invalidatesTags: ['OnboardingSubmissions'],
     }),
 
+    completeOnboardingSubmission: builder.mutation<SubmissionResponse, string>({
+      query: (id) => ({ url: `/onboarding/${id}/complete`, method: 'POST' }),
+      invalidatesTags: ['OnboardingSubmissions'],
+    }),
+
     treatOnboardingSubmissionAsNew: builder.mutation<SubmissionResponse, string>({
       query: (id) => ({ url: `/onboarding/${id}/treat-as-new`, method: 'POST' }),
       invalidatesTags: ['OnboardingSubmissions'],
@@ -232,6 +239,7 @@ export const {
   useUpdateOnboardingSubmissionMutation,
   useApproveOnboardingSubmissionMutation,
   useReactivateOnboardingSubmissionMutation,
+  useCompleteOnboardingSubmissionMutation,
   useTreatOnboardingSubmissionAsNewMutation,
   useFlagOnboardingSubmissionMutation,
   useDisapproveOnboardingSubmissionMutation,

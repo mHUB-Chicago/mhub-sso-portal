@@ -277,6 +277,8 @@ model OnboardingSubmission {
   // fails, a retried Approve reuses this instead of registering a second, duplicate
   // company customer in PV.
   pvCompanyCustomerId String?
+  completedBy        String?
+  completedAt        DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 }
