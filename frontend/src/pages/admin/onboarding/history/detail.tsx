@@ -151,7 +151,7 @@ export function AdminOnboardingHistoryDetailPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-4xl space-y-6 py-4">
+    <div className="space-y-6 py-4">
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={() => navigate("/admin/onboarding")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
