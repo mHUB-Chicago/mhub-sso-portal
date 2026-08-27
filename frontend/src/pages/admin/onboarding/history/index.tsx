@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, RotateCcw, UserPlus, Flag, Search, XCircle } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, ClipboardCheck, RotateCcw, UserPlus, Flag, Search, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import {
 import { DuplicateMatchModal } from "./DuplicateMatchModal";
 import { SyncStatusGate } from "@/components/sync-status-overlay";
 
-type TabKey = "pending_review" | "needs_attention" | "reviewed";
+type TabKey = "pending_review" | "needs_attention" | "reviewed" | "completed";
 
 type ConfirmAction =
   | { type: "approve"; submission: OnboardingSubmission }
@@ -77,6 +77,7 @@ export function AdminOnboardingHistoryPage() {
   const pendingReview = submissions.filter((s) => s.status === "pending_review");
   const needsAttention = submissions.filter((s) => s.status === "needs_attention");
   const reviewed = submissions.filter((s) => s.status === "pushed_to_pv");
+  const completed = submissions.filter((s) => s.status === "completed");
 
   const reviewedQuery = reviewedSearch.trim().toLowerCase();
   const reviewedRows = reviewedQuery
@@ -88,7 +89,14 @@ export function AdminOnboardingHistoryPage() {
       })
     : reviewed;
 
-  const rows = activeTab === "pending_review" ? pendingReview : activeTab === "needs_attention" ? needsAttention : reviewedRows;
+  const rows =
+    activeTab === "pending_review"
+      ? pendingReview
+      : activeTab === "needs_attention"
+      ? needsAttention
+      : activeTab === "reviewed"
+      ? reviewedRows
+      : completed;
 
   const [approve, { isLoading: isApproving }] = useApproveOnboardingSubmissionMutation();
   const [disapprove, { isLoading: isDisapproving }] = useDisapproveOnboardingSubmissionMutation();
@@ -144,6 +152,7 @@ export function AdminOnboardingHistoryPage() {
     { key: "pending_review", label: "Pending Review", badge: pendingReview.length },
     { key: "needs_attention", label: "Needs Attention", badge: needsAttention.length },
     { key: "reviewed", label: "Reviewed", badge: reviewed.length },
+    { key: "completed", label: "Completed", badge: 0 },
   ];
 
   if (isLoading) {
@@ -227,6 +236,8 @@ export function AdminOnboardingHistoryPage() {
               <th className="text-left px-4 py-3 font-medium text-gray-600">Primary Contact</th>
               {activeTab === "needs_attention" ? (
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Duplicate Match</th>
+              ) : activeTab === "completed" ? (
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Completed At</th>
               ) : (
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Membership Package</th>
               )}
@@ -240,6 +251,7 @@ export function AdminOnboardingHistoryPage() {
                   {activeTab === "pending_review" && "No submissions pending review"}
                   {activeTab === "needs_attention" && "No duplicates flagged"}
                   {activeTab === "reviewed" && (reviewedQuery ? "No matches found" : "Nothing reviewed yet")}
+                  {activeTab === "completed" && "Nothing marked as completed yet"}
                 </td>
               </tr>
             ) : (
@@ -264,6 +276,8 @@ export function AdminOnboardingHistoryPage() {
                       ) : (
                         matchLabel(submission)
                       )
+                    ) : activeTab === "completed" ? (
+                      submission.completedAt ? new Date(submission.completedAt).toLocaleString() : "—"
                     ) : (
                       (submission.formData.membershipPackage &&
                         membershipPackageName(submission.formData.membershipPackage)) ||
@@ -330,6 +344,16 @@ export function AdminOnboardingHistoryPage() {
                             Flag
                           </Button>
                         </>
+                      ) : activeTab === "reviewed" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => setConfirm({ type: "complete", submission })}
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5 mr-1" />
+                          Mark Completed
+                        </Button>
                       ) : null}
                     </div>
                   </td>
