@@ -6,7 +6,7 @@ import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
 import { findAttributeOptionValues } from "../attributeOptionsUtil";
 import { MultiSelectDropdown } from "./MultiSelectDropdown";
 import { SectionHeading } from "./SectionHeading";
-import type { Address, PrimaryUserDetails } from "../types";
+import type { Address, OnboardingScenario, PrimaryUserDetails } from "../types";
 
 interface PrimaryUserStepProps {
   value: PrimaryUserDetails;
@@ -14,6 +14,7 @@ interface PrimaryUserStepProps {
   onAddressChange: (field: keyof Address, fieldValue: string) => void;
   onEthnicityChange: (ethnicity: string[]) => void;
   attributeOptions?: OnboardingAttributeOption[];
+  scenario: OnboardingScenario;
 }
 
 export const PrimaryUserStep = ({
@@ -22,8 +23,13 @@ export const PrimaryUserStep = ({
   onAddressChange,
   onEthnicityChange,
   attributeOptions,
+  scenario,
 }: PrimaryUserStepProps) => {
-  const aliasPreview = value.email.includes("@") ? value.email.replace("@", "+company@") : "";
+  // The "+company" alias is only ever generated for a brand-new company's own PV
+  // customer (see buildCompanyPlaceholderEmail) — an existing_company submission never
+  // creates one, so this preview would be misleading there.
+  const aliasPreview =
+    scenario === "new_company" && value.email.includes("@") ? value.email.replace("@", "+company@") : "";
   const genderOptions = findAttributeOptionValues(attributeOptions, "Gender").map((label) => ({
     value: label,
     label,

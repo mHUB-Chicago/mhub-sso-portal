@@ -11,6 +11,9 @@ export const OnboardingAddressSchema = z.object({
 
 export const OnboardingCompanySchema = z.object({
   name: z.string().optional(),
+  // Optional — if left blank, PV falls back to a "+company" alias on the primary
+  // user's own email (see buildCompanyPlaceholderEmail, peopleVinePortalService.ts).
+  email: z.string().optional(),
   website: z.string().optional(),
   size: z.string().optional(),
   founded: z.string().optional(),
@@ -71,6 +74,10 @@ export const OnboardingFormDataSchema = z
     company: OnboardingCompanySchema,
     user: OnboardingUserSchema,
     membershipPackage: z.string(),
+    // existing_company only — the primary membership is inherited from the company, so
+    // this is purely optional add-ons the new person might also want. Defaulted for
+    // backward compatibility with submissions created before this field existed.
+    addonMemberships: z.array(z.string()).default([]),
     skills: OnboardingSkillsSchema,
     billing: OnboardingBillingSchema,
   })
@@ -169,12 +176,36 @@ export const DisapproveOnboardingSubmissionResponseSchema = SuccessResponseSchem
   z.object({ submission: OnboardingSubmissionSchema })
 );
 
+// Default (in-process) onboarding tab — live Company/User rows with
+// accountStatus "pending_membership" (created by the tagged-onboarding sync path, not
+// OnboardingSubmission rows). Auto-updates as the sync engine (webhook or batch/full)
+// picks up matching PV records; see mHUB_Onboarding_Sync_Implementation_Plan.md.
+export const OnboardingInProcessRecordSchema = z.object({
+  id: z.string(),
+  type: z.enum(["company", "user"]),
+  name: z.string(),
+  email: z.string(),
+  peopleVineId: z.string().nullable(),
+  createdAt: z.coerce.date().transform((d) => d.toISOString()),
+});
+
+export const GetOnboardingInProcessResponseSchema = SuccessResponseSchema(
+  z.object({ records: z.array(OnboardingInProcessRecordSchema) })
+);
+
 export const OnboardingMembershipPackageSchema = z.object({
   id: z.string(),
   name: z.string(),
 });
 
 export const GetOnboardingMembershipPackagesResponseSchema = SuccessResponseSchema(
+  z.object({ packages: z.array(OnboardingMembershipPackageSchema) })
+);
+
+// Add-on memberships (PV Type="add-on") — offered only when adding a person to an
+// existing_company, whose primary membership is inherited from the company instead of
+// chosen on the form.
+export const GetOnboardingAddonPackagesResponseSchema = SuccessResponseSchema(
   z.object({ packages: z.array(OnboardingMembershipPackageSchema) })
 );
 
@@ -195,6 +226,8 @@ export const GetOnboardingLinkResponseSchema = SuccessResponseSchema(
   z.object({
     scenario: z.enum(["new_company", "existing_company"]),
     packages: z.array(OnboardingMembershipPackageSchema),
+    // existing_company only — omitted (not fetched from PV) for new_company links.
+    addonPackages: z.array(OnboardingMembershipPackageSchema).optional(),
     companies: z.array(OnboardingLinkCompanyOptionSchema).optional(),
   })
 );

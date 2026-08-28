@@ -12,9 +12,11 @@ import {
   useUpdateOnboardingSubmissionMutation,
   type OnboardingFormData,
 } from "@/store/api/onboardingApi";
+import { useGetCompaniesQuery } from "@/store/api/companyApi";
 import { CompanyDetailsStep } from "../components/CompanyDetailsStep";
 import { PrimaryUserStep } from "../components/PrimaryUserStep";
 import { MembershipPackageStep } from "../components/MembershipPackageStep";
+import { AddonMembershipsStep } from "../components/AddonMembershipsStep";
 import { SkillsStep } from "../components/SkillsStep";
 import type { ReactNode } from "react";
 import type { Address, CompanyDetails, PrimaryUserDetails, SkillsDetails } from "../types";
@@ -50,6 +52,14 @@ export function AdminOnboardingHistoryDetailPage() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<OnboardingFormData | null>(null);
+  const draftIsExistingCompany = draft?.scenario === "existing_company";
+  // Only queried while editing an existing_company submission, for the
+  // AddonMembershipsStep's "Inherits {name}'s primary membership" message.
+  const { data: companiesData } = useGetCompaniesQuery(
+    { limit: 500, active: "true" },
+    { skip: !draftIsExistingCompany }
+  );
+  const draftCompanyName = companiesData?.data?.companies.find((co) => co.id === draft?.companyId)?.name;
 
   if (isLoading) {
     return (
@@ -74,7 +84,8 @@ export function AdminOnboardingHistoryDetailPage() {
 
   const canEdit = EDITABLE_STATUSES.has(submission.status);
   const formData = isEditing && draft ? draft : submission.formData;
-  const { company, user, skills, billing, membershipPackage } = formData;
+  const { company, user, skills, billing, membershipPackage, addonMemberships, scenario } = formData;
+  const isExistingCompany = scenario === "existing_company";
   const membershipPackageName =
     packagesData?.data?.packages.find((pkg) => pkg.id === membershipPackage)?.name ?? membershipPackage;
 
@@ -111,6 +122,10 @@ export function AdminOnboardingHistoryDetailPage() {
 
   const updateMembershipPackage = (fieldValue: string) => {
     setDraft((prev) => (prev ? { ...prev, membershipPackage: fieldValue } : prev));
+  };
+
+  const updateAddonMemberships = (addonMembershipsList: string[]) => {
+    setDraft((prev) => (prev ? { ...prev, addonMemberships: addonMembershipsList } : prev));
   };
 
   const updateSkillsField = (
@@ -206,11 +221,20 @@ export function AdminOnboardingHistoryDetailPage() {
               onAddressChange={updateUserAddress}
               onEthnicityChange={updateUserEthnicity}
               attributeOptions={attributeOptions}
+              scenario={draft.scenario}
             />
           </div>
 
           <div className="rounded-lg border p-5">
-            <MembershipPackageStep value={draft.membershipPackage} onChange={updateMembershipPackage} />
+            {draftIsExistingCompany ? (
+              <AddonMembershipsStep
+                companyName={draftCompanyName}
+                values={draft.addonMemberships}
+                onChange={updateAddonMemberships}
+              />
+            ) : (
+              <MembershipPackageStep value={draft.membershipPackage} onChange={updateMembershipPackage} />
+            )}
           </div>
 
           <div className="rounded-lg border p-5">
@@ -296,6 +320,7 @@ export function AdminOnboardingHistoryDetailPage() {
         <>
           <Section title="Company Details">
             <Field label="Name" value={company.name} />
+            <Field label="Business Email" value={company.email} />
             <Field label="Website" value={company.website} />
             <Field label="Size" value={company.size} />
             <Field label="Founded" value={company.founded} />
@@ -328,7 +353,14 @@ export function AdminOnboardingHistoryDetailPage() {
           </Section>
 
           <Section title="Membership & Skills">
-            <Field label="Membership Package" value={membershipPackageName} />
+            {isExistingCompany ? (
+              <>
+                <Field label="Primary Membership" value="Inherited from company" />
+                <Field label="Add-on Memberships" value={addonMemberships.join(", ")} />
+              </>
+            ) : (
+              <Field label="Membership Package" value={membershipPackageName} />
+            )}
             <Field label="Undergrad" value={[skills.undergradSchool, skills.undergradDegree].filter(Boolean).join(" — ")} />
             <Field label="Graduate" value={[skills.gradSchool, skills.gradDegree].filter(Boolean).join(" — ")} />
             <Field label="Industry Experience" value={skills.industryExperience} />

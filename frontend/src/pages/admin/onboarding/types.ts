@@ -8,6 +8,9 @@ export interface Address {
 
 export interface CompanyDetails {
   name?: string;
+  // Optional — if left blank, PV falls back to a "+company" alias on the primary
+  // user's own email (see buildCompanyPlaceholderEmail, peopleVinePortalService.ts).
+  email?: string;
   website?: string;
   size?: string;
   founded?: string;
@@ -66,6 +69,7 @@ export interface OnboardingFormData {
   company: CompanyDetails;
   user: PrimaryUserDetails;
   membershipPackage: string;
+  addonMemberships: string[];
   skills: SkillsDetails;
   billing: BillingDetails;
 }

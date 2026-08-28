@@ -9,6 +9,9 @@ export interface CompanyByMembers { name: string; affiliated: number; sponsored:
 export interface CompanyByRevenue { name: string; subCount: number; mrr: number }
 export interface RecentSession { userId: string; userName: string; createdAt: string }
 export interface ReportServiceProvider { id: string; name: string; logo: string }
+// No previous-period comparison in the 30-day summary view (unlike PlatformEngagement,
+// used by the weekly/monthly reports, which do compare against the prior period).
+export interface PlatformEngagementSummary { name: string; launches: number; uniqueUsers: number }
 
 export interface ReportsData {
   revenue: {
@@ -42,6 +45,7 @@ export interface ReportsData {
     ssoLast30d: number
     activeUsersLast30d: number
     serviceProviders: ReportServiceProvider[]
+    byPlatform: PlatformEngagementSummary[]
     recentSessions: RecentSession[]
   }
 }

@@ -12,6 +12,7 @@ interface GetOnboardingLinkResponse {
   data: {
     scenario: 'new_company' | 'existing_company'
     packages: OnboardingMembershipPackage[]
+    addonPackages?: OnboardingMembershipPackage[]
     companies?: PublicOnboardingCompanyOption[]
   }
 }

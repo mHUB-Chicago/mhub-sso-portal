@@ -52,6 +52,9 @@ export interface CreateUserInput {
   active?: boolean;
   memberSource?: string;
   memberSourceCompany?: string | null;
+  // "pending_membership" | "membership-removed" | "active". Defaults to "active" so
+  // every existing caller keeps its prior behavior unchanged.
+  accountStatus?: string;
 }
 
 export interface UpdateUserInput {
@@ -78,6 +81,7 @@ export interface UpdateUserInput {
   active?: boolean;
   memberSource?: string;
   memberSourceCompany?: string | null;
+  accountStatus?: string;
 }
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
@@ -108,6 +112,11 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
       { primaryMembership: { in: cmtNames } },
       { AND: [noRealPrimaryForCmt, { addOns: { not: '[]' } }] },
       { AND: [noRealPrimaryForCmt, { company: { membershipTypes: { not: '[]' } } }] },
+      // A tagged onboarding user with no membership yet ("pending_membership") has no
+      // recognized membership type by definition — pass through the same way as the
+      // equivalent Company filter, so they aren't invisible everywhere except the
+      // Onboarding "In Process" tab. Never widens visibility for other unclassified rows.
+      { accountStatus: 'pending_membership' },
     ]};
   }
 
@@ -200,7 +209,7 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = createUserInput;
+  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
   // Only email is actually unique on User (username is display-only now — login only ever
@@ -235,6 +244,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       active: active ?? true,
       memberSource: memberSource ?? 'subscription',
       memberSourceCompany: memberSourceCompany ?? null,
+      accountStatus: accountStatus ?? 'active',
     },
   });
   if (!createdUser) {
@@ -256,7 +266,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany } = updateUserInput;
+  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   return prisma.user.update({
@@ -284,23 +294,35 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       active,
       memberSource,
       memberSourceCompany,
+      accountStatus,
     },
   });
 }
 
 export const deactivateUser = async (c: Context, id: string): Promise<void> => {
   const prisma: PrismaClient = c.get("db");
+  const existing = await prisma.user.findUnique({ where: { id }, select: { accountStatus: true } });
   await prisma.user.update({
     where: { id },
-    data: { active: false },
+    data: {
+      active: false,
+      // Only relabel a record that actually had access — a `pending_membership`
+      // record that never had one yet stays "pending_membership", not "removed".
+      ...(existing?.accountStatus === 'active' ? { accountStatus: 'membership-removed' } : {}),
+    },
   });
 }
 
 export const deactivateUsersByCompanyId = async (c: Context, companyId: string) => {
   const prisma: PrismaClient = c.get("db");
-  const { count } = await prisma.user.updateMany({
-    where: { companyId, memberSource: { not: 'membership' } },
+  const baseWhere = { companyId, memberSource: { not: 'membership' } } as const;
+  const { count: removedCount } = await prisma.user.updateMany({
+    where: { ...baseWhere, accountStatus: 'active' },
+    data: { active: false, accountStatus: 'membership-removed' },
+  });
+  const { count: otherCount } = await prisma.user.updateMany({
+    where: { ...baseWhere, accountStatus: { not: 'active' } },
     data: { active: false },
   });
-  console.log(`Deactivated ${count} users for company ID: ${companyId}`);
+  console.log(`Deactivated ${removedCount + otherCount} users for company ID: ${companyId}`);
 }

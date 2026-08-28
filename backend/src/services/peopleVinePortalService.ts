@@ -1,6 +1,6 @@
 import { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { getUserCompanyToken, PEOPLEVINE_API_BASE_URL } from "./peopleVineService";
+import { getUserCompanyToken, PEOPLEVINE_API_BASE_URL, ONBOARDING_SOURCE_TAGS } from "./peopleVineService";
 import type { OnboardingFormData } from "@common/schemas/onboarding";
 
 // This is a SEPARATE, write-capable PeopleVine (PV) client. It does not touch the
@@ -185,6 +185,12 @@ export const pvUpdateAccountProfile = async (
     companyTitle?: string;
     companyWebsite?: string;
     customerReference?: string;
+    // Dedicated onboarding-classification tag — separate PV field from
+    // `customerReference` (which already carries the `pv_company:{id}` best-effort
+    // link) so the two never collide. Read back by the sync engine's
+    // `classifyOnboardingSource` (peopleVineService.ts) on both the webhook and
+    // batch/full sync paths.
+    source?: string;
     attributes?: PvAttributeInput[];
   }
 ): Promise<unknown> => {
@@ -215,6 +221,9 @@ export const pvUpdateAccountProfile = async (
   }
   if (input.customerReference) {
     body.customer_reference = input.customerReference;
+  }
+  if (input.source) {
+    body.source = input.source;
   }
   if (input.attributes && input.attributes.length > 0) {
     body.attributes = input.attributes;
@@ -334,6 +343,10 @@ export interface OnboardingPvPushResult {
   // Member (a real PV-side link). False means the best-effort `customer_reference`
   // link was used instead (new company, or an existing company with no active card).
   linkedViaMembershipCard: boolean;
+  // Set only for the new_company scenario — the email actually used for the PV company
+  // customer above (the form's business email if provided, else the "+company" alias),
+  // so the caller's local mirror row can use the exact same value instead of guessing.
+  companyEmail: string | null;
 }
 
 export interface PushOnboardingSubmissionOptions {
@@ -375,8 +388,9 @@ export const pushOnboardingSubmissionToPeopleVine = async (
         gender: formData.user.gender,
         address: formData.user.address,
         attributes: userAttributes,
+        source: ONBOARDING_SOURCE_TAGS.personPending,
       });
-      return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true };
+      return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true, companyEmail: null };
     }
 
     // No active PV membership card found for this company (or it has no PV record at
@@ -395,21 +409,25 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       address: formData.user.address,
       companyTitle: formData.user.title,
       attributes: userAttributes,
+      source: ONBOARDING_SOURCE_TAGS.personPending,
       ...(companyPvId ? { customerReference: `pv_company:${companyPvId}` } : {}),
     });
-    return { companyPvCustomerId: null, userPvCustomerId: String(user.id), linkedViaMembershipCard: false };
+    return { companyPvCustomerId: null, userPvCustomerId: String(user.id), linkedViaMembershipCard: false, companyEmail: null };
   }
 
   // new_company: register two distinct PV customers (company + user) — there's no PV
   // API to create a subscription/membership card up front, so Add Sub Member isn't
   // available here; the link back to the company is best-effort via customer_reference.
   const companyName = formData.company.name ?? "";
+  // A business email entered on the form is used as-is; otherwise falls back to the
+  // existing "+company" alias on the primary user's own email.
+  const resolvedCompanyEmail = formData.company.email?.trim() || buildCompanyPlaceholderEmail(formData.user.email);
   let companyId: number;
   if (resumeCompanyPvCustomerId) {
     companyId = Number(resumeCompanyPvCustomerId);
   } else {
     const company = await pvRegisterCustomer(c, {
-      email: buildCompanyPlaceholderEmail(formData.user.email),
+      email: resolvedCompanyEmail,
       firstName: companyName,
       lastName: "Company",
     });
@@ -423,6 +441,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       // that, at this stage, has no address of its own.
       address: formData.user.address,
       attributes: buildCompanyAttributes(formData),
+      source: ONBOARDING_SOURCE_TAGS.company,
     });
     companyId = company.id;
     // Persisted immediately — if the user registration below fails, a retry must not
@@ -446,6 +465,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     companyWebsite: formData.company.website,
     customerReference: `pv_company:${companyId}`,
     attributes: userAttributes,
+    source: ONBOARDING_SOURCE_TAGS.person,
   });
 
   // PV has no API to create a subscription/membership — confirmed platform limitation.
@@ -456,5 +476,6 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     companyPvCustomerId: String(companyId),
     userPvCustomerId: String(user.id),
     linkedViaMembershipCard: false,
+    companyEmail: resolvedCompanyEmail,
   };
 };

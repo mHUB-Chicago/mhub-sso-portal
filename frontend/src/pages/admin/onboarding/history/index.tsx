@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, ClipboardCheck, RotateCcw, UserPlus, Flag, Search, XCircle } from "lucide-react";
+import { AlertCircle, Loader2, RefreshCw, Eye, CheckCircle2, RotateCcw, UserPlus, Flag, Search, XCircle, Building2, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useApproveOnboardingSubmissionMutation,
-  useCompleteOnboardingSubmissionMutation,
   useDisapproveOnboardingSubmissionMutation,
   useFlagOnboardingSubmissionMutation,
+  useGetOnboardingInProcessQuery,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingSubmissionsQuery,
   useReactivateOnboardingSubmissionMutation,
@@ -19,15 +19,19 @@ import {
 import { DuplicateMatchModal } from "./DuplicateMatchModal";
 import { SyncStatusGate } from "@/components/sync-status-overlay";
 
-type TabKey = "pending_review" | "needs_attention" | "reviewed" | "completed";
+// "reviewed"/"completed" submission statuses still exist server-side (an audit trail
+// of the admin-push action itself, and the approve/complete mutations still work) —
+// they're just no longer separate tabs. "in_process" replaces both: it shows live
+// Company/User records still awaiting a membership, auto-updated by the sync engine
+// (webhook or batch/full), not OnboardingSubmission rows at all.
+type TabKey = "pending_review" | "needs_attention" | "in_process";
 
 type ConfirmAction =
   | { type: "approve"; submission: OnboardingSubmission }
   | { type: "disapprove"; submission: OnboardingSubmission }
   | { type: "reactivate"; submission: OnboardingSubmission }
   | { type: "treat_as_new"; submission: OnboardingSubmission }
-  | { type: "flag"; submission: OnboardingSubmission }
-  | { type: "complete"; submission: OnboardingSubmission };
+  | { type: "flag"; submission: OnboardingSubmission };
 
 type ViewMatch = { matchType: "company_email" | "user_email"; matchId: string };
 
@@ -66,46 +70,37 @@ export function AdminOnboardingHistoryPage() {
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
   const [flagNote, setFlagNote] = useState("");
   const [viewMatch, setViewMatch] = useState<ViewMatch | null>(null);
-  const [reviewedSearch, setReviewedSearch] = useState("");
+  const [inProcessSearch, setInProcessSearch] = useState("");
 
   const { data, isLoading, isFetching, error, refetch } = useGetOnboardingSubmissionsQuery();
   const submissions = data?.data?.submissions ?? [];
+  const {
+    data: inProcessData,
+    isFetching: isFetchingInProcess,
+    refetch: refetchInProcess,
+  } = useGetOnboardingInProcessQuery();
+  const inProcessRecords = inProcessData?.data?.records ?? [];
   const { data: packagesData } = useGetOnboardingMembershipPackagesQuery();
   const membershipPackageName = (id: string): string =>
     packagesData?.data?.packages.find((pkg) => pkg.id === id)?.name ?? id;
 
   const pendingReview = submissions.filter((s) => s.status === "pending_review");
   const needsAttention = submissions.filter((s) => s.status === "needs_attention");
-  const reviewed = submissions.filter((s) => s.status === "pushed_to_pv");
-  const completed = submissions.filter((s) => s.status === "completed");
 
-  const reviewedQuery = reviewedSearch.trim().toLowerCase();
-  const reviewedRows = reviewedQuery
-    ? reviewed.filter((s) => {
-        const company = s.formData.company.name ?? "";
-        const contact = primaryContact(s);
-        const email = s.formData.user.email ?? "";
-        return [company, contact, email].some((field) => field.toLowerCase().includes(reviewedQuery));
-      })
-    : reviewed;
+  const inProcessQuery = inProcessSearch.trim().toLowerCase();
+  const inProcessRows = inProcessQuery
+    ? inProcessRecords.filter((r) => [r.name, r.email].some((field) => field.toLowerCase().includes(inProcessQuery)))
+    : inProcessRecords;
 
-  const rows =
-    activeTab === "pending_review"
-      ? pendingReview
-      : activeTab === "needs_attention"
-      ? needsAttention
-      : activeTab === "reviewed"
-      ? reviewedRows
-      : completed;
+  const rows = activeTab === "pending_review" ? pendingReview : activeTab === "needs_attention" ? needsAttention : [];
 
   const [approve, { isLoading: isApproving }] = useApproveOnboardingSubmissionMutation();
   const [disapprove, { isLoading: isDisapproving }] = useDisapproveOnboardingSubmissionMutation();
   const [reactivate, { isLoading: isReactivating }] = useReactivateOnboardingSubmissionMutation();
   const [treatAsNew, { isLoading: isTreatingAsNew }] = useTreatOnboardingSubmissionAsNewMutation();
   const [flag, { isLoading: isFlagging }] = useFlagOnboardingSubmissionMutation();
-  const [complete, { isLoading: isCompleting }] = useCompleteOnboardingSubmissionMutation();
 
-  const isActing = isApproving || isDisapproving || isReactivating || isTreatingAsNew || isFlagging || isCompleting;
+  const isActing = isApproving || isDisapproving || isReactivating || isTreatingAsNew || isFlagging;
 
   const closeConfirm = () => {
     setConfirm(null);
@@ -137,10 +132,6 @@ export function AdminOnboardingHistoryPage() {
           await flag({ id: confirm.submission.id, resolutionNote: flagNote || undefined }).unwrap();
           toast.success("Flagged for manual cleanup.");
           break;
-        case "complete":
-          await complete(confirm.submission.id).unwrap();
-          toast.success("Marked as onboarding completed.");
-          break;
       }
       closeConfirm();
     } catch (err) {
@@ -151,8 +142,7 @@ export function AdminOnboardingHistoryPage() {
   const tabs: { key: TabKey; label: string; badge: number }[] = [
     { key: "pending_review", label: "Pending Review", badge: pendingReview.length },
     { key: "needs_attention", label: "Needs Attention", badge: needsAttention.length },
-    { key: "reviewed", label: "Reviewed", badge: reviewed.length },
-    { key: "completed", label: "Completed", badge: 0 },
+    { key: "in_process", label: "In Process", badge: 0 },
   ];
 
   if (isLoading) {
@@ -186,8 +176,16 @@ export function AdminOnboardingHistoryPage() {
           </nav>
           <h1 className="text-2xl font-bold">Onboarding</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            refetch();
+            refetchInProcess();
+          }}
+          disabled={isFetching || isFetchingInProcess}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${isFetching || isFetchingInProcess ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -215,154 +213,184 @@ export function AdminOnboardingHistoryPage() {
         </nav>
       </div>
 
-      {activeTab === "reviewed" && (
+      {activeTab === "in_process" && (
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
-            value={reviewedSearch}
-            onChange={(e) => setReviewedSearch(e.target.value)}
-            placeholder="Search by company, contact, or email…"
+            value={inProcessSearch}
+            onChange={(e) => setInProcessSearch(e.target.value)}
+            placeholder="Search by name or email…"
             className="pl-9"
           />
         </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Submitted At</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Company</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Primary Contact</th>
-              {activeTab === "needs_attention" ? (
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Duplicate Match</th>
-              ) : activeTab === "completed" ? (
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Completed At</th>
-              ) : (
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Membership Package</th>
-              )}
-              <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 220 }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {rows.length === 0 ? (
+      {activeTab === "in_process" ? (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                  {activeTab === "pending_review" && "No submissions pending review"}
-                  {activeTab === "needs_attention" && "No duplicates flagged"}
-                  {activeTab === "reviewed" && (reviewedQuery ? "No matches found" : "Nothing reviewed yet")}
-                  {activeTab === "completed" && "Nothing marked as completed yet"}
-                </td>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Created At</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">PV ID</th>
               </tr>
-            ) : (
-              rows.map((submission) => (
-                <tr key={submission.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">
-                    {new Date(submission.createdAt).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{submission.formData.company.name || "—"}</td>
-                  <td className="px-4 py-3 text-gray-700">{primaryContact(submission)}</td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {activeTab === "needs_attention" ? (
-                      viewMatchFor(submission) ? (
-                        <button
-                          type="button"
-                          onClick={() => setViewMatch(viewMatchFor(submission))}
-                          className="inline-flex items-center gap-1.5 text-brand hover:underline"
-                        >
-                          <Search className="h-3.5 w-3.5" />
-                          {matchLabel(submission)}
-                        </button>
-                      ) : (
-                        matchLabel(submission)
-                      )
-                    ) : activeTab === "completed" ? (
-                      submission.completedAt ? new Date(submission.completedAt).toLocaleString() : "—"
-                    ) : (
-                      (submission.formData.membershipPackage &&
-                        membershipPackageName(submission.formData.membershipPackage)) ||
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1">
-                      <Link
-                        to={`/admin/onboarding/${submission.id}`}
-                        className="text-muted-foreground hover:text-foreground p-1.5"
-                        title="View details"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Link>
-                      {activeTab === "pending_review" ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2"
-                            onClick={() => setConfirm({ type: "approve", submission })}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-red-600 hover:text-red-700"
-                            onClick={() => setConfirm({ type: "disapprove", submission })}
-                          >
-                            <XCircle className="h-3.5 w-3.5 mr-1" />
-                            Disapprove
-                          </Button>
-                        </>
-                      ) : activeTab === "needs_attention" ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2"
-                            onClick={() => setConfirm({ type: "reactivate", submission })}
-                          >
-                            <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                            Reactivate/Link
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2"
-                            onClick={() => setConfirm({ type: "treat_as_new", submission })}
-                          >
-                            <UserPlus className="h-3.5 w-3.5 mr-1" />
-                            Treat as New
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-red-600 hover:text-red-700"
-                            onClick={() => setConfirm({ type: "flag", submission })}
-                          >
-                            <Flag className="h-3.5 w-3.5 mr-1" />
-                            Flag
-                          </Button>
-                        </>
-                      ) : activeTab === "reviewed" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2"
-                          onClick={() => setConfirm({ type: "complete", submission })}
-                        >
-                          <ClipboardCheck className="h-3.5 w-3.5 mr-1" />
-                          Mark Completed
-                        </Button>
-                      ) : null}
-                    </div>
+            </thead>
+            <tbody className="divide-y">
+              {inProcessRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                    {inProcessQuery ? "No matches found" : "Nothing in process — no PV records are currently awaiting a membership"}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                inProcessRows.map((record) => (
+                  <tr key={`${record.type}-${record.id}`} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                      {new Date(record.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        {record.type === "company" ? (
+                          <Building2 className="h-3.5 w-3.5 text-gray-400" />
+                        ) : (
+                          <UserIcon className="h-3.5 w-3.5 text-gray-400" />
+                        )}
+                        {record.type === "company" ? "Company" : "Person"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{record.name || "—"}</td>
+                    <td className="px-4 py-3 text-gray-700">{record.email || "—"}</td>
+                    <td className="px-4 py-3 text-gray-700">{record.peopleVineId || "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Submitted At</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Company</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Primary Contact</th>
+                {activeTab === "needs_attention" ? (
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Duplicate Match</th>
+                ) : (
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Membership Package</th>
+                )}
+                <th className="text-left px-4 py-3 font-medium text-gray-600" style={{ width: 220 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                    {activeTab === "pending_review" && "No submissions pending review"}
+                    {activeTab === "needs_attention" && "No duplicates flagged"}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((submission) => (
+                  <tr key={submission.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                      {new Date(submission.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{submission.formData.company.name || "—"}</td>
+                    <td className="px-4 py-3 text-gray-700">{primaryContact(submission)}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {activeTab === "needs_attention" ? (
+                        viewMatchFor(submission) ? (
+                          <button
+                            type="button"
+                            onClick={() => setViewMatch(viewMatchFor(submission))}
+                            className="inline-flex items-center gap-1.5 text-brand hover:underline"
+                          >
+                            <Search className="h-3.5 w-3.5" />
+                            {matchLabel(submission)}
+                          </button>
+                        ) : (
+                          matchLabel(submission)
+                        )
+                      ) : (
+                        (submission.formData.membershipPackage &&
+                          membershipPackageName(submission.formData.membershipPackage)) ||
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <Link
+                          to={`/admin/onboarding/${submission.id}`}
+                          className="text-muted-foreground hover:text-foreground p-1.5"
+                          title="View details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                        {activeTab === "pending_review" ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => setConfirm({ type: "approve", submission })}
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-red-600 hover:text-red-700"
+                              onClick={() => setConfirm({ type: "disapprove", submission })}
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1" />
+                              Disapprove
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => setConfirm({ type: "reactivate", submission })}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                              Reactivate/Link
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => setConfirm({ type: "treat_as_new", submission })}
+                            >
+                              <UserPlus className="h-3.5 w-3.5 mr-1" />
+                              Treat as New
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-red-600 hover:text-red-700"
+                              onClick={() => setConfirm({ type: "flag", submission })}
+                            >
+                              <Flag className="h-3.5 w-3.5 mr-1" />
+                              Flag
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {confirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -376,7 +404,6 @@ export function AdminOnboardingHistoryPage() {
                   {confirm.type === "reactivate" && "Reactivate the existing record?"}
                   {confirm.type === "treat_as_new" && "Treat as a genuinely new customer?"}
                   {confirm.type === "flag" && "Flag for manual cleanup?"}
-                  {confirm.type === "complete" && "Mark onboarding as completed?"}
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   {confirm.type === "approve" &&
@@ -389,8 +416,6 @@ export function AdminOnboardingHistoryPage() {
                     "Moves this submission to Pending Review, ignoring the email match found."}
                   {confirm.type === "flag" &&
                     "Marks this submission for manual review — no automatic action is taken."}
-                  {confirm.type === "complete" &&
-                    "Removes this record from the Reviewed list. The record itself is kept, so mHub does not lose track of who was added — only submissions still marked as reviewed show as needing a membership charge in PeopleVine."}
                 </p>
               </div>
             </div>

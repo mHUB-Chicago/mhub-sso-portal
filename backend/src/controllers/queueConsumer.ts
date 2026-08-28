@@ -1,5 +1,6 @@
 import {
   syncPhaseCompanies,
+  syncPhaseOnboardingCompanies,
   syncPhaseUsers,
   syncPhaseDeactivate,
   syncPhaseCorrectionExport,
@@ -34,6 +35,7 @@ export interface Message {
 export const enum JobType {
   SYNC_PEOPLEVINE_EVERYTHING = "SYNC_PEOPLEVINE_EVERYTHING",
   SYNC_PEOPLEVINE_CUSTOMER = "SYNC_PEOPLEVINE_CUSTOMER",
+  SYNC_PHASE_ONBOARDING_COMPANIES = "SYNC_PHASE_ONBOARDING_COMPANIES",
   SYNC_PHASE_USERS = "SYNC_PHASE_USERS",
   SYNC_PHASE_DEACTIVATE = "SYNC_PHASE_DEACTIVATE",
   SYNC_PHASE_CORRECTION_EXPORT = "SYNC_PHASE_CORRECTION_EXPORT",
@@ -84,6 +86,24 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           } else {
             await syncPhaseCompanies(context, sessionId);
             await checkCancelled(context.get('db') as PrismaClient, sessionId);
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_PHASE_ONBOARDING_COMPANIES,
+              payload: { sessionId },
+            });
+          }
+
+        } else if (jobType === JobType.SYNC_PHASE_ONBOARDING_COMPANIES) {
+          const { sessionId, startPage = 1 } = payload ?? {};
+          const { hadErrors, hasMore, lastPage } = await syncPhaseOnboardingCompanies(context, sessionId, startPage);
+          await checkCancelled(context.get('db') as PrismaClient, sessionId);
+          if (hasMore) {
+            await env.QUEUE.send({
+              jobId: crypto.randomUUID(),
+              jobType: JobType.SYNC_PHASE_ONBOARDING_COMPANIES,
+              payload: { sessionId, startPage: lastPage + 1 },
+            });
+          } else {
             await env.QUEUE.send({
               jobId: crypto.randomUUID(),
               jobType: JobType.SYNC_PHASE_USERS,

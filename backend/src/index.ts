@@ -589,7 +589,7 @@ app.get("/api/reports", async (c) => {
     ],
   };
 
-  const [subs, users, companies, loginsCount, ssoCount, serviceProviders, recentSessions, activeSessionUsers] = await Promise.all([
+  const [subs, users, companies, loginsCount, samlRequests, serviceProviders, recentSessions, activeSessionUsers] = await Promise.all([
     prisma.subscription.findMany({
       select: { title: true, rate: true, frequency: true, companyId: true, createdAt: true },
     }),
@@ -602,7 +602,13 @@ app.get("/api/reports", async (c) => {
       select: { id: true, name: true, active: true, membershipTypes: true, createdAt: true },
     }),
     prisma.session.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-    prisma.samlAuthRequest.count({ where: { completedAt: { not: null }, createdAt: { gte: thirtyDaysAgo } } }),
+    // Selected (not just counted) so "SSO Launches by Platform" can be broken down the same
+    // way as the weekly/monthly reports, instead of just a static "Connected Service
+    // Providers" list.
+    prisma.samlAuthRequest.findMany({
+      where: { completedAt: { not: null }, createdAt: { gte: thirtyDaysAgo } },
+      select: { serviceProviderId: true, userId: true },
+    }),
     prisma.serviceProvider.findMany({ where: { active: true }, select: { id: true, name: true, logo: true } }),
     prisma.session.findMany({
       where: { createdAt: { gte: thirtyDaysAgo } },
@@ -743,6 +749,22 @@ app.get("/api/reports", async (c) => {
 
   const activeUsersLast30d = activeSessionUsers.length;
 
+  const serviceProviderNameById = new Map(serviceProviders.map(sp => [sp.id, sp.name]));
+  const platformStats = new Map<string, { launches: number; users: Set<string> }>();
+  for (const req of samlRequests) {
+    const entry = platformStats.get(req.serviceProviderId) ?? { launches: 0, users: new Set<string>() };
+    entry.launches++;
+    if (req.userId) entry.users.add(req.userId);
+    platformStats.set(req.serviceProviderId, entry);
+  }
+  const byPlatform = [...platformStats.entries()]
+    .map(([id, v]) => ({
+      name: serviceProviderNameById.get(id) ?? 'Unknown',
+      launches: v.launches,
+      uniqueUsers: v.users.size,
+    }))
+    .sort((a, b) => b.launches - a.launches);
+
   return c.json({
     success: true,
     data: {
@@ -774,9 +796,10 @@ app.get("/api/reports", async (c) => {
       },
       engagement: {
         loginsLast30d: loginsCount,
-        ssoLast30d: ssoCount,
+        ssoLast30d: samlRequests.length,
         activeUsersLast30d,
         serviceProviders,
+        byPlatform,
         recentSessions: recentSessions.map(s => ({
           userId: s.userId,
           userName: (s.user as any)?.name ?? 'Unknown',

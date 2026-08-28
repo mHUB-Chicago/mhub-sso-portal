@@ -68,6 +68,21 @@ export const CompanyDetailsStep = ({ value, onChange, attributeOptions }: Compan
               className="mt-1"
             />
           </div>
+          <div className="col-span-2">
+            <Label htmlFor="companyEmail">Business Email</Label>
+            <Input
+              id="companyEmail"
+              type="email"
+              value={value.email ?? ""}
+              onChange={(e) => onChange("email", e.target.value)}
+              className="mt-1"
+              placeholder="e.g. hello@yourcompany.com"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Optional — used as the company's PeopleVine contact email. Leave blank to
+              auto-generate one from the primary user's email below.
+            </p>
+          </div>
           <FormSelect
             id="companySize"
             label="Company Size (# employees)"

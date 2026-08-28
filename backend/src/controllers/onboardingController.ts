@@ -4,6 +4,7 @@ import { AppType, JsonInput, QueryInput } from "..";
 import {
   ApproveOnboardingSubmissionResponseSchema,
   CompleteOnboardingSubmissionResponseSchema,
+  GetOnboardingAddonPackagesResponseSchema,
   CreateOnboardingLinkRequestSchema,
   CreateOnboardingLinkResponseSchema,
   CreateOnboardingSubmissionRequestSchema,
@@ -13,6 +14,7 @@ import {
   FlagOnboardingSubmissionRequestSchema,
   FlagOnboardingSubmissionResponseSchema,
   GetOnboardingAttributeOptionsResponseSchema,
+  GetOnboardingInProcessResponseSchema,
   GetOnboardingMembershipPackagesResponseSchema,
   GetOnboardingSubmissionResponseSchema,
   GetOnboardingSubmissionsQuerySchema,
@@ -96,15 +98,26 @@ const finalizeSubmissionPushToPeopleVine = async (
   });
 
   if (formData.scenario === "new_company") {
+    // No access yet — PV has no API to create a subscription/membership up front (see
+    // pushOnboardingSubmissionToPeopleVine), so this company genuinely has none until a
+    // real membership is assigned in PV and the sync engine (which reads the `source`
+    // tag just written there) confirms it and advances accountStatus to "active".
+    // Importing a record must never grant access on its own.
     const newCompany = await createCompany(c, {
       name: formData.company.name,
       peopleVineId: result.companyPvCustomerId,
-      active: true,
-      email: formData.user.email.toLowerCase(),
+      active: false,
+      // The exact email PV's own company customer record was just given — the form's
+      // business email if provided, else the same "+company" alias fallback.
+      email: (result.companyEmail ?? formData.user.email).toLowerCase(),
+      accountStatus: "pending_membership",
     });
     targetCompanyId = newCompany.id;
   }
 
+  // Same "no access yet" reasoning as the company above — applies to both scenarios
+  // (a brand-new company's owner, or a person attached to an existing company) since
+  // neither has a confirmed real membership at push time.
   await createUser(c, {
     name: `${formData.user.firstName} ${formData.user.lastName}`.trim(),
     email: formData.user.email,
@@ -117,6 +130,8 @@ const finalizeSubmissionPushToPeopleVine = async (
     state: formData.user.address?.state || null,
     zipCode: formData.user.address?.zip || null,
     memberSource: "subscription",
+    active: false,
+    accountStatus: "pending_membership",
   });
 
   const resolutionNote =
@@ -156,6 +171,35 @@ export const fetchActiveMembershipPackages = async (c: Context): Promise<{ id: s
         Page_Size: "100",
         Page_Number: String(pageNumber),
         Type: "subscription",
+        Status: "active",
+      },
+    });
+    memberships.push(...data);
+    if (!pagination?.has_next_page) break;
+    pageNumber++;
+  }
+
+  return memberships
+    .filter((m) => m.title)
+    .map((m) => ({ id: String(m.id), name: m.title as string }));
+};
+
+// Add-on memberships (Type="add-on" per PV's own /memberships enum — a different kind
+// from the primary "subscription" plans above). For a person being added to an
+// existing_company, the primary membership is inherited from the company rather than
+// chosen here — this list is only ever additional/optional add-ons they might want.
+export const fetchActiveAddonMemberships = async (c: Context): Promise<{ id: string; name: string }[]> => {
+  const memberships: any[] = [];
+  let pageNumber = 1;
+  while (true) {
+    const { data, pagination } = await apiRequestWithPagination(c, {
+      tokenType: PeopleVineTokenType.USER_COMPANY,
+      endpoint: "/memberships",
+      method: "GET",
+      queryParams: {
+        Page_Size: "100",
+        Page_Number: String(pageNumber),
+        Type: "add-on",
         Status: "active",
       },
     });
@@ -212,9 +256,22 @@ export const handleCreateOnboardingSubmission = async (
   // customer filled them out.
   const canAutoApprove =
     formData.mode === "admin" && created.status === "pending_review" && c.env.PEOPLEVINE_WRITE_ENABLED === "true";
-  const submission = canAutoApprove
-    ? await finalizeSubmissionPushToPeopleVine(c, created, formData, user?.id ?? null)
-    : created;
+  // `created` above is already committed — a PV push failure here must never fail this
+  // whole request (the row would stay orphaned in "pending_review" while the caller sees
+  // an error and, not knowing the row already exists, resubmits — piling up duplicate
+  // copies of the same submission, each hitting the same failure). Auto-approve is a
+  // best-effort convenience on top of an already-successful "record this submission";
+  // if it fails, fall back to the plain pending_review row exactly as if writes were
+  // disabled — staff can retry via the existing, separate Approve action once the
+  // underlying PV issue is resolved.
+  let submission = created;
+  if (canAutoApprove) {
+    try {
+      submission = await finalizeSubmissionPushToPeopleVine(c, created, formData, user?.id ?? null);
+    } catch (e) {
+      console.error(`[onboarding] Auto-approve failed for submission ${created.id}, leaving as pending_review:`, e);
+    }
+  }
 
   const response = CreateOnboardingSubmissionResponseSchema.parse({
     success: true,
@@ -240,6 +297,44 @@ export const handleGetOnboardingSubmissions = async (
     success: true,
     message: "Success",
     data: { submissions: rows.map(toSubmissionDTO) },
+  });
+  return c.json(response);
+};
+
+// "Default (in-process)" onboarding tab: live Company/User rows still awaiting a
+// membership (accountStatus "pending_membership"), not OnboardingSubmission rows —
+// see GetOnboardingInProcessResponseSchema. Read-only, local DB only.
+export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
+  const prisma: PrismaClient = c.get("db");
+
+  const [companies, users] = await Promise.all([
+    prisma.company.findMany({ where: { accountStatus: "pending_membership" }, orderBy: { createdAt: "desc" } }),
+    prisma.user.findMany({ where: { accountStatus: "pending_membership" }, orderBy: { createdAt: "desc" } }),
+  ]);
+
+  const records = [
+    ...companies.map((co) => ({
+      id: co.id,
+      type: "company" as const,
+      name: co.name,
+      email: co.email,
+      peopleVineId: co.peopleVineId,
+      createdAt: co.createdAt,
+    })),
+    ...users.map((u) => ({
+      id: u.id,
+      type: "user" as const,
+      name: u.name,
+      email: u.email,
+      peopleVineId: u.peopleVineId,
+      createdAt: u.createdAt,
+    })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  const response = GetOnboardingInProcessResponseSchema.parse({
+    success: true,
+    message: "Success",
+    data: { records },
   });
   return c.json(response);
 };
@@ -497,6 +592,17 @@ export const handleGetOnboardingMembershipPackages = async (c: Context<AppType>)
   const packages = await fetchActiveMembershipPackages(c);
 
   const response = GetOnboardingMembershipPackagesResponseSchema.parse({
+    success: true,
+    message: "Success",
+    data: { packages },
+  });
+  return c.json(response);
+};
+
+export const handleGetOnboardingAddonPackages = async (c: Context<AppType>) => {
+  const packages = await fetchActiveAddonMemberships(c);
+
+  const response = GetOnboardingAddonPackagesResponseSchema.parse({
     success: true,
     message: "Success",
     data: { packages },

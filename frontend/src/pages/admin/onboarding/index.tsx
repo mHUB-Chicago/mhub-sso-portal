@@ -9,6 +9,7 @@ import {
   useCreateOnboardingLinkMutation,
   useGetOnboardingAttributeOptionsQuery,
 } from "@/store/api/onboardingApi";
+import { useGetCompaniesQuery } from "@/store/api/companyApi";
 import { OnboardingStepper } from "./components/OnboardingStepper";
 import { ScenarioChooserStep } from "./components/ScenarioChooserStep";
 import { LinkGeneratedStep } from "./components/LinkGeneratedStep";
@@ -16,6 +17,7 @@ import { CompanyDetailsStep } from "./components/CompanyDetailsStep";
 import { SelectCompanyStep } from "./components/SelectCompanyStep";
 import { PrimaryUserStep } from "./components/PrimaryUserStep";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
+import { AddonMembershipsStep } from "./components/AddonMembershipsStep";
 import { SkillsStep } from "./components/SkillsStep";
 import { NextStepsStep } from "./components/NextStepsStep";
 import type {
@@ -30,12 +32,24 @@ import type {
 
 const TOTAL_STEPS = 5;
 
+// RTK Query's `.unwrap()` rejects with `{ status, data }`, not an `Error` — `err
+// instanceof Error` is always false for it, so the real backend message (e.g. "Selected
+// company no longer exists") was being silently swallowed in favor of a generic toast.
+const errorMessage = (err: unknown, fallback: string): string => {
+  if (err && typeof err === "object" && "data" in err) {
+    const data = (err as { data?: { message?: string } }).data;
+    if (data?.message) return data.message;
+  }
+  return err instanceof Error ? err.message : fallback;
+};
+
 const createInitialFormData = (): OnboardingFormData => ({
   mode: "admin",
   scenario: "new_company",
   companyId: undefined,
   company: {
     name: "",
+    email: "",
     website: "",
     size: "",
     founded: "",
@@ -61,6 +75,7 @@ const createInitialFormData = (): OnboardingFormData => ({
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
   membershipPackage: "",
+  addonMemberships: [],
   skills: {
     undergradSchool: "",
     undergradDegree: "",
@@ -130,6 +145,10 @@ const OnboardingPage = () => {
     setFormData((prev) => ({ ...prev, membershipPackage: fieldValue }));
   };
 
+  const updateAddonMemberships = (addonMemberships: string[]) => {
+    setFormData((prev) => ({ ...prev, addonMemberships }));
+  };
+
   const updateSkillsField = (
     field: keyof Omit<SkillsDetails, "skills" | "shopSkills">,
     fieldValue: string
@@ -159,7 +178,7 @@ const OnboardingPage = () => {
         // through to the `generatedLink` branch instead of re-rendering the chooser.
         goNext();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to generate link.");
+        toast.error(errorMessage(err, "Failed to generate link."));
       } finally {
         setIsSubmitting(false);
       }
@@ -186,13 +205,18 @@ const OnboardingPage = () => {
       toast.success(result.message || "Onboarding submission recorded.");
       navigate(`/admin/onboarding/${result.data.submission.id}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to submit onboarding request.");
+      toast.error(errorMessage(err, "Failed to submit onboarding request."));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const isExistingCompany = formData.scenario === "existing_company";
+  // Only queried for the AddonMembershipsStep's "Inherits {name}'s primary membership"
+  // message — RTK Query dedupes this against SelectCompanyStep's identical call, so it's
+  // not a second network request.
+  const { data: companiesData } = useGetCompaniesQuery({ limit: 500, active: "true" }, { skip: !isExistingCompany });
+  const selectedCompanyName = companiesData?.data?.companies.find((co) => co.id === formData.companyId)?.name;
 
   const renderStep = () => {
     switch (currentStep) {
@@ -210,15 +234,18 @@ const OnboardingPage = () => {
             onAddressChange={updateUserAddress}
             onEthnicityChange={updateUserEthnicity}
             attributeOptions={attributeOptions}
+            scenario={formData.scenario}
           />
         );
       case 3:
-        return (
-          <MembershipPackageStep
-            value={formData.membershipPackage}
-            onChange={updateMembershipPackage}
-            optional={isExistingCompany}
+        return isExistingCompany ? (
+          <AddonMembershipsStep
+            companyName={selectedCompanyName}
+            values={formData.addonMemberships}
+            onChange={updateAddonMemberships}
           />
+        ) : (
+          <MembershipPackageStep value={formData.membershipPackage} onChange={updateMembershipPackage} />
         );
       case 4:
         return (

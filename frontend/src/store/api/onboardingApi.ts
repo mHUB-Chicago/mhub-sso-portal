@@ -10,6 +10,7 @@ export interface OnboardingAddress {
 
 export interface OnboardingCompany {
   name?: string
+  email?: string
   website?: string
   size?: string
   founded?: string
@@ -61,6 +62,9 @@ export interface OnboardingFormData {
   company: OnboardingCompany
   user: OnboardingUser
   membershipPackage: string
+  // existing_company only — the primary membership is inherited from the company, this
+  // is optional add-ons the new person might also want.
+  addonMemberships: string[]
   skills: OnboardingSkills
   billing: OnboardingBilling
 }
@@ -91,6 +95,17 @@ export interface OnboardingMembershipPackage {
   name: string
 }
 
+// Default (in-process) tab row — a live Company/User record still awaiting a
+// membership, not an OnboardingSubmission.
+export interface OnboardingInProcessRecord {
+  id: string
+  type: 'company' | 'user'
+  name: string
+  email: string
+  peopleVineId: string | null
+  createdAt: string
+}
+
 // One PV "Attribute" that offers a fixed set of choices — matched by exact `name`
 // against PV's own configured attribute (e.g. "Shop Skills", "Pronoun").
 export interface OnboardingAttributeOption {
@@ -111,7 +126,19 @@ interface SubmissionsResponse {
   data: { submissions: OnboardingSubmission[] }
 }
 
+interface InProcessResponse {
+  success: boolean
+  message: string
+  data: { records: OnboardingInProcessRecord[] }
+}
+
 interface MembershipPackagesResponse {
+  success: boolean
+  message: string
+  data: { packages: OnboardingMembershipPackage[] }
+}
+
+interface AddonPackagesResponse {
   success: boolean
   message: string
   data: { packages: OnboardingMembershipPackage[] }
@@ -210,8 +237,18 @@ export const onboardingApi = createApi({
       invalidatesTags: ['OnboardingSubmissions'],
     }),
 
+    getOnboardingInProcess: builder.query<InProcessResponse, void>({
+      query: () => '/onboarding/in-process',
+      providesTags: ['OnboardingSubmissions'],
+    }),
+
     getOnboardingMembershipPackages: builder.query<MembershipPackagesResponse, void>({
       query: () => '/onboarding/membership-packages',
+      providesTags: ['OnboardingMembershipPackages'],
+    }),
+
+    getOnboardingAddonPackages: builder.query<AddonPackagesResponse, void>({
+      query: () => '/onboarding/addon-packages',
       providesTags: ['OnboardingMembershipPackages'],
     }),
 
@@ -243,7 +280,9 @@ export const {
   useTreatOnboardingSubmissionAsNewMutation,
   useFlagOnboardingSubmissionMutation,
   useDisapproveOnboardingSubmissionMutation,
+  useGetOnboardingInProcessQuery,
   useGetOnboardingMembershipPackagesQuery,
+  useGetOnboardingAddonPackagesQuery,
   useGetOnboardingAttributeOptionsQuery,
   useCreateOnboardingLinkMutation,
   useSendOnboardingLinkEmailMutation,

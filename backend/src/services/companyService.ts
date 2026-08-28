@@ -27,6 +27,10 @@ export interface CreateCompanyInput {
   email: string;
   membershipTypes?: string[];
   isPersonal?: boolean;
+  // "pending_membership" | "membership-removed" | "active". Defaults to "active" so
+  // every existing caller (CSV import, filtered import, etc.) keeps its prior
+  // behavior unchanged.
+  accountStatus?: string;
 }
 
 export interface UpdateCompanyInput {
@@ -37,6 +41,7 @@ export interface UpdateCompanyInput {
   membershipTypes?: string[];
   isPersonal?: boolean;
   peopleVineId?: string;
+  accountStatus?: string;
 }
 
 const namesResemble = (customerName: string, companyName: string): boolean => {
@@ -89,7 +94,11 @@ export const getPaginatedCompanies = async (c: Context, input: GetPaginatedCompa
 
   if (!input.membershipType && input.cmtOnly !== 'false') {
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`EXISTS (SELECT 1 FROM json_each(c."membershipTypes") je WHERE je.value IN (SELECT name FROM "CompanyMembershipType"))`,
+      // A tagged onboarding company with no membership yet ("pending_membership") has no
+      // recognized membership type by definition — pass it through this filter anyway so
+      // it isn't invisible everywhere except the Onboarding "In Process" tab. Never
+      // widens visibility for any other kind of unclassified/junk record.
+      Prisma.sql`(EXISTS (SELECT 1 FROM json_each(c."membershipTypes") je WHERE je.value IN (SELECT name FROM "CompanyMembershipType")) OR c."accountStatus" = 'pending_membership')`,
     ];
     if (input.active !== undefined) {
       conditions.push(Prisma.sql`c.active = ${input.active === 'true' ? 1 : 0}`);
@@ -166,6 +175,7 @@ export const createCompany = async (c: Context, input: CreateCompanyInput) => {
       email: input.email,
       membershipTypes: JSON.stringify(input.membershipTypes ?? []),
       isPersonal: input.isPersonal ?? false,
+      accountStatus: input.accountStatus ?? 'active',
     },
   });
   const serviceProviders = await getAllServiceProviders(c);
@@ -190,15 +200,22 @@ export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
       ...(input.membershipTypes !== undefined ? { membershipTypes: JSON.stringify(input.membershipTypes) } : {}),
       isPersonal: input.isPersonal,
       ...(input.peopleVineId ? { peopleVineId: input.peopleVineId } : {}),
+      accountStatus: input.accountStatus,
     },
   });
 }
 
 export const deactivateCompany = async (c: Context, id: string) => {
   const prisma: PrismaClient = c.get("db");
+  const existing = await prisma.company.findUnique({ where: { id }, select: { accountStatus: true } });
   const deactivatedCompany = await prisma.company.update({
     where: { id },
-    data: { active: false },
+    data: {
+      active: false,
+      // Only relabel a record that actually had access — a `pending_membership`
+      // record that never had one yet stays "pending_membership", not "removed".
+      ...(existing?.accountStatus === 'active' ? { accountStatus: 'membership-removed' } : {}),
+    },
   });
   await deactivateUsersByCompanyId(c, deactivatedCompany.id);
   return deactivatedCompany;

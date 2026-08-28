@@ -6,7 +6,7 @@ import {
   SubmitOnboardingLinkRequestSchema,
   SubmitOnboardingLinkResponseSchema,
 } from "@common/schemas/onboarding";
-import { fetchActiveMembershipPackages, createOnboardingSubmissionRecord } from "@/controllers/onboardingController";
+import { fetchActiveMembershipPackages, fetchActiveAddonMemberships, createOnboardingSubmissionRecord } from "@/controllers/onboardingController";
 
 const OPEN_LINK_STATUSES = new Set(["active"]);
 
@@ -35,19 +35,22 @@ export const handleGetOnboardingLink = async (c: Context<AppType>) => {
 
   const packages = await fetchActiveMembershipPackages(c);
 
-  const companies =
-    link.scenario === "existing_company"
-      ? await prisma.company.findMany({
+  const isExistingCompany = link.scenario === "existing_company";
+  const [companies, addonPackages] = await Promise.all([
+    isExistingCompany
+      ? prisma.company.findMany({
           where: { active: true, isSystemAccount: false },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })
-      : undefined;
+      : Promise.resolve(undefined),
+    isExistingCompany ? fetchActiveAddonMemberships(c) : Promise.resolve(undefined),
+  ]);
 
   const response = GetOnboardingLinkResponseSchema.parse({
     success: true,
     message: "Success",
-    data: { scenario: link.scenario, packages, companies },
+    data: { scenario: link.scenario, packages, addonPackages, companies },
   });
   return c.json(response);
 };

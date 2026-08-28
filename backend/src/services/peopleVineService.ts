@@ -24,6 +24,31 @@ const findCompanyByNameCI = async (prisma: PrismaClient, name: string): Promise<
     return { ...row, active: Boolean(row.active), isPersonal: Boolean(row.isPersonal) } as Company;
 };
 export const PEOPLEVINE_API_BASE_URL = 'https://api.peoplevine.dev/api';
+
+// Dedicated onboarding-classification tag, written onto PV's `source` field at
+// customer creation (see peopleVinePortalService.ts's pvUpdateAccountProfile calls).
+// `source` was picked over `customer_reference` because `customer_reference` already
+// carries a different, unrelated `pv_company:{id}` best-effort link — this keeps the
+// two from colliding. Read identically here by both the webhook path (syncOne) and
+// the batch/full sync phases, so a record's classification never depends on which
+// path happened to touch it first.
+export const ONBOARDING_SOURCE_TAGS = {
+    company: 'mhub_onboarding:company',
+    person: 'mhub_onboarding:person',
+    personPending: 'mhub_onboarding:person_pending',
+} as const;
+export type OnboardingSourceClassification = 'company' | 'person' | 'person_pending';
+export const classifyOnboardingSource = (source: string | null | undefined): OnboardingSourceClassification | null => {
+    const trimmed = (source ?? '').trim();
+    if (trimmed === ONBOARDING_SOURCE_TAGS.company)
+        return 'company';
+    if (trimmed === ONBOARDING_SOURCE_TAGS.person)
+        return 'person';
+    if (trimmed === ONBOARDING_SOURCE_TAGS.personPending)
+        return 'person_pending';
+    return null;
+};
+
 export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined, addOnsJson?: string | null): Promise<boolean> => {
     const prisma: PrismaClient = c.get('db');
     const candidates: string[] = [];
@@ -64,6 +89,7 @@ export interface PeopleVineCustomer {
     state?: string | null;
     zipCode?: string | null;
     cardStatus?: string | null;
+    source?: string | null;
 }
 export interface LogEntry {
     time: string;
@@ -409,6 +435,7 @@ export const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
         const state = customer.address?.state || null;
         const zipCode = customer.address?.zip_code || null;
         const cardStatus = customer.wallet?.status || null;
+        const source = typeof customer.source === 'string' ? (customer.source.trim() || null) : null;
         return {
             ...customer,
             full_name,
@@ -426,6 +453,7 @@ export const normalizeCustomers = (customers: any[]): PeopleVineCustomer[] => {
             state,
             zipCode,
             cardStatus,
+            source,
         };
     });
 };
@@ -857,13 +885,19 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
             }
             const isPlaceholderEmail = existing.email.endsWith('@placeholder.invalid') || existing.email.endsWith('@noemail.mhub');
             const newEmail = isPlaceholderEmail && customer.email ? customer.email.toLowerCase() : undefined;
+            // Advances a "pending_membership"/"membership-removed" record (e.g. one
+            // created by syncPhaseOnboardingCompanies with no subscription yet) to
+            // "active" once it appears here with one — never demotes; a still-inactive
+            // record keeps its current label (isActive is effectively always true for
+            // this subscription-sourced candidate list, but guard it explicitly anyway).
+            const accountStatusUpdate = isActive ? 'active' as const : undefined;
             try {
-                await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: pvId, email: newEmail });
+                await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: pvId, email: newEmail, accountStatus: accountStatusUpdate });
             }
             catch (e) {
                 if (isUniqueConstraintError(e)) {
                     log('warn', `[sync] Could not update email for company "${customer.company_name}" — email already in use.`);
-                    await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: pvId });
+                    await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: pvId, accountStatus: accountStatusUpdate });
                 }
                 else {
                     throw e;
@@ -928,6 +962,62 @@ export const syncPhaseCompanies = async (c: Context, sessionId?: string): Promis
     return { hadErrors };
 };
 const BATCH_PAGES = 10;
+
+// Admin-onboarded companies (Path A) have no subscription yet, so syncPhaseCompanies
+// above never sees them — its candidate list comes from getCustomersFromSubscriptions,
+// a subscription-only fetch. This is a separate, paginated (bounded, self-looping —
+// same BATCH_PAGES/hasMore/lastPage pattern as syncPhaseUsers below, never an unbounded
+// fetch) scan of every customer via getCustomers, admitting only ones tagged
+// `mhub_onboarding:company`. Read-only against PV; every write here lands in the local
+// Company table only. Queued strictly between syncPhaseCompanies and SYNC_PHASE_USERS
+// (see queueConsumer.ts) so a Path A company always exists locally by name before
+// syncPhaseUsers processes that company's onboarding person.
+export const syncPhaseOnboardingCompanies = async (c: Context, sessionId?: string, startPage = 1): Promise<{
+    hadErrors: boolean;
+    hasMore: boolean;
+    lastPage: number;
+}> => {
+    const prisma: PrismaClient = c.get('db');
+    const { log, flush } = makeSessionFlusher(prisma, sessionId);
+    await flush(32, `Scanning for tagged onboarding companies (page ${startPage}+)`);
+    log('info', `Scanning customers (pages ${startPage}–${startPage + BATCH_PAGES - 1}) for tagged onboarding companies`);
+    const { customers, hadErrors, lastPage, hasMore } = await getCustomers(c, startPage, BATCH_PAGES);
+    const taggedCustomers = customers.filter(cu => classifyOnboardingSource(cu.source) === 'company');
+    if (taggedCustomers.length > 0) {
+        const pvIds = taggedCustomers.map(cu => cu.id.toString());
+        const names = taggedCustomers.map(cu => cu.company_name);
+        const dbCompanies = await prisma.company.findMany({ where: { OR: [{ peopleVineId: { in: pvIds } }, { name: { in: names } }] } });
+        const dbCompaniesByPvId = new Map(dbCompanies.filter(co => co.peopleVineId).map(co => [co.peopleVineId as string, co]));
+        const dbCompaniesByName = new Map(dbCompanies.map(co => [normCompanyKey(co.name), co]));
+        for (const customer of taggedCustomers) {
+            const pvId = customer.id.toString();
+            // Already imported (by a prior run of this phase, or since promoted to a
+            // real subscriber and picked up by syncPhaseCompanies/syncOne, which own
+            // all further updates to it) — nothing further to do here.
+            if (dbCompaniesByPvId.has(pvId) || dbCompaniesByName.has(normCompanyKey(customer.company_name)))
+                continue;
+            log('info', `Creating new onboarding company for "${customer.company_name}" (PV#${pvId}) — tagged, no membership yet.`);
+            try {
+                await createCompany(c, {
+                    name: customer.company_name,
+                    peopleVineId: pvId,
+                    active: false,
+                    email: customer.email.toLowerCase(),
+                    membershipTypes: [],
+                    isPersonal: false,
+                    accountStatus: 'pending_membership',
+                });
+            }
+            catch (e) {
+                if (!isUniqueConstraintError(e)) {
+                    throw e;
+                }
+                log('warn', `[sync] Skipped creating onboarding company "${customer.company_name}" (PV#${pvId}) — already exists (name or PV id conflict).`);
+            }
+        }
+    }
+    return { hadErrors, hasMore, lastPage };
+};
 export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage = 1): Promise<{
     hadErrors: boolean;
     hasMore: boolean;
@@ -1031,6 +1121,12 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         const pvId = customer.id.toString();
         const isSubscriber = activePVSubscriberIds.has(pvId);
         const isMember = customer.isMember ?? false;
+        // Path A persons rely on syncPhaseOnboardingCompanies having already created
+        // their company (queue-ordered strictly before this phase), so the `!company`
+        // branch below never needs a gate change here — once `company` resolves, this
+        // function already creates/updates the user unconditionally. Only the
+        // accountStatus label below is onboarding-specific.
+        const onboardingClassification = classifyOnboardingSource(customer.source);
         const existingByPvId = byPvId.get(pvId);
         const existingByEmail = byEmail.get(customer.email.toLowerCase());
         const existingUser = existingByPvId ?? (existingByEmail && !existingByEmail.peopleVineId ? existingByEmail : undefined);
@@ -1156,6 +1252,12 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
                     zipCode: customer.zipCode ?? null,
                     cardStatus: customer.cardStatus ?? null,
                     memberSource,
+                    // Advances to "active" once real access exists; only relabels an
+                    // "active" record as "membership-removed" on genuine loss — a
+                    // record that was never "active" (e.g. "pending_membership", or a
+                    // plain non-portal company member that's always been inactive by
+                    // design) keeps its current label.
+                    accountStatus: pvUserActive ? 'active' : (existingUser.accountStatus === 'active' ? 'membership-removed' : undefined),
                 };
                 try {
                     await updateUser(c, userUpdatePayload as any);
@@ -1206,6 +1308,13 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
             zipCode: customer.zipCode ?? null,
             cardStatus: customer.cardStatus ?? null,
             memberSource,
+            // Only tagged onboarding records get "pending_membership" here — this
+            // pre-existing path already creates plain, non-portal company members with
+            // active:false for unrelated reasons (they simply never have individual
+            // access), and those must keep the default "active" label so they don't
+            // show up on the new onboarding "in process" tab (which filters on this
+            // field) as if they were mid-onboarding.
+            accountStatus: (!pvUserActive && onboardingClassification) ? 'pending_membership' as const : undefined,
         };
         try {
             const createdUser = await createUser(c, userCreatePayload);
@@ -1339,6 +1448,12 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
             // dataset, so they'd otherwise get deactivated by this pass on every single sync.
             if (co.isSystemAccount)
                 return;
+            // Tagged onboarding companies with no membership yet are never in this run's
+            // subscription-sourced active-ID sets either (syncPhaseOnboardingCompanies
+            // creates them separately) — same reasoning, exclude them so a fresh
+            // "pending_membership" record isn't logged as deactivated on its own sync run.
+            if (co.accountStatus === 'pending_membership')
+                return;
             if (activatedCompanyIds.has(co.id))
                 return;
             if (!co.peopleVineId) {
@@ -1355,7 +1470,11 @@ export const syncPhaseDeactivate = async (c: Context, sessionId?: string): Promi
     if (activePVUserIds.length > 0) {
         const activePVUserSet = new Set(activePVUserIds);
         const existingUsers = await prisma.user.findMany({
-            where: { role: 'USER', peopleVineId: { not: null }, isSystemAccount: false },
+            // "pending_membership" users (tagged onboarding, no membership yet) are
+            // excluded for the same reason as system accounts above — they're never in
+            // this run's subscription-sourced active-ID sets, and a fresh onboarding
+            // person shouldn't get logged as deactivated on its own sync run.
+            where: { role: 'USER', peopleVineId: { not: null }, isSystemAccount: false, accountStatus: { not: 'pending_membership' } },
             include: { company: { select: { active: true } } },
         });
         await runConcurrent(existingUsers, 20, async (u) => {
@@ -1524,7 +1643,8 @@ export const syncPhaseCorrectionCompanies = async (c: Context, sessionId?: strin
             coChanges.push({ field: 'isPersonal', before: String(existing.isPersonal), after: String(isPersonal) });
         if (coChanges.length === 0)
             return;
-        await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: existing.peopleVineId || pvId });
+        // Same "advance to active, never demote here" reasoning as syncPhaseCompanies.
+        await updateCompany(c, { id: existing.id, name: customer.company_name, active: isActive, membershipTypes, isPersonal, peopleVineId: existing.peopleVineId || pvId, accountStatus: isActive ? 'active' as const : undefined });
         auditCorrectionsCompanies.push({ id: existing.id, name: customer.company_name, pvId, changes: coChanges });
     }, () => checkCancelled(prisma, sessionId));
     const auditRevenueSynced: {
@@ -1978,6 +2098,12 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             cardStatus: customer.cardStatus ?? null,
             memberSource,
             memberSourceCompany: newMemberSourceCompany,
+            // Same reasoning as syncPhaseUsers/syncOne — this is the third (and, unlike
+            // syncPhaseCompanies, structurally reachable for a "pending_membership" user,
+            // since their company already exists locally) place that can flip `active`,
+            // so it needs the same accountStatus sync or a promoted record would stay
+            // mislabeled "pending_membership" forever despite having real access.
+            accountStatus: pvUserActive ? 'active' : (existingUser.accountStatus === 'active' ? 'membership-removed' : undefined),
         };
         try {
             await updateUser(c, userUpdatePayload as any);
@@ -2061,6 +2187,11 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         return;
     }
     const pvId = customer.id.toString();
+    // Admin-onboarded records pushed with no membership yet (see
+    // peopleVinePortalService.ts) carry a dedicated PV `source` tag — read identically
+    // here and in the batch/full sync phases so classification never depends on which
+    // path touches the record first.
+    const onboardingClassification = classifyOnboardingSource(customer.source);
     const hasSubInfo = subResult.subscriptionInfoMap.has(pvId);
     const subInfo = subResult.subscriptionInfoMap.get(pvId);
     const membershipTypes = (subInfo?.membershipTypes.length ?? 0) > 0 ? subInfo!.membershipTypes : (subInfo?.rawTitles ?? []);
@@ -2137,6 +2268,11 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 isPersonal,
                 peopleVineId: pvId,
                 email: resolvedCompanyEmail,
+                // Only advance to "active" here — a still-inactive record (whether
+                // "pending_membership" or "membership-removed") keeps its current
+                // label; deactivateCompany (called just above when access is lost)
+                // is what sets "membership-removed".
+                accountStatus: pvActive ? 'active' : undefined,
             });
             if (wasInactive && pvActive) {
                 console.log(`Reactivating subscribers for company ${companyForRepOps.name}.`);
@@ -2160,23 +2296,31 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const sponsorCompany = (sponsorCompanyMatch && !sponsorCompanyMatch.isPersonal) ? sponsorCompanyMatch : null;
     let associatedCompany = sponsorCompany ?? baseCompany ?? await prisma.company.findFirst({ where: { name: customer.company_name } });
     if (!associatedCompany) {
-        if (!isCompanyRep || !pvActive) {
+        // A tagged onboarding company (Path A) is admitted even with no membership yet
+        // — strictly additive: an untagged customer's eligibility is unchanged, still
+        // exactly `isCompanyRep && pvActive` as before.
+        const isTaggedOnboardingCompany = onboardingClassification === 'company';
+        const hasQualifyingMembership = isCompanyRep && pvActive;
+        if (!hasQualifyingMembership && !isTaggedOnboardingCompany) {
             console.log(`No company found for ${customer.full_name} — sub-member or inactive, skipping.`);
             return;
         }
-        console.log(`Creating new company for ${customer.company_name}.`);
+        console.log(hasQualifyingMembership
+            ? `Creating new company for ${customer.company_name}.`
+            : `Creating new company for ${customer.company_name} — tagged onboarding record, no membership yet.`);
         diffRecord.company = {
             before: null,
-            after: { name: customer.company_name, active: true, membershipTypes: membershipTypes, isPersonal },
+            after: { name: customer.company_name, active: hasQualifyingMembership, membershipTypes: membershipTypes, isPersonal },
         };
         try {
             associatedCompany = await createCompany(c, {
                 name: customer.company_name,
                 peopleVineId: pvId,
-                active: true,
+                active: hasQualifyingMembership,
                 email: customer.email.toLowerCase(),
                 membershipTypes: membershipTypes,
                 isPersonal,
+                accountStatus: hasQualifyingMembership ? 'active' : 'pending_membership',
             });
         }
         catch (e) {
@@ -2313,6 +2457,13 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 cardStatus: customer.cardStatus ?? null,
                 memberSource,
                 memberSourceCompany: userMemberSourceCompany,
+                // Unlike companies (which have a separate early-return deactivate
+                // branch above), a user losing membership is handled right here via
+                // `active: userPvActive` going false — so the "active" → "removed"
+                // transition has to be decided in this same call. Only relabel a
+                // record that actually had access; "pending_membership" (never had
+                // one) stays as-is.
+                accountStatus: userPvActive ? 'active' : (associatedUser.accountStatus === 'active' ? 'membership-removed' : undefined),
             };
             try {
                 await updateUser(c, userUpdatePayload as any);
@@ -2348,11 +2499,17 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
         }
     }
     else {
-        if (!userPvActive) {
+        // A tagged onboarding person (Path A "person" or Path B "person_pending") is
+        // admitted even with no membership yet — strictly additive: an untagged
+        // customer's eligibility is unchanged, still exactly `userPvActive` as before.
+        const isTaggedOnboardingPerson = onboardingClassification === 'person' || onboardingClassification === 'person_pending';
+        if (!userPvActive && !isTaggedOnboardingPerson) {
             console.log(`User ${customer.full_name} is inactive, skipping creation.`);
             return;
         }
-        console.log(`Creating user for ${customer.full_name} (${customer.email}).`);
+        console.log(userPvActive
+            ? `Creating user for ${customer.full_name} (${customer.email}).`
+            : `Creating user for ${customer.full_name} (${customer.email}) — tagged onboarding record, no membership yet.`);
         diffRecord.user = {
             before: null,
             after: {
@@ -2391,6 +2548,7 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 cardStatus: customer.cardStatus ?? null,
                 memberSource,
                 memberSourceCompany: userMemberSourceCompany,
+                accountStatus: userPvActive ? 'active' : 'pending_membership',
             });
         }
         catch (e) {

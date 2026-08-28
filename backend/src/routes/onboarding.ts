@@ -12,7 +12,9 @@ import {
   DisapproveOnboardingSubmissionResponseSchema,
   FlagOnboardingSubmissionRequestSchema,
   FlagOnboardingSubmissionResponseSchema,
+  GetOnboardingAddonPackagesResponseSchema,
   GetOnboardingAttributeOptionsResponseSchema,
+  GetOnboardingInProcessResponseSchema,
   GetOnboardingMembershipPackagesResponseSchema,
   GetOnboardingSubmissionResponseSchema,
   GetOnboardingSubmissionsQuerySchema,
@@ -34,7 +36,9 @@ import {
   handleCreateOnboardingSubmission,
   handleDisapproveOnboardingSubmission,
   handleFlagOnboardingSubmission,
+  handleGetOnboardingAddonPackages,
   handleGetOnboardingAttributeOptions,
+  handleGetOnboardingInProcess,
   handleGetOnboardingMembershipPackages,
   handleGetOnboardingSubmissionById,
   handleGetOnboardingSubmissions,
@@ -108,6 +112,17 @@ app.get(
 );
 
 app.get(
+  "/addon-packages",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "List active add-on PeopleVine memberships (existing_company scenario)",
+    successMessage: "Success",
+    responseSchema: GetOnboardingAddonPackagesResponseSchema,
+  }),
+  handleGetOnboardingAddonPackages
+);
+
+app.get(
   "/attribute-options",
   roleMiddleware([Role.ADMIN]),
   describeRoute({
@@ -116,6 +131,17 @@ app.get(
     responseSchema: GetOnboardingAttributeOptionsResponseSchema,
   }),
   handleGetOnboardingAttributeOptions
+);
+
+app.get(
+  "/in-process",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "List live Company/User records still awaiting a membership (Default/in-process onboarding tab)",
+    successMessage: "Success",
+    responseSchema: GetOnboardingInProcessResponseSchema,
+  }),
+  handleGetOnboardingInProcess
 );
 
 app.get(

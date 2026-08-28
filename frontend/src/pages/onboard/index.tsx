@@ -12,6 +12,7 @@ import { CompanyDetailsStep } from "@/pages/admin/onboarding/components/CompanyD
 import { PrimaryUserStep } from "@/pages/admin/onboarding/components/PrimaryUserStep";
 import { SkillsStep } from "@/pages/admin/onboarding/components/SkillsStep";
 import { PublicPackageStep } from "./PublicPackageStep";
+import { PublicAddonMembershipsStep } from "./PublicAddonMembershipsStep";
 import { PublicSelectCompanyStep } from "./PublicSelectCompanyStep";
 import type {
   Address,
@@ -29,6 +30,7 @@ const createInitialFormData = (scenario: "new_company" | "existing_company"): On
   companyId: undefined,
   company: {
     name: "",
+    email: "",
     website: "",
     size: "",
     founded: "",
@@ -54,6 +56,7 @@ const createInitialFormData = (scenario: "new_company" | "existing_company"): On
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
   membershipPackage: "",
+  addonMemberships: [],
   skills: {
     undergradSchool: "",
     undergradDegree: "",
@@ -160,6 +163,10 @@ const PublicOnboardingPage = () => {
     setFormData((prev) => (prev ? { ...prev, membershipPackage: fieldValue } : prev));
   };
 
+  const updateAddonMemberships = (addonMemberships: string[]) => {
+    setFormData((prev) => (prev ? { ...prev, addonMemberships } : prev));
+  };
+
   const updateSkillsField = (field: keyof Omit<SkillsDetails, "skills" | "shopSkills">, fieldValue: string) => {
     setFormData((prev) => (prev ? { ...prev, skills: { ...prev.skills, [field]: fieldValue } } : prev));
   };
@@ -205,15 +212,22 @@ const PublicOnboardingPage = () => {
             onAddressChange={updateUserAddress}
             onEthnicityChange={updateUserEthnicity}
             attributeOptions={attributeOptions}
+            scenario={formData.scenario}
           />
         );
       case 3:
-        return (
+        return isExistingCompany ? (
+          <PublicAddonMembershipsStep
+            companyName={linkInfo.companies?.find((co) => co.id === formData.companyId)?.name}
+            values={formData.addonMemberships}
+            onChange={updateAddonMemberships}
+            packages={linkInfo.addonPackages ?? []}
+          />
+        ) : (
           <PublicPackageStep
             value={formData.membershipPackage}
             onChange={updateMembershipPackage}
             packages={linkInfo.packages}
-            optional={isExistingCompany}
           />
         );
       case 4:

@@ -131,6 +131,7 @@ export function AdminReportsPage() {
   }
 
   const { revenue, membership, engagement } = data.data
+  const maxPlatformLaunches = Math.max(...engagement.byPlatform.map(p => p.launches), 1)
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'revenue', label: 'Revenue', icon: <TrendingUp className="h-4 w-4" /> },
@@ -421,26 +422,14 @@ export function AdminReportsPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white border rounded-lg p-5">
-              <h3 className="font-semibold mb-1">Connected Service Providers</h3>
-              <p className="text-xs text-gray-400 mb-4">Active SSO platforms</p>
-              {engagement.serviceProviders.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-6">No service providers configured</p>
+              <h3 className="font-semibold mb-1">SSO Launches by Platform</h3>
+              <p className="text-xs text-gray-400 mb-4">Which services members launched, last 30 days</p>
+              {engagement.byPlatform.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">No SSO launches in the last 30 days</p>
               ) : (
-                <div className="space-y-2">
-                  {engagement.serviceProviders.map(sp => (
-                    <div key={sp.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-gray-50">
-                      {sp.logo ? (
-                        <img src={sp.logo} alt={sp.name} className="h-6 w-6 object-contain rounded" />
-                      ) : (
-                        <div className="h-6 w-6 bg-gray-200 rounded flex items-center justify-center text-xs font-bold text-gray-500">
-                          {sp.name[0]}
-                        </div>
-                      )}
-                      <span className="text-sm font-medium">{sp.name}</span>
-                      <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
-                    </div>
-                  ))}
-                </div>
+                engagement.byPlatform.map(p => (
+                  <BarRow key={p.name} label={p.name} value={p.launches} max={maxPlatformLaunches} formatVal={n => n.toLocaleString()} />
+                ))
               )}
             </div>
 

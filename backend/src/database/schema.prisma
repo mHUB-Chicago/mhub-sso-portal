@@ -38,6 +38,12 @@ model Company {
   membershipTypes         String                   @default("[]")
   isPersonal              Boolean                  @default(false)
   isSystemAccount         Boolean                  @default(false)
+  // "pending_membership" | "membership-removed" | "active". Separate from
+  // `primaryMembershipStatus`-style PV membership-type strings — this only tracks
+  // whether the record has ever/still has a qualifying membership. `active` remains
+  // the single source of truth for portal access; this is additive display/sync
+  // metadata, kept in lockstep with it (active only when accountStatus is "active").
+  accountStatus           String                   @default("active")
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
   subscriptions           Subscription[]
@@ -72,6 +78,8 @@ model User {
   memberSource         String                @default("subscription")
   memberSourceCompany  String?
   isSystemAccount      Boolean               @default(false)
+  // Same "pending_membership" | "membership-removed" | "active" model as Company.accountStatus.
+  accountStatus        String                @default("active")
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]
