@@ -15,6 +15,7 @@ interface PrimaryUserStepProps {
   onEthnicityChange: (ethnicity: string[]) => void;
   attributeOptions?: OnboardingAttributeOption[];
   scenario: OnboardingScenario;
+  companyEmail?: string;
 }
 
 export const PrimaryUserStep = ({
@@ -24,12 +25,16 @@ export const PrimaryUserStep = ({
   onEthnicityChange,
   attributeOptions,
   scenario,
+  companyEmail,
 }: PrimaryUserStepProps) => {
   // The "+company" alias is only ever generated for a brand-new company's own PV
   // customer (see buildCompanyPlaceholderEmail) — an existing_company submission never
-  // creates one, so this preview would be misleading there.
+  // creates one, so this preview would be misleading there. It's also redundant once the
+  // user already entered their own company email on the previous step.
   const aliasPreview =
-    scenario === "new_company" && value.email.includes("@") ? value.email.replace("@", "+company@") : "";
+    scenario === "new_company" && !companyEmail?.trim() && value.email.includes("@")
+      ? value.email.replace("@", "+company@")
+      : "";
   const genderOptions = findAttributeOptionValues(attributeOptions, "Gender").map((label) => ({
     value: label,
     label,

@@ -14,16 +14,12 @@ const ADMIN_ITEMS = [
     description: "A company profile and a personal member profile are created in PeopleVine.",
   },
   {
-    title: "Verification email is sent",
-    description: "Each profile receives an activation email to set a password on first login.",
-  },
-  {
     title: "Membership review",
     description: "An admin reviews and assigns the requested membership package in PeopleVine.",
   },
   {
-    title: "Access is granted",
-    description: "Once active, one login unlocks the member portal, shop, and connected services.",
+    title: "Password reset on first login",
+    description: "The user will be required to reset their password on first login.",
   },
 ];
 

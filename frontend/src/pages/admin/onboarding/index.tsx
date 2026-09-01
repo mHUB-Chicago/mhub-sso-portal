@@ -235,6 +235,7 @@ const OnboardingPage = () => {
             onEthnicityChange={updateUserEthnicity}
             attributeOptions={attributeOptions}
             scenario={formData.scenario}
+            companyEmail={formData.company.email}
           />
         );
       case 3:

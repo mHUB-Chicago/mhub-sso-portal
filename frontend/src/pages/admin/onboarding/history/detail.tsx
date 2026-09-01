@@ -84,7 +84,7 @@ export function AdminOnboardingHistoryDetailPage() {
 
   const canEdit = EDITABLE_STATUSES.has(submission.status);
   const formData = isEditing && draft ? draft : submission.formData;
-  const { company, user, skills, billing, membershipPackage, addonMemberships, scenario } = formData;
+  const { company, user, skills, membershipPackage, addonMemberships, scenario } = formData;
   const isExistingCompany = scenario === "existing_company";
   const membershipPackageName =
     packagesData?.data?.packages.find((pkg) => pkg.id === membershipPackage)?.name ?? membershipPackage;
@@ -222,6 +222,7 @@ export function AdminOnboardingHistoryDetailPage() {
               onEthnicityChange={updateUserEthnicity}
               attributeOptions={attributeOptions}
               scenario={draft.scenario}
+              companyEmail={draft.company.email}
             />
           </div>
 
@@ -366,19 +367,6 @@ export function AdminOnboardingHistoryDetailPage() {
             <Field label="Industry Experience" value={skills.industryExperience} />
             <Field label="Skills" value={skills.skills.join(", ")} />
             <Field label="Shop Skills" value={skills.shopSkills.join(", ")} />
-          </Section>
-
-          <Section title="Billing">
-            <Field label="Payment Type" value={billing.paymentType} />
-            <Field label="Name on Card" value={billing.paymentType === "card" ? billing.nameOnCard : undefined} />
-            <Field label="Card" value={billing.cardLast4 ? `•••• ${billing.cardLast4}` : undefined} />
-            <Field label="Expiration" value={billing.paymentType === "card" ? billing.expiration : undefined} />
-            <Field
-              label="Billing Address"
-              value={[billing.address.street, billing.address.city, billing.address.state, billing.address.zip, billing.address.country]
-                .filter(Boolean)
-                .join(", ")}
-            />
           </Section>
         </>
       )}
