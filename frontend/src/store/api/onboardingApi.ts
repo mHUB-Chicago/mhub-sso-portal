@@ -95,6 +95,15 @@ export interface OnboardingMembershipPackage {
   name: string
 }
 
+// Onboarding progress stepper — ISO date strings, null until that step happens. `invite`
+// is always null for `via: 'admin'` records (no invitation was ever sent).
+export interface OnboardingProgressSteps {
+  invite: string | null
+  account: string | null
+  payment: string | null
+  subscription: string | null
+}
+
 // Default (in-process) tab row — a live Company/User record still awaiting a
 // membership, not an OnboardingSubmission.
 export interface OnboardingInProcessRecord {
@@ -104,6 +113,8 @@ export interface OnboardingInProcessRecord {
   email: string
   peopleVineId: string | null
   createdAt: string
+  via: 'invite' | 'admin'
+  steps: OnboardingProgressSteps
 }
 
 // One PV "Attribute" that offers a fixed set of choices — matched by exact `name`
@@ -130,6 +141,12 @@ interface InProcessResponse {
   success: boolean
   message: string
   data: { records: OnboardingInProcessRecord[] }
+}
+
+interface ApplySubscriptionResponse {
+  success: boolean
+  message: string
+  data: { record: OnboardingInProcessRecord }
 }
 
 interface MembershipPackagesResponse {
@@ -242,6 +259,11 @@ export const onboardingApi = createApi({
       providesTags: ['OnboardingSubmissions'],
     }),
 
+    applyOnboardingSubscription: builder.mutation<ApplySubscriptionResponse, { type: 'company' | 'user'; id: string }>({
+      query: ({ type, id }) => ({ url: `/onboarding/in-process/${type}/${id}/apply-subscription`, method: 'POST' }),
+      invalidatesTags: ['OnboardingSubmissions'],
+    }),
+
     getOnboardingMembershipPackages: builder.query<MembershipPackagesResponse, void>({
       query: () => '/onboarding/membership-packages',
       providesTags: ['OnboardingMembershipPackages'],
@@ -281,6 +303,7 @@ export const {
   useFlagOnboardingSubmissionMutation,
   useDisapproveOnboardingSubmissionMutation,
   useGetOnboardingInProcessQuery,
+  useApplyOnboardingSubscriptionMutation,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingAddonPackagesQuery,
   useGetOnboardingAttributeOptionsQuery,

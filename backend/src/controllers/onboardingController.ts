@@ -1,7 +1,9 @@
 import { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { PrismaClient } from "@prisma/client";
 import { AppType, JsonInput, QueryInput } from "..";
 import {
+  ApplyOnboardingSubscriptionResponseSchema,
   ApproveOnboardingSubmissionResponseSchema,
   CompleteOnboardingSubmissionResponseSchema,
   GetOnboardingAddonPackagesResponseSchema,
@@ -61,6 +63,35 @@ export const createOnboardingSubmissionRecord = async (
       matchedUserId: duplicate.matchedUserId,
     },
   });
+};
+
+// The PV survey that combines the payment form + agreement/terms signing (see also
+// peopleVineWebhookController.ts, which listens for its completion). Configurable via
+// env for the same reason as PEOPLEVINE_ONBOARDING_SURVEY_ID there.
+const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form/20611";
+
+// Fires once, right after a person's PV customer record is successfully created —
+// covers every path that can create one (admin auto-approve, manual Approve from the
+// review queue, new_company or existing_company) since they all funnel through here.
+// Best-effort: a SendGrid failure must never undo or fail the PV push that already
+// succeeded, so this only ever logs and swallows its own errors.
+const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: OnboardingFormData): Promise<void> => {
+  const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+  const firstName = formData.user.firstName?.trim();
+  try {
+    await sendCustomEmail(c, {
+      to: formData.user.email,
+      to_name: `${formData.user.firstName} ${formData.user.lastName}`.trim() || undefined,
+      subject: "Complete your mHUB payment & membership agreement",
+      html:
+        `<p>Hi${firstName ? ` ${firstName}` : ""},</p>` +
+        `<p>Welcome to mHUB! To finish setting up your membership, please complete your payment and accept the membership agreement using the link below:</p>` +
+        `<p><a href="${formUrl}">${formUrl}</a></p>` +
+        `<p>See you soon!</p>`,
+    });
+  } catch (e) {
+    console.error(`[onboarding] Failed to send payment form email to ${formData.user.email}:`, e);
+  }
 };
 
 // Shared by the manual Approve action and the auto-approve path for admin-entered
@@ -133,6 +164,10 @@ const finalizeSubmissionPushToPeopleVine = async (
     active: false,
     accountStatus: "pending_membership",
   });
+
+  // Fire-and-forget from the caller's perspective — see sendOnboardingPaymentFormEmail
+  // for why this can't be allowed to fail the push that already succeeded above.
+  c.executionCtx.waitUntil(sendOnboardingPaymentFormEmail(c, formData));
 
   const resolutionNote =
     formData.scenario === "existing_company" && !result.linkedViaMembershipCard
@@ -301,6 +336,32 @@ export const handleGetOnboardingSubmissions = async (
   return c.json(response);
 };
 
+// By the time a Company/User row exists at all, PV account creation (§ "account" step)
+// has already happened — finalizeSubmissionPushToPeopleVine always sets peopleVineId at
+// creation time — so that step's timestamp is just the row's own createdAt. The "invite"
+// step similarly can't be reconstructed from an exact "email sent" timestamp (not
+// tracked), so the originating submission's createdAt (when the invite link was filled
+// out and submitted) is used as a close proxy, and the step is omitted entirely for
+// mode: "admin" submissions, which never had an invite link at all — mirrors the
+// mockup's `stepsFor`. Only "payment" and "subscription" are real, independently tracked
+// state (see onboardingPaymentAgreementAt / onboardingSubscriptionAppliedAt).
+const buildOnboardingProgress = (
+  row: {
+    createdAt: Date;
+    onboardingPaymentAgreementAt: Date | null;
+    onboardingSubscriptionAppliedAt: Date | null;
+  },
+  submission: { mode: string; createdAt: Date } | undefined
+) => ({
+  via: (submission?.mode === "link" ? "invite" : "admin") as "invite" | "admin",
+  steps: {
+    invite: submission?.mode === "link" ? submission.createdAt : null,
+    account: row.createdAt,
+    payment: row.onboardingPaymentAgreementAt,
+    subscription: row.onboardingSubscriptionAppliedAt,
+  },
+});
+
 // "Default (in-process)" onboarding tab: live Company/User rows still awaiting a
 // membership (accountStatus "pending_membership"), not OnboardingSubmission rows —
 // see GetOnboardingInProcessResponseSchema. Read-only, local DB only.
@@ -312,6 +373,34 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
     prisma.user.findMany({ where: { accountStatus: "pending_membership" }, orderBy: { createdAt: "desc" } }),
   ]);
 
+  const companyIds = companies.map((co) => co.id);
+  const userIds = users.map((u) => u.id);
+  const submissions =
+    companyIds.length || userIds.length
+      ? await prisma.onboardingSubmission.findMany({
+          where: {
+            OR: [
+              ...(companyIds.length ? [{ matchedCompanyId: { in: companyIds } }] : []),
+              ...(userIds.length ? [{ matchedUserId: { in: userIds } }] : []),
+            ],
+          },
+          orderBy: { createdAt: "desc" },
+          select: { mode: true, createdAt: true, matchedCompanyId: true, matchedUserId: true },
+        })
+      : [];
+  // Most recent submission per target wins (findMany above is already ordered desc, so
+  // the first match seen for a given id is kept).
+  const submissionByCompanyId = new Map<string, { mode: string; createdAt: Date }>();
+  const submissionByUserId = new Map<string, { mode: string; createdAt: Date }>();
+  for (const s of submissions) {
+    if (s.matchedCompanyId && !submissionByCompanyId.has(s.matchedCompanyId)) {
+      submissionByCompanyId.set(s.matchedCompanyId, s);
+    }
+    if (s.matchedUserId && !submissionByUserId.has(s.matchedUserId)) {
+      submissionByUserId.set(s.matchedUserId, s);
+    }
+  }
+
   const records = [
     ...companies.map((co) => ({
       id: co.id,
@@ -320,6 +409,7 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       email: co.email,
       peopleVineId: co.peopleVineId,
       createdAt: co.createdAt,
+      ...buildOnboardingProgress(co, submissionByCompanyId.get(co.id)),
     })),
     ...users.map((u) => ({
       id: u.id,
@@ -328,6 +418,7 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       email: u.email,
       peopleVineId: u.peopleVineId,
       createdAt: u.createdAt,
+      ...buildOnboardingProgress(u, submissionByUserId.get(u.id)),
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
@@ -335,6 +426,62 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
     success: true,
     message: "Success",
     data: { records },
+  });
+  return c.json(response);
+};
+
+// Manually marks the final onboarding step complete. Purely local bookkeeping — PV has
+// no API to create/apply a subscription (confirmed platform limitation, see
+// peopleVinePortalService.ts), so staff apply the membership in the PV Control Panel
+// themselves and this just records that they did. No PeopleVine API call is made here.
+export const handleApplyOnboardingSubscription = async (c: Context<AppType>) => {
+  const prisma: PrismaClient = c.get("db");
+  const user = c.get("user");
+  const type = c.req.param("type");
+  const id = c.req.param("id");
+
+  if (type !== "company" && type !== "user") {
+    throw new HTTPException(400, { message: "Invalid record type" });
+  }
+
+  const row = type === "company"
+    ? await prisma.company.findUnique({ where: { id } })
+    : await prisma.user.findUnique({ where: { id } });
+  if (!row) {
+    throw new HTTPException(404, { message: "Onboarding record not found" });
+  }
+  if (!row.onboardingPaymentAgreementAt) {
+    throw new HTTPException(400, { message: "Payment & Agreement must be completed before applying the subscription" });
+  }
+  if (row.onboardingSubscriptionAppliedAt) {
+    throw new HTTPException(400, { message: "Subscription has already been marked as applied" });
+  }
+
+  const data = { onboardingSubscriptionAppliedAt: new Date(), onboardingSubscriptionAppliedBy: user?.id ?? null };
+  const updated =
+    type === "company"
+      ? await prisma.company.update({ where: { id }, data })
+      : await prisma.user.update({ where: { id }, data });
+
+  const submission =
+    type === "company"
+      ? await prisma.onboardingSubmission.findFirst({ where: { matchedCompanyId: id }, orderBy: { createdAt: "desc" } })
+      : await prisma.onboardingSubmission.findFirst({ where: { matchedUserId: id }, orderBy: { createdAt: "desc" } });
+
+  const response = ApplyOnboardingSubscriptionResponseSchema.parse({
+    success: true,
+    message: "Subscription marked as applied",
+    data: {
+      record: {
+        id: updated.id,
+        type,
+        name: updated.name,
+        email: updated.email,
+        peopleVineId: updated.peopleVineId,
+        createdAt: updated.createdAt,
+        ...buildOnboardingProgress(updated, submission ?? undefined),
+      },
+    },
   });
   return c.json(response);
 };

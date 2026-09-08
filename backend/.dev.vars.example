@@ -12,6 +12,16 @@ PEOPLEVINE_ATTRIBUTE_REFERENCE_CUSTOMER_ID="your_peoplevine_reference_customer_i
 # onboarding "approve" action. Leave unset/false — only set to "true" when you're ready
 # to test a real push to PeopleVine.
 # PEOPLEVINE_WRITE_ENABLED="true"
+# Shared secret PeopleVine must send back (as ?secret= or x-webhook-secret header) on
+# every inbound webhook to /webhook/peoplevine. Leave unset locally; must be set in
+# production or the endpoint accepts unauthenticated requests.
+# WEBHOOK_SECRET="your_webhook_shared_secret"
+# PV survey id for the combined payment + agreement/terms form (see
+# peopleVineWebhookController.ts). Defaults to 20611 if unset.
+# PEOPLEVINE_ONBOARDING_SURVEY_ID="20611"
+# Member-facing URL for that same form, emailed to new members after their PV customer
+# record is created (see onboardingController.ts). Defaults if unset.
+# ONBOARDING_PAYMENT_FORM_URL="https://member.mhubchicago.com/form/20611"
 SAML_ENTITY_ID="https://example.com/"
 SAML_PRIVATE_KEY="your_saml_private_key"
 SAML_PUBLIC_CERT="your_saml_public_certificate"

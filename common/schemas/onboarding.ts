@@ -180,6 +180,15 @@ export const DisapproveOnboardingSubmissionResponseSchema = SuccessResponseSchem
 // accountStatus "pending_membership" (created by the tagged-onboarding sync path, not
 // OnboardingSubmission rows). Auto-updates as the sync engine (webhook or batch/full)
 // picks up matching PV records; see mHUB_Onboarding_Sync_Implementation_Plan.md.
+// Onboarding progress stepper (mHub Onboarding Progress mockup). "invite" is omitted
+// entirely for admin-created records (no invitation was ever sent) — see `via`.
+export const OnboardingProgressStepsSchema = z.object({
+  invite: z.coerce.date().transform((d) => d.toISOString()).nullable(),
+  account: z.coerce.date().transform((d) => d.toISOString()).nullable(),
+  payment: z.coerce.date().transform((d) => d.toISOString()).nullable(),
+  subscription: z.coerce.date().transform((d) => d.toISOString()).nullable(),
+});
+
 export const OnboardingInProcessRecordSchema = z.object({
   id: z.string(),
   type: z.enum(["company", "user"]),
@@ -187,10 +196,16 @@ export const OnboardingInProcessRecordSchema = z.object({
   email: z.string(),
   peopleVineId: z.string().nullable(),
   createdAt: z.coerce.date().transform((d) => d.toISOString()),
+  via: z.enum(["invite", "admin"]),
+  steps: OnboardingProgressStepsSchema,
 });
 
 export const GetOnboardingInProcessResponseSchema = SuccessResponseSchema(
   z.object({ records: z.array(OnboardingInProcessRecordSchema) })
+);
+
+export const ApplyOnboardingSubscriptionResponseSchema = SuccessResponseSchema(
+  z.object({ record: OnboardingInProcessRecordSchema })
 );
 
 export const OnboardingMembershipPackageSchema = z.object({

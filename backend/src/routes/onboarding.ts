@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { AppType } from "@/index";
 import { describeRoute } from "@/utils/describeRoute";
 import {
+  ApplyOnboardingSubscriptionResponseSchema,
   ApproveOnboardingSubmissionResponseSchema,
   CompleteOnboardingSubmissionResponseSchema,
   CreateOnboardingLinkRequestSchema,
@@ -30,6 +31,7 @@ import { validate } from "@/middleware/validate";
 import { roleMiddleware } from "@/middleware/role";
 import { Role } from "@/database/models";
 import {
+  handleApplyOnboardingSubscription,
   handleApproveOnboardingSubmission,
   handleCompleteOnboardingSubmission,
   handleCreateOnboardingLink,
@@ -142,6 +144,21 @@ app.get(
     responseSchema: GetOnboardingInProcessResponseSchema,
   }),
   handleGetOnboardingInProcess
+);
+
+app.post(
+  "/in-process/:type/:id/apply-subscription",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Mark the final 'Subscription Applied' onboarding step complete for an in-process Company/User record",
+    successMessage: "Subscription marked as applied",
+    responseSchema: ApplyOnboardingSubscriptionResponseSchema,
+    parameters: [
+      { name: "type", in: "path", required: true, schema: { type: "string", enum: ["company", "user"] } },
+      { name: "id", in: "path", required: true, schema: { type: "string" } },
+    ],
+  }),
+  handleApplyOnboardingSubscription
 );
 
 app.get(

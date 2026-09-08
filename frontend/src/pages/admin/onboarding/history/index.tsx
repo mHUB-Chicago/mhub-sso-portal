@@ -14,10 +14,30 @@ import {
   useGetOnboardingSubmissionsQuery,
   useReactivateOnboardingSubmissionMutation,
   useTreatOnboardingSubmissionAsNewMutation,
+  type OnboardingInProcessRecord,
   type OnboardingSubmission,
 } from "@/store/api/onboardingApi";
 import { DuplicateMatchModal } from "./DuplicateMatchModal";
+import { OnboardingProgressModal } from "./OnboardingProgressModal";
 import { SyncStatusGate } from "@/components/sync-status-overlay";
+
+type StepKey = "invite" | "account" | "payment" | "subscription";
+const IN_PROCESS_STEPS: { key: StepKey; label: string }[] = [
+  { key: "invite", label: "Invitation Sent" },
+  { key: "account", label: "Company Account Created in PV" },
+  { key: "payment", label: "Payment & Agreement Completed" },
+  { key: "subscription", label: "Subscription Applied" },
+];
+
+const inProcessProgress = (record: OnboardingInProcessRecord) => {
+  const steps = record.via === "admin" ? IN_PROCESS_STEPS.filter((s) => s.key !== "invite") : IN_PROCESS_STEPS;
+  let doneCount = 0;
+  for (const s of steps) {
+    if (record.steps[s.key]) doneCount++;
+    else break;
+  }
+  return { steps, doneCount, total: steps.length };
+};
 
 // "reviewed"/"completed" submission statuses still exist server-side (an audit trail
 // of the admin-push action itself, and the approve/complete mutations still work) —
@@ -71,6 +91,7 @@ export function AdminOnboardingHistoryPage() {
   const [flagNote, setFlagNote] = useState("");
   const [viewMatch, setViewMatch] = useState<ViewMatch | null>(null);
   const [inProcessSearch, setInProcessSearch] = useState("");
+  const [progressRecord, setProgressRecord] = useState<OnboardingInProcessRecord | null>(null);
 
   const { data, isLoading, isFetching, error, refetch } = useGetOnboardingSubmissionsQuery();
   const submissions = data?.data?.submissions ?? [];
@@ -235,36 +256,86 @@ export function AdminOnboardingHistoryPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">PV ID</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Created Via</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Progress</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {inProcessRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     {inProcessQuery ? "No matches found" : "Nothing in process — no PV records are currently awaiting a membership"}
                   </td>
                 </tr>
               ) : (
-                inProcessRows.map((record) => (
-                  <tr key={`${record.type}-${record.id}`} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-600">
-                      {new Date(record.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      <span className="inline-flex items-center gap-1.5">
-                        {record.type === "company" ? (
-                          <Building2 className="h-3.5 w-3.5 text-gray-400" />
-                        ) : (
-                          <UserIcon className="h-3.5 w-3.5 text-gray-400" />
-                        )}
-                        {record.type === "company" ? "Company" : "Person"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">{record.name || "—"}</td>
-                    <td className="px-4 py-3 text-gray-700">{record.email || "—"}</td>
-                    <td className="px-4 py-3 text-gray-700">{record.peopleVineId || "—"}</td>
-                  </tr>
-                ))
+                inProcessRows.map((record) => {
+                  const { steps, doneCount, total } = inProcessProgress(record);
+                  const latestLabel =
+                    doneCount === 0 ? "Not Started" : doneCount === total ? "Complete" : steps[doneCount - 1].label;
+                  return (
+                    <tr
+                      key={`${record.type}-${record.id}`}
+                      className="hover:bg-orange-50/40 cursor-pointer"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`View onboarding progress for ${record.name}`}
+                      onClick={() => setProgressRecord(record)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setProgressRecord(record);
+                        }
+                      }}
+                    >
+                      <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                        {new Date(record.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        <span className="inline-flex items-center gap-1.5">
+                          {record.type === "company" ? (
+                            <Building2 className="h-3.5 w-3.5 text-gray-400" />
+                          ) : (
+                            <UserIcon className="h-3.5 w-3.5 text-gray-400" />
+                          )}
+                          {record.type === "company" ? "Company" : "Person"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700 font-medium">{record.name || "—"}</td>
+                      <td className="px-4 py-3 text-gray-700">{record.email || "—"}</td>
+                      <td className="px-4 py-3 text-gray-700">{record.peopleVineId || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`text-[11px] font-bold rounded-full px-2.5 py-0.5 whitespace-nowrap ${
+                            record.via === "invite" ? "bg-indigo-50 text-indigo-600" : "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {record.via === "invite" ? "Invite Link" : "Admin Created"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1.5">
+                          <span
+                            className={`text-xs ${
+                              doneCount === 0 ? "text-gray-400" : doneCount === total ? "font-bold text-green-600" : "text-gray-600"
+                            }`}
+                          >
+                            {latestLabel}
+                          </span>
+                          <span className="flex gap-1">
+                            {steps.map((s, idx) => (
+                              <span
+                                key={s.key}
+                                className={`h-2 w-2 rounded-full ${
+                                  idx < doneCount ? "bg-green-500" : idx === doneCount ? "bg-brand" : "bg-gray-200"
+                                }`}
+                              />
+                            ))}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -451,6 +522,14 @@ export function AdminOnboardingHistoryPage() {
           matchId={viewMatch.matchId}
           open={!!viewMatch}
           onClose={() => setViewMatch(null)}
+        />
+      )}
+
+      {progressRecord && (
+        <OnboardingProgressModal
+          record={progressRecord}
+          open={!!progressRecord}
+          onClose={() => setProgressRecord(null)}
         />
       )}
     </div>

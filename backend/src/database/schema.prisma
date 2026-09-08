@@ -44,6 +44,12 @@ model Company {
   // the single source of truth for portal access; this is additive display/sync
   // metadata, kept in lockstep with it (active only when accountStatus is "active").
   accountStatus           String                   @default("active")
+  // Onboarding progress markers (In Process tab stepper). Both null until the matching
+  // PeopleVine survey webhook / manual admin action fires — see peopleVineWebhookController.ts
+  // and handleApplyOnboardingSubscription. Set-once: never overwritten once populated.
+  onboardingPaymentAgreementAt    DateTime?
+  onboardingSubscriptionAppliedAt DateTime?
+  onboardingSubscriptionAppliedBy String?
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
   subscriptions           Subscription[]
@@ -80,6 +86,10 @@ model User {
   isSystemAccount      Boolean               @default(false)
   // Same "pending_membership" | "membership-removed" | "active" model as Company.accountStatus.
   accountStatus        String                @default("active")
+  // Same onboarding progress markers as Company — see there.
+  onboardingPaymentAgreementAt    DateTime?
+  onboardingSubscriptionAppliedAt DateTime?
+  onboardingSubscriptionAppliedBy String?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]
