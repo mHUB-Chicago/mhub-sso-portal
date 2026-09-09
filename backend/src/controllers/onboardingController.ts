@@ -77,6 +77,14 @@ const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form
 // succeeded, so this only ever logs and swallows its own errors.
 const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: OnboardingFormData): Promise<void> => {
   const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+  // The PV form itself has no login gate (confirmed — it's reachable directly, even in a
+  // fresh session), so identification can't rely on a PV-side login. Instead, the email
+  // links to OUR OWN login page with `returnTo` set to the PV form — our existing
+  // email+OTP+set-password flow (login/index.tsx, change-password/index.tsx) already
+  // forwards `returnTo` through to completion, so this makes the login mandatory *before*
+  // they ever reach PV, without needing any new page.
+  const frontendUrl = c.env.FRONTEND_URL ?? "";
+  const gateUrl = `${frontendUrl}/login?returnTo=${encodeURIComponent(formUrl)}`;
   const firstName = formData.user.firstName?.trim();
   try {
     await sendCustomEmail(c, {
@@ -85,8 +93,8 @@ const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: Onb
       subject: "Complete your mHUB payment & membership agreement",
       html:
         `<p>Hi${firstName ? ` ${firstName}` : ""},</p>` +
-        `<p>Welcome to mHUB! To finish setting up your membership, please complete your payment and accept the membership agreement using the link below:</p>` +
-        `<p><a href="${formUrl}">${formUrl}</a></p>` +
+        `<p>Welcome to mHUB! To finish setting up your membership, please log in and complete your payment and membership agreement using the link below:</p>` +
+        `<p><a href="${gateUrl}">${gateUrl}</a></p>` +
         `<p>See you soon!</p>`,
     });
   } catch (e) {

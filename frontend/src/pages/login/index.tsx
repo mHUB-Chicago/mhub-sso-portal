@@ -94,11 +94,14 @@ export function LoginPage() {
 
       // Check if user needs to reset password
       if (user.mustResetPassword) {
-        // Preserve tx param for SAML flow
-        const changePwdUrl = txQueryParam
-          ? `/change-password?tx=${txQueryParam}`
-          : '/change-password'
-        navigate(changePwdUrl)
+        // Preserve tx (SAML flow) and returnTo (plain post-login redirect, e.g. the
+        // onboarding payment form gate) so change-password can send them on afterward —
+        // dropping either here would strand a first-time login at /dashboard instead.
+        const changePwdParams = new URLSearchParams()
+        if (txQueryParam) changePwdParams.set('tx', txQueryParam)
+        if (returnToParam) changePwdParams.set('returnTo', returnToParam)
+        const changePwdQuery = changePwdParams.toString()
+        navigate(changePwdQuery ? `/change-password?${changePwdQuery}` : '/change-password')
         return
       }
 

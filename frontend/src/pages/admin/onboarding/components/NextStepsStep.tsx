@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { ApiNote } from "./ApiNote";
 import type { OnboardingMode } from "../types";
 
 interface NextStepsStepProps {
@@ -71,11 +70,6 @@ export const NextStepsStep = ({ mode, isSubmitting, onSubmit }: NextStepsStepPro
           ? "Generating Link..."
           : "Generate Shareable Link"}
       </Button>
-
-      <ApiNote variant="info">
-        This step does not write to PeopleVine yet — the backend integration is still pending confirmation
-        of the open items above.
-      </ApiNote>
     </div>
   );
 };

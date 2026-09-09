@@ -16,6 +16,7 @@ interface ChangePasswordFormData {
 
 export function ChangePasswordPage() {
   const txQueryParam = new URLSearchParams(window.location.search).get('tx')
+  const returnToParam = new URLSearchParams(window.location.search).get('returnTo')
   const { redirectUrl } = useAppSelector(state => state.auth)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
@@ -40,6 +41,8 @@ export function ChangePasswordPage() {
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
         window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+      } else if (returnToParam) {
+        window.location.assign(returnToParam)
       } else if (redirectUrl) {
         window.location.assign(redirectUrl)
       } else {

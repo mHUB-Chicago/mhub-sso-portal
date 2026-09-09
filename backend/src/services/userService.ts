@@ -251,13 +251,14 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
     throw new Error("Failed to create user");
   }
   const serviceProviders = await getAllServiceProviders(c);
-  // Give the user access to all service providers by default
+  // By default, only enable the mHUB Member Portal; other service providers
+  // must be granted explicitly by an admin.
   await Promise.all(
     serviceProviders.map((sp) =>
       createUserServiceProvider(c, {
         userId: createdUser.id,
         serviceProviderId: sp.id,
-        enabled: true,
+        enabled: sp.name === "mHUB Member Portal",
       })
     )
   );
