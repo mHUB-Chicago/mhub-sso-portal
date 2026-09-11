@@ -577,7 +577,27 @@ app.get("/api/reports", async (c) => {
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
   const prisma = c.get('db') as PrismaClient;
 
+  // Optional custom date range (YYYY-MM-DD). When provided, scopes users/companies/subscriptions
+  // to records created in the window, and replaces the default 30-day engagement window.
+  const parseDate = (raw: string | undefined, endOfDay = false): Date | null => {
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    if (endOfDay) d.setUTCHours(23, 59, 59, 999);
+    else d.setUTCHours(0, 0, 0, 0);
+    return d;
+  };
+  const rangeFrom = parseDate(c.req.query('from'));
+  const rangeTo = parseDate(c.req.query('to'), true);
+  const hasCustomRange = rangeFrom != null || rangeTo != null;
+  const createdAtWhere = hasCustomRange
+    ? { createdAt: { ...(rangeFrom ? { gte: rangeFrom } : {}), ...(rangeTo ? { lte: rangeTo } : {}) } }
+    : {};
+
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const engagementFrom = rangeFrom ?? thirtyDaysAgo;
+  const engagementTo = rangeTo ?? null;
+  const engagementWhere = { createdAt: { gte: engagementFrom, ...(engagementTo ? { lte: engagementTo } : {}) } };
 
   const cmtNames = (await prisma.companyMembershipType.findMany({ select: { name: true } })).map(t => t.name);
 
@@ -591,35 +611,36 @@ app.get("/api/reports", async (c) => {
 
   const [subs, users, companies, loginsCount, samlRequests, serviceProviders, recentSessions, activeSessionUsers] = await Promise.all([
     prisma.subscription.findMany({
-      select: { title: true, rate: true, frequency: true, companyId: true, createdAt: true },
+      where: createdAtWhere,
+      select: { title: true, rate: true, frequency: true, companyId: true, status: true, createdAt: true },
     }),
     prisma.user.findMany({
-      where: { role: Role.USER, ...cmtWhere },
+      where: { role: Role.USER, ...cmtWhere, ...createdAtWhere },
       select: { primaryMembership: true, addOns: true, active: true, companyId: true, memberSourceCompany: true, createdAt: true },
     }),
     prisma.company.findMany({
-      where: { isPersonal: false, NOT: { email: { contains: 'placeholder.invalid' } } },
+      where: { isPersonal: false, NOT: { email: { contains: 'placeholder.invalid' } }, ...createdAtWhere },
       select: { id: true, name: true, active: true, membershipTypes: true, createdAt: true },
     }),
-    prisma.session.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.session.count({ where: engagementWhere }),
     // Selected (not just counted) so "SSO Launches by Platform" can be broken down the same
     // way as the weekly/monthly reports, instead of just a static "Connected Service
     // Providers" list.
     prisma.samlAuthRequest.findMany({
-      where: { completedAt: { not: null }, createdAt: { gte: thirtyDaysAgo } },
+      where: { completedAt: { not: null }, ...engagementWhere },
       select: { serviceProviderId: true, userId: true },
     }),
     prisma.serviceProvider.findMany({ where: { active: true }, select: { id: true, name: true, logo: true } }),
     prisma.session.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo } },
+      where: engagementWhere,
       select: { userId: true, createdAt: true, user: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
       take: 10,
     }),
     // Separate from recentSessions (which is capped at 10 for the UI list) — this needs the
-    // full 30-day set to get an accurate distinct-user count, not just the 10 newest rows.
+    // full window to get an accurate distinct-user count, not just the 10 newest rows.
     prisma.session.findMany({
-      where: { createdAt: { gte: thirtyDaysAgo } },
+      where: engagementWhere,
       select: { userId: true },
       distinct: ['userId'],
     }),
@@ -644,7 +665,16 @@ app.get("/api/reports", async (c) => {
     return rate;
   };
 
-  const payingSubs = subs.filter(s => s.rate != null && s.rate > 0);
+  // PV's `status` field, not the presence of a `rate`, is the source of truth for whether a
+  // subscription is still live — cancelled subscriptions keep their last-known rate in our DB
+  // (see peopleVineServiceV2.ts sync), so summing all statuses over-counts revenue that no
+  // longer exists. Only active, paid subscriptions count toward MRR/ARR and related KPIs.
+  // Matches the null-handling convention used elsewhere for this same PV status field
+  // (peopleVineService.ts, peopleVineServiceV2.ts): an absent status defaults to active.
+  const isActiveStatus = (status: string | null | undefined) =>
+    status == null || status.trim() === '' ? true : status.trim().toLowerCase() === 'active';
+  const activeSubs = subs.filter(s => isActiveStatus(s.status));
+  const payingSubs = activeSubs.filter(s => s.rate != null && s.rate > 0);
   const mrr = payingSubs.reduce((sum, s) => sum + toMonthly(s.rate!, s.frequency ?? ''), 0);
 
   const byTitleMap = new Map<string, { count: number; mrr: number }>();
@@ -659,7 +689,7 @@ app.get("/api/reports", async (c) => {
     .slice(0, 15);
 
   const byFreqMap = new Map<string, number>();
-  for (const s of subs) {
+  for (const s of activeSubs) {
     const f = s.frequency || 'Unknown';
     byFreqMap.set(f, (byFreqMap.get(f) ?? 0) + 1);
   }
@@ -768,10 +798,11 @@ app.get("/api/reports", async (c) => {
   return c.json({
     success: true,
     data: {
+      dateRange: hasCustomRange ? { from: rangeFrom?.toISOString() ?? null, to: rangeTo?.toISOString() ?? null } : null,
       revenue: {
         mrr: Math.round(mrr),
         arr: Math.round(mrr * 12),
-        totalSubs: subs.length,
+        totalSubs: activeSubs.length,
         payingSubs: payingSubs.length,
         avgPerSub: payingSubs.length > 0 ? Math.round(mrr / payingSubs.length) : 0,
         byTitle,

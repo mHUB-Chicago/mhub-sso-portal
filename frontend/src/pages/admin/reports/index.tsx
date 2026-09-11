@@ -102,7 +102,9 @@ type MemberTab = 'users' | 'companies'
 export function AdminReportsPage() {
   const [tab, setTab] = useState<Tab>('revenue')
   const [memberTab, setMemberTab] = useState<MemberTab>('users')
-  const { data, isLoading, isError, refetch } = useGetReportsQuery()
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const { data, isLoading, isError, refetch } = useGetReportsQuery({ from: dateFrom || undefined, to: dateTo || undefined })
   const { data: syncStatus } = useGetSyncStatusQuery()
 
   const lastSync = useMemo(() => {
@@ -144,10 +146,40 @@ export function AdminReportsPage() {
   return (
     <div className="space-y-6">
       <SyncStatusGate />
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Reports</h1>
           <p className="text-sm text-gray-500 mt-1">Live data from the portal database</p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e => setDateFrom(e.target.value)}
+              className="border rounded-md px-2 py-1.5 text-sm text-gray-700"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => setDateTo(e.target.value)}
+              className="border rounded-md px-2 py-1.5 text-sm text-gray-700"
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(''); setDateTo('') }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline mb-2"
+            >
+              Clear
+            </button>
+          )}
         </div>
         {lastSync && (
           <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1 whitespace-nowrap">
@@ -183,10 +215,10 @@ export function AdminReportsPage() {
       {tab === 'revenue' && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard label="Monthly Recurring Rev" value={fmt$(revenue.mrr)} sub={`${revenue.payingSubs} paying subs`} accent />
+            <KpiCard label="Monthly Recurring Rev" value={fmt$(revenue.mrr)} sub={`${revenue.payingSubs} active paying subs`} accent />
             <KpiCard label="Annual Run Rate" value={fmt$(revenue.arr)} sub="MRR × 12" />
-            <KpiCard label="Total Subscriptions" value={revenue.totalSubs.toLocaleString()} sub={`${revenue.payingSubs} with rate data`} />
-            <KpiCard label="Avg per Subscription" value={fmt$(revenue.avgPerSub)} sub="paying subs only" />
+            <KpiCard label="Total Subscriptions" value={revenue.totalSubs.toLocaleString()} sub={`active only · ${revenue.payingSubs} with rate data`} />
+            <KpiCard label="Avg per Subscription" value={fmt$(revenue.avgPerSub)} sub="active paying subs only" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

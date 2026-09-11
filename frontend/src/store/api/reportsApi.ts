@@ -13,7 +13,13 @@ export interface ReportServiceProvider { id: string; name: string; logo: string 
 // used by the weekly/monthly reports, which do compare against the prior period).
 export interface PlatformEngagementSummary { name: string; launches: number; uniqueUsers: number }
 
+export interface ReportsDateRange {
+  from: string | null
+  to: string | null
+}
+
 export interface ReportsData {
+  dateRange: ReportsDateRange | null
   revenue: {
     mrr: number
     arr: number
@@ -154,8 +160,14 @@ export const reportsApi = createApi({
     },
   }),
   endpoints: (builder) => ({
-    getReports: builder.query<{ success: boolean; data: ReportsData }, void>({
-      query: () => '/reports',
+    getReports: builder.query<{ success: boolean; data: ReportsData }, { from?: string; to?: string } | void>({
+      query: (range) => {
+        const params = new URLSearchParams()
+        if (range?.from) params.set('from', range.from)
+        if (range?.to) params.set('to', range.to)
+        const qs = params.toString()
+        return qs ? `/reports?${qs}` : '/reports'
+      },
     }),
     getWeeklyReport: builder.query<{ success: boolean; data: WeeklyReportData }, number>({
       query: (offset) => `/reports/weekly?offset=${encodeURIComponent(Math.trunc(offset))}`,
