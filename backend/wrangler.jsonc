@@ -5,43 +5,95 @@
   "compatibility_date": "2025-04-16",
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
-  "routes": [
-    {
-      "pattern": "auth.portal.mhub.org",
-      "zone_name": "mhub.org",
-      "custom_domain": true
-    }
-  ],
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "mhub-sso-portal",
-      "database_id": "64276139-5ee2-46f8-bb70-7e407d609cc4"
-    }
-  ],
-
-  "queues": {
-    "producers": [
-      {
-        "binding": "QUEUE",
-        "queue": "mhub-sso-portal"
+  "env": {
+    "staging": {
+      "name": "mhub-sso-portal-staging",
+      "routes": [
+        { "pattern": "sso.mhubsso.com/webhook/*", "zone_name": "mhubsso.com" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mhub-sso-portal",
+          "database_id": "45184088-9093-4aa3-b142-0590acad4c9a"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "QUEUE",
+            "queue": "mhub-sso-portal"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "mhub-sso-portal",
+            "max_retries": 3,
+            "max_concurrency": 5
+          }
+        ]
+      },
+      "triggers": {
+        // 06:00 UTC = 1am CDT (summer), 07:00 UTC = 1am CST (winter) — both registered, handler picks the correct one
+        // */30 * * * * — re-checks Direct Personal Subscription users directly
+        "crons": ["0 6 * * *", "0 7 * * *", "*/30 * * * *"]
+      },
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1
       }
-    ],
-    "consumers": [
-      {
-        "queue": "mhub-sso-portal",
-        "max_retries": 3,
-        "max_concurrency": 5
+    },
+    "production": {
+      "name": "mhub-sso-portal",
+      "vars": {
+        "BACKEND_URL": "https://auth.portal.mhub.org",
+        "CORS_ORIGIN": "https://portal.mhub.org",
+        "DOMAIN": "mhub.org",
+        "FRONTEND_URL": "https://portal.mhub.org",
+        "PEOPLEVINE_COMPANY_ID": "397",
+        "SAML_ENTITY_ID": "https://sso.mhubchicago.com/",
+        "SEED_ENABLED": "true",
+        "SENDGRID_EMAIL_FROM": "noreply@mhubsso.com"
+      },
+      "routes": [
+        {
+          "pattern": "auth.portal.mhub.org",
+          "zone_name": "mhub.org",
+          "custom_domain": true
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "mhub-sso-portal",
+          "database_id": "64276139-5ee2-46f8-bb70-7e407d609cc4"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "QUEUE",
+            "queue": "mhub-sso-portal"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "mhub-sso-portal",
+            "max_retries": 3,
+            "max_concurrency": 5
+          }
+        ]
+      },
+      "triggers": {
+        // Midnight America/Chicago: 05:00 UTC during CDT, 06:00 UTC during CST.
+        // scheduledHandler picks whichever matches the current Chicago offset.
+        "crons": ["0 5 * * *", "0 6 * * *"]
+      },
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "redact_query_string": false
       }
-    ]
-  },
-  "triggers": {
-    // Midnight America/Chicago: 05:00 UTC during CDT, 06:00 UTC during CST.
-    // scheduledHandler picks whichever matches the current Chicago offset.
-    "crons": ["0 5 * * *", "0 6 * * *"]
-  },
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1
-  },
+    }
+  }
 }

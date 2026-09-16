@@ -4,7 +4,9 @@
   "scripts": {
     "prebuild": "prisma generate --no-hints",
     "dev": "wrangler dev --persist-to=.wrangler/state",
-    "build": "wrangler build"
+    "build": "wrangler build",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production"
   },
   "dependencies": {
     "@hono/standard-validator": "^0.2.1",
@@ -23,10 +25,10 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20251217.0",
+    "@cloudflare/workers-types": "^5.20260916.1",
     "@types/node": "^25.0.3",
     "@types/pako": "^2.0.4",
     "prisma": "^7.3.0",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.132.0"
   }
 }
