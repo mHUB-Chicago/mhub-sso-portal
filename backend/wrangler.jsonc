@@ -5,14 +5,21 @@
   "compatibility_date": "2025-04-16",
   "compatibility_flags": ["nodejs_compat"],
   "keep_vars": true,
+  "routes": [
+    {
+      "pattern": "auth.portal.mhub.org",
+      "zone_name": "mhub.org",
+      "custom_domain": true
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "mhub-sso-portal",
-      "database_id": "45184088-9093-4aa3-b142-0590acad4c9a"
+      "database_id": "64276139-5ee2-46f8-bb70-7e407d609cc4"
     }
   ],
-  
+
   "queues": {
     "producers": [
       {
@@ -28,17 +35,13 @@
       }
     ]
   },
-  "routes": [
-    { "pattern": "sso.mhubsso.com/webhook/*", "zone_name": "mhubsso.com" }
-  ],
   "triggers": {
-    // 06:00 UTC = 1am CDT (summer), 07:00 UTC = 1am CST (winter) — both registered, handler picks the correct one
-    // */30 * * * * — re-checks Direct Personal Subscription users directly
-    "crons": ["0 6 * * *", "0 7 * * *", "*/30 * * * *"]
+    // Midnight America/Chicago: 05:00 UTC during CDT, 06:00 UTC during CST.
+    // scheduledHandler picks whichever matches the current Chicago offset.
+    "crons": ["0 5 * * *", "0 6 * * *"]
   },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
   },
 }
-

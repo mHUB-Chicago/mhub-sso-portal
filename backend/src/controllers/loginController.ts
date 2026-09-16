@@ -106,7 +106,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     });
     return c.json(response);
   } catch (error) {
-    console.error("handleVerifyLogin error:", error);
+    console.error("handleVerifyLogin error:", error instanceof Error ? error.message : error);
     const response = FailedResponseSchema.parse({
       success: false,
       message: "Unauthorized",
