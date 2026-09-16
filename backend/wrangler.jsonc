@@ -7,7 +7,7 @@
   "keep_vars": true,
   "env": {
     "staging": {
-      "name": "mhub-sso-portal-staging",
+      "name": "mhub-sso-portal",
       "routes": [
         { "pattern": "sso.mhubsso.com/webhook/*", "zone_name": "mhubsso.com" }
       ],
