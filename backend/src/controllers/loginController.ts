@@ -15,7 +15,10 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     if (!user) {
       throw new Error("User not found");
     }
-    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
+    // pending_membership users haven't completed their subscription yet, so they never
+    // pass hasPortalAccess — but they still need to log in to reach the onboarding
+    // payment form (the whole point of the returnTo gate in sendOnboardingPaymentFormEmail).
+    if (user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
       throw new Error("No portal access");
     }
     if (user.email.endsWith('@noemail.mhub')) {
@@ -89,7 +92,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     if (!user) {
       throw new Error("User not found");
     }
-    if (user.role !== 'ADMIN' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
+    if (user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
       throw new Error("No portal access");
     }
     const sessionId = await createSession(c, loginRequest.userId);
@@ -106,7 +109,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     });
     return c.json(response);
   } catch (error) {
-    console.error("handleVerifyLogin error:", error);
+    console.error("handleVerifyLogin error:", error instanceof Error ? error.message : error);
     const response = FailedResponseSchema.parse({
       success: false,
       message: "Unauthorized",
