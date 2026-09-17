@@ -141,8 +141,12 @@ function addMinutes(date: Date, minutes: number): Date {
 function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const { user, serviceProvider, samlRequest } = input;
   const now = new Date();
-  const isIdpInitiated = samlRequest === null;
-  const notOnOrAfter = addMinutes(now, isIdpInitiated ? 5 : 60).toISOString();
+  // Same window regardless of who initiated — PeopleVine's ACS returned a 502 (their own
+  // server erroring, not a validation rejection) specifically on the IdP-initiated path,
+  // and the only structural differences were this shorter window and <saml:OneTimeUse/>
+  // below. Older/simpler SAML parsers (PV's stack is classic ASP.NET) are known to choke
+  // on the less-common OneTimeUse condition, so both are unified here as a fix attempt.
+  const notOnOrAfter = addMinutes(now, 60).toISOString();
   const notBefore = now.toISOString();
 
   const responseId = `_${crypto.randomUUID()}`;
@@ -191,8 +195,7 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
     <saml:Conditions NotBefore="${notBefore}" NotOnOrAfter="${notOnOrAfter}">
       <saml:AudienceRestriction>
         <saml:Audience>${input.serviceProvider.entityId}</saml:Audience>
-      </saml:AudienceRestriction>${isIdpInitiated ? `
-      <saml:OneTimeUse/>` : ""}
+      </saml:AudienceRestriction>
     </saml:Conditions>
 
     <saml:AuthnStatement AuthnInstant="${now.toISOString()}" SessionIndex="${sessionIndex}">
