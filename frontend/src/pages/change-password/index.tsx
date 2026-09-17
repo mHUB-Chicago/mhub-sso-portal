@@ -14,6 +14,11 @@ interface ChangePasswordFormData {
   confirmPassword: string
 }
 
+// Minimum time to leave the pre-opened tab showing its initial URL (the PV payment
+// form) before redirecting it to the SAML relay — gives that page time to actually
+// render instead of being hijacked mid-load.
+const MIN_TAB_LOAD_MS = 5000
+
 export function ChangePasswordPage() {
   // Same reasoning as LoginPage — capture once and strip from the URL so navigating
   // back to this history entry later doesn't replay a stale returnTo/tx.
@@ -35,6 +40,9 @@ export function ChangePasswordPage() {
   // Set synchronously in the raw form onSubmit, below — see the same ref in
   // login/index.tsx for why this can't be opened inside the async onSubmit callback.
   const redirectTabRef = useRef<Window | null>(null)
+  // Timestamp the tab was opened — navigateTab waits out the rest of
+  // MIN_TAB_LOAD_MS from this point before redirecting it.
+  const redirectTabOpenedAtRef = useRef(0)
 
   const [changePassword, { isLoading }] = useChangePasswordMutation()
 
@@ -49,8 +57,13 @@ export function ChangePasswordPage() {
 
   // Points an already-open tab at `url` once we know it, or falls back to a same-tab
   // redirect if the tab never opened (popup blocked) — see login/index.tsx's navigateTab.
-  const navigateTab = (tab: Window | null, url: string) => {
+  const navigateTab = async (tab: Window | null, url: string) => {
     if (tab) {
+      const elapsed = Date.now() - redirectTabOpenedAtRef.current
+      const remaining = MIN_TAB_LOAD_MS - elapsed
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining))
+      }
       tab.location.href = url
       setOpenedNewTab(true)
     } else {
@@ -67,11 +80,11 @@ export function ChangePasswordPage() {
 
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
-        navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+        await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam) {
-        navigateTab(redirectTab, returnToParam)
+        await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
-        navigateTab(redirectTab, redirectUrl)
+        await navigateTab(redirectTab, redirectUrl)
       } else {
         redirectTab?.close()
         navigate('/dashboard')
@@ -116,7 +129,13 @@ export function ChangePasswordPage() {
           onSubmit={(e) => {
             // Must run before handleSubmit's own async validation — see
             // redirectTabRef above.
-            redirectTabRef.current = window.open('about:blank', '_blank')
+            // Opens straight at the PV payment form (rather than about:blank) so the
+            // tab shows the real destination immediately — it gets pointed at the
+            // actual SAML relay URL once the request resolves, same as before, this
+            // just changes what's visible while that's in flight. Matches the
+            // backend's ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
+            redirectTabRef.current = window.open('https://member.mhubchicago.com/form/20611', '_blank')
+            redirectTabOpenedAtRef.current = Date.now()
             return handleSubmit(onSubmit)(e)
           }}
           className="space-y-6"

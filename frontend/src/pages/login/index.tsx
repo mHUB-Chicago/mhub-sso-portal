@@ -20,6 +20,11 @@ interface PasswordFormData {
   password: string
 }
 
+// Minimum time to leave the pre-opened tab showing its initial URL (the PV payment
+// form) before redirecting it to the SAML relay — gives that page time to actually
+// render instead of being hijacked mid-load.
+const MIN_TAB_LOAD_MS = 5000
+
 export function LoginPage() {
   // Captured once (lazy initializer) rather than re-read from window.location on every
   // render, then stripped from the visible URL below — otherwise, navigating back to
@@ -65,6 +70,11 @@ export function LoginPage() {
   // click, and browsers silently drop or refuse to navigate it. Opening it in
   // the raw DOM onSubmit handler keeps it in the same tick as the click.
   const redirectTabRef = useRef<Window | null>(null)
+  // Timestamp the tab was opened — navigateTab waits out the rest of
+  // MIN_TAB_LOAD_MS from this point before redirecting it, so the PV payment
+  // form page it opened with has time to actually render before we hijack it
+  // to the SAML relay URL.
+  const redirectTabOpenedAtRef = useRef(0)
 
   const handleEmailSubmit = async (data: EmailFormData) => {
     if (isSubmittingEmailRef.current) return
@@ -90,8 +100,13 @@ export function LoginPage() {
   // that was opened synchronously inside the original click/submit gesture — a
   // window.open() called after an `await` is treated as an untrusted popup by most
   // browsers and gets silently blocked or force-closed.
-  const navigateTab = (tab: Window | null, url: string) => {
+  const navigateTab = async (tab: Window | null, url: string) => {
     if (tab) {
+      const elapsed = Date.now() - redirectTabOpenedAtRef.current
+      const remaining = MIN_TAB_LOAD_MS - elapsed
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining))
+      }
       tab.location.href = url
       setOpenedNewTab(true)
     } else {
@@ -148,11 +163,11 @@ export function LoginPage() {
 
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
-        navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+        await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam) {
-        navigateTab(redirectTab, returnToParam)
+        await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
-        navigateTab(redirectTab, redirectUrl)
+        await navigateTab(redirectTab, redirectUrl)
       } else {
         redirectTab?.close()
         navigate('/dashboard')
@@ -252,7 +267,13 @@ export function LoginPage() {
             onSubmit={(e) => {
               // Must run before passwordForm.handleSubmit's own async validation —
               // see redirectTabRef above.
-              redirectTabRef.current = window.open('about:blank', '_blank')
+              // Opens straight at the PV payment form (rather than about:blank) so the
+              // tab shows the real destination immediately — it gets pointed at the
+              // actual SAML relay URL once the request resolves, same as before, this
+              // just changes what's visible while that's in flight. Matches the
+              // backend's ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
+              redirectTabRef.current = window.open('https://member.mhubchicago.com/form/20611', '_blank')
+              redirectTabOpenedAtRef.current = Date.now()
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
             }}
             className="space-y-6"
