@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { Eye, EyeOff, Lock, Loader2, ShieldCheck } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAppSelector } from '@/store'
+import { completeSsoAndRedirect } from '@/lib/ssoRedirect'
 
 interface ChangePasswordFormData {
   password: string
@@ -49,9 +50,9 @@ export function ChangePasswordPage() {
       if (txQueryParam) {
         window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam) {
-        window.location.assign(returnToParam)
+        completeSsoAndRedirect(returnToParam)
       } else if (redirectUrl) {
-        window.location.assign(redirectUrl)
+        completeSsoAndRedirect(redirectUrl)
       } else {
         navigate('/dashboard')
       }
