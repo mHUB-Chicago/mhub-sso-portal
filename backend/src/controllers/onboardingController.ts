@@ -76,13 +76,25 @@ const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form
 // environment-specific.
 const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
 
+// Shared with handleVerifyLogin (loginController.ts) — a pending_membership user who
+// logs in through ANY path (not just this email's link) should still land on this same
+// SSO+RelayState URL, so the redirect doesn't depend on a `returnTo` query param
+// surviving the whole email→OTP→set-password chain intact.
+export const getOnboardingPaymentSsoUrl = async (c: Context<AppType>): Promise<string> => {
+  const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+  const backendUrl = c.env.BACKEND_URL ?? "";
+  const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
+  return peopleVineSp
+    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
+    : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
+};
+
 // Fires once, right after a person's PV customer record is successfully created —
 // covers every path that can create one (admin auto-approve, manual Approve from the
 // review queue, new_company or existing_company) since they all funnel through here.
 // Best-effort: a SendGrid failure must never undo or fail the PV push that already
 // succeeded, so this only ever logs and swallows its own errors.
 const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: OnboardingFormData): Promise<void> => {
-  const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
   // The PV form itself requires a PV-side login — a bare link isn't enough, the person
   // needs an active PV session too. So the email links to OUR OWN login page with
   // `returnTo` pointed at OUR IdP-initiated SSO endpoint for PV (not the form directly);
@@ -90,11 +102,7 @@ const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: Onb
   // already forwards `returnTo` through to completion, and the SSO endpoint then signs
   // them into PV via SAML with RelayState set to the form, landing them there logged in.
   const frontendUrl = c.env.FRONTEND_URL ?? "";
-  const backendUrl = c.env.BACKEND_URL ?? "";
-  const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
-  const ssoUrl = peopleVineSp
-    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
-    : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
+  const ssoUrl = await getOnboardingPaymentSsoUrl(c);
   const gateUrl = `${frontendUrl}/login?returnTo=${encodeURIComponent(ssoUrl)}`;
   // new_company only — the company (not the primary user) usually holds the subscription,
   // so an admin may designate a separate billing contact (e.g. AP/finance) to receive and
