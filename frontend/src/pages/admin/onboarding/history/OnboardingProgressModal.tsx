@@ -3,7 +3,11 @@ import { Check, Lock, Loader2, Building2, User as UserIcon } from "lucide-react"
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useApplyOnboardingSubscriptionMutation, type OnboardingInProcessRecord } from "@/store/api/onboardingApi";
+import {
+  useApplyOnboardingSubscriptionMutation,
+  useSkipOnboardingPaymentMutation,
+  type OnboardingInProcessRecord,
+} from "@/store/api/onboardingApi";
 
 type StepKey = "invite" | "account" | "payment" | "subscription";
 
@@ -28,7 +32,9 @@ interface OnboardingProgressModalProps {
 
 export function OnboardingProgressModal({ record, open, onClose }: OnboardingProgressModalProps) {
   const [applySubscription, { isLoading }] = useApplyOnboardingSubscriptionMutation();
+  const [skipPayment, { isLoading: isSkipping }] = useSkipOnboardingPaymentMutation();
   const [confirmingApply, setConfirmingApply] = useState(false);
+  const [confirmingSkip, setConfirmingSkip] = useState(false);
 
   const steps = stepsFor(record);
   let doneCount = 0;
@@ -38,6 +44,7 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
   }
   const current = doneCount < steps.length ? steps[doneCount] : null;
   const canApplySubscription = current?.key === "subscription";
+  const canSkipPayment = current?.key === "payment";
 
   const handleApply = async () => {
     try {
@@ -50,6 +57,20 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
           ? (err as { data?: { message?: string } }).data?.message
           : undefined;
       toast.error(message || "Failed to mark subscription as applied.");
+    }
+  };
+
+  const handleSkipPayment = async () => {
+    try {
+      await skipPayment({ type: record.type, id: record.id }).unwrap();
+      toast.success("Payment & Agreement step skipped.");
+      setConfirmingSkip(false);
+    } catch (err) {
+      const message =
+        err && typeof err === "object" && "data" in err
+          ? (err as { data?: { message?: string } }).data?.message
+          : undefined;
+      toast.error(message || "Failed to skip the payment step.");
     }
   };
 
@@ -119,7 +140,11 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
                       state === "done" ? "text-green-600" : state === "cur" ? "text-brand font-semibold" : "text-gray-300"
                     }`}
                   >
-                    {state === "done" ? formatDate(record.steps[s.key]!) : state === "cur" ? "Current" : "Locked"}
+                    {state === "done"
+                      ? s.key === "payment" && record.paymentSkipped
+                        ? `Skipped ${formatDate(record.steps[s.key]!)}`
+                        : formatDate(record.steps[s.key]!)
+                      : state === "cur" ? "Current" : "Locked"}
                   </div>
                 </div>
               );
@@ -141,8 +166,11 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
           <div className="divide-y">
             {steps.map((s, idx) => {
               const state = idx < doneCount ? "done" : idx === doneCount ? "cur" : "pend";
-              const pillText = state === "done" ? "Complete" : state === "cur" ? "In Progress" : "Pending";
-              const ts = state === "done" ? `Completed ${formatDate(record.steps[s.key]!)}` : state === "cur" ? s.waiting : "Not started";
+              const skipped = s.key === "payment" && record.paymentSkipped;
+              const pillText = state === "done" ? (skipped ? "Skipped" : "Complete") : state === "cur" ? "In Progress" : "Pending";
+              const ts = state === "done"
+                ? `${skipped ? "Skipped by admin" : "Completed"} ${formatDate(record.steps[s.key]!)}`
+                : state === "cur" ? s.waiting : "Not started";
               return (
                 <div key={s.key} className="flex items-center justify-between gap-3 px-5 py-3.5">
                   <div>
@@ -152,7 +180,9 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
                   <span
                     className={`text-[11px] font-bold rounded-full px-2.5 py-1 whitespace-nowrap ${
                       state === "done"
-                        ? "bg-green-50 text-green-600"
+                        ? skipped
+                          ? "bg-amber-50 text-amber-600"
+                          : "bg-green-50 text-green-600"
                         : state === "cur"
                           ? "bg-orange-50 text-brand"
                           : "bg-gray-100 text-muted-foreground"
@@ -167,6 +197,24 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
+          {canSkipPayment && !confirmingSkip && (
+            <Button variant="outline" size="sm" onClick={() => setConfirmingSkip(true)}>
+              Skip This Step
+            </Button>
+          )}
+          {confirmingSkip && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">
+                Skip Payment &amp; Agreement? This is only for cases handled outside the PV form (e.g. invoiced directly).
+              </span>
+              <Button variant="outline" size="sm" onClick={() => setConfirmingSkip(false)} disabled={isSkipping}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSkipPayment} disabled={isSkipping}>
+                {isSkipping ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+              </Button>
+            </div>
+          )}
           {canApplySubscription && !confirmingApply && (
             <Button size="sm" onClick={() => setConfirmingApply(true)}>
               Mark Subscription Applied

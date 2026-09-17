@@ -83,6 +83,22 @@ export const CompanyDetailsStep = ({ value, onChange, attributeOptions }: Compan
               auto-generate one from the primary user's email below.
             </p>
           </div>
+          <div className="col-span-2">
+            <Label htmlFor="companyBillingContactEmail">Billing Contact Email</Label>
+            <Input
+              id="companyBillingContactEmail"
+              type="email"
+              value={value.billingContactEmail ?? ""}
+              onChange={(e) => onChange("billingContactEmail", e.target.value)}
+              className="mt-1"
+              placeholder="e.g. billing@yourcompany.com"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Optional — since the company usually holds the subscription, use this if
+              someone other than the primary user (e.g. AP/finance) should receive the
+              payment form link and log in to complete it.
+            </p>
+          </div>
           <FormSelect
             id="companySize"
             label="Company Size (# employees)"

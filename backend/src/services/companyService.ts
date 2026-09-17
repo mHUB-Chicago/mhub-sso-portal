@@ -191,6 +191,20 @@ export const createCompany = async (c: Context, input: CreateCompanyInput) => {
 
 export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
   const prisma: PrismaClient = c.get("db");
+  // Auto-completes the onboarding tracker's "Subscription Applied" step the moment the
+  // real PV sync (webhook or batch) is what promotes this record to "active" — i.e. a
+  // real membership actually exists now — instead of relying on an admin to remember to
+  // click "Mark Subscription Applied" separately. Set-once, same as the payment step.
+  let onboardingSubscriptionAppliedAt: Date | undefined;
+  if (input.accountStatus === 'active') {
+    const existing = await prisma.company.findUnique({
+      where: { id: input.id },
+      select: { onboardingPaymentAgreementAt: true, onboardingSubscriptionAppliedAt: true },
+    });
+    if (existing?.onboardingPaymentAgreementAt && !existing.onboardingSubscriptionAppliedAt) {
+      onboardingSubscriptionAppliedAt = new Date();
+    }
+  }
   return prisma.company.update({
     where: { id: input.id },
     data: {
@@ -201,6 +215,7 @@ export const updateCompany = async (c: Context, input: UpdateCompanyInput) => {
       isPersonal: input.isPersonal,
       ...(input.peopleVineId ? { peopleVineId: input.peopleVineId } : {}),
       accountStatus: input.accountStatus,
+      ...(onboardingSubscriptionAppliedAt ? { onboardingSubscriptionAppliedAt } : {}),
     },
   });
 }

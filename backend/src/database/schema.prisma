@@ -48,6 +48,11 @@ model Company {
   // PeopleVine survey webhook / manual admin action fires — see peopleVineWebhookController.ts
   // and handleApplyOnboardingSubscription. Set-once: never overwritten once populated.
   onboardingPaymentAgreementAt    DateTime?
+  // Set alongside onboardingPaymentAgreementAt only when an admin manually skipped this
+  // step (e.g. company is paying by invoice, not the self-serve PV form) instead of it
+  // being confirmed by the real PV webhook — see handleSkipOnboardingPayment. Lets the
+  // tracker show "Skipped by admin" instead of "Completed" so it's clear in records.
+  onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
   users                   User[]
@@ -84,10 +89,16 @@ model User {
   memberSource         String                @default("subscription")
   memberSourceCompany  String?
   isSystemAccount      Boolean               @default(false)
+  // Set for new_company onboarding when the person completing the payment form isn't
+  // the primary user (e.g. a company's AP/finance contact). Lets that person log in
+  // and complete the same account's onboarding without a separate User row — see
+  // getUserByEmail (userService.ts) and sendOnboardingPaymentFormEmail (onboardingController.ts).
+  billingContactEmail  String?
   // Same "pending_membership" | "membership-removed" | "active" model as Company.accountStatus.
   accountStatus        String                @default("active")
   // Same onboarding progress markers as Company — see there.
   onboardingPaymentAgreementAt    DateTime?
+  onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
   createdAt            DateTime              @default(now())

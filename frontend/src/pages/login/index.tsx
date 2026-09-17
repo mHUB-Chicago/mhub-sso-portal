@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info } from 'lucide-react'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 type LoginStep = 'email' | 'password'
 
@@ -21,8 +21,17 @@ interface PasswordFormData {
 }
 
 export function LoginPage() {
-  const txQueryParam = new URLSearchParams(window.location.search).get('tx')
-  const returnToParam = new URLSearchParams(window.location.search).get('returnTo')
+  // Captured once (lazy initializer) rather than re-read from window.location on every
+  // render, then stripped from the visible URL below — otherwise, navigating back to
+  // this history entry after logging in (e.g. via the browser back button) would replay
+  // a stale returnTo/tx against whichever account logs in next, regardless of who that is.
+  const [txQueryParam] = useState(() => new URLSearchParams(window.location.search).get('tx'))
+  const [returnToParam] = useState(() => new URLSearchParams(window.location.search).get('returnTo'))
+  useEffect(() => {
+    if (txQueryParam || returnToParam) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
 

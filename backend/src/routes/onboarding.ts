@@ -23,6 +23,7 @@ import {
   ReactivateOnboardingSubmissionResponseSchema,
   SendOnboardingLinkEmailRequestSchema,
   SendOnboardingLinkEmailResponseSchema,
+  SkipOnboardingPaymentResponseSchema,
   TreatOnboardingSubmissionAsNewResponseSchema,
   UpdateOnboardingSubmissionRequestSchema,
   UpdateOnboardingSubmissionResponseSchema,
@@ -46,6 +47,7 @@ import {
   handleGetOnboardingSubmissions,
   handleReactivateOnboardingSubmission,
   handleSendOnboardingLinkEmail,
+  handleSkipOnboardingPayment,
   handleTreatOnboardingSubmissionAsNew,
   handleUpdateOnboardingSubmission,
 } from "@/controllers/onboardingController";
@@ -159,6 +161,21 @@ app.post(
     ],
   }),
   handleApplyOnboardingSubscription
+);
+
+app.post(
+  "/in-process/:type/:id/skip-payment",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Admin override: mark the 'Payment & Agreement' step complete without a real PV payment",
+    successMessage: "Payment & Agreement step skipped",
+    responseSchema: SkipOnboardingPaymentResponseSchema,
+    parameters: [
+      { name: "type", in: "path", required: true, schema: { type: "string", enum: ["company", "user"] } },
+      { name: "id", in: "path", required: true, schema: { type: "string" } },
+    ],
+  }),
+  handleSkipOnboardingPayment
 );
 
 app.get(

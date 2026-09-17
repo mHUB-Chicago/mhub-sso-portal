@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { AppType, JsonInput, QueryInput } from "..";
 import {
   ApplyOnboardingSubscriptionResponseSchema,
+  SkipOnboardingPaymentResponseSchema,
   ApproveOnboardingSubmissionResponseSchema,
   CompleteOnboardingSubmissionResponseSchema,
   GetOnboardingAddonPackagesResponseSchema,
@@ -32,6 +33,7 @@ import {
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { createCompany, updateCompany } from "@/services/companyService";
 import { createUser, updateUser } from "@/services/userService";
+import { getServiceProviderByEntityId } from "@/services/serviceProviderService";
 import {
   assertPeopleVineWritesEnabled,
   fetchPvAttributeOptions,
@@ -69,6 +71,10 @@ export const createOnboardingSubmissionRecord = async (
 // peopleVineWebhookController.ts, which listens for its completion). Configurable via
 // env for the same reason as PEOPLEVINE_ONBOARDING_SURVEY_ID there.
 const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form/20611";
+// Matches the ServiceProvider seeded for PeopleVine's member portal (see seed.ts) —
+// looked up by entityId rather than hardcoding its DB id, since that id is
+// environment-specific.
+const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
 
 // Fires once, right after a person's PV customer record is successfully created —
 // covers every path that can create one (admin auto-approve, manual Approve from the
@@ -77,19 +83,39 @@ const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form
 // succeeded, so this only ever logs and swallows its own errors.
 const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: OnboardingFormData): Promise<void> => {
   const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
-  // The PV form itself has no login gate (confirmed — it's reachable directly, even in a
-  // fresh session), so identification can't rely on a PV-side login. Instead, the email
-  // links to OUR OWN login page with `returnTo` set to the PV form — our existing
-  // email+OTP+set-password flow (login/index.tsx, change-password/index.tsx) already
-  // forwards `returnTo` through to completion, so this makes the login mandatory *before*
-  // they ever reach PV, without needing any new page.
+  // The PV form itself requires a PV-side login — a bare link isn't enough, the person
+  // needs an active PV session too. So the email links to OUR OWN login page with
+  // `returnTo` pointed at OUR IdP-initiated SSO endpoint for PV (not the form directly);
+  // our existing email+OTP+set-password flow (login/index.tsx, change-password/index.tsx)
+  // already forwards `returnTo` through to completion, and the SSO endpoint then signs
+  // them into PV via SAML with RelayState set to the form, landing them there logged in.
   const frontendUrl = c.env.FRONTEND_URL ?? "";
-  const gateUrl = `${frontendUrl}/login?returnTo=${encodeURIComponent(formUrl)}`;
+  const backendUrl = c.env.BACKEND_URL ?? "";
+  const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
+  const ssoUrl = peopleVineSp
+    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
+    : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
+  const gateUrl = `${frontendUrl}/login?returnTo=${encodeURIComponent(ssoUrl)}`;
+  // new_company only — the company (not the primary user) usually holds the subscription,
+  // so an admin may designate a separate billing contact (e.g. AP/finance) to receive and
+  // complete this instead. getUserByEmail matches this address too, so they can log in
+  // as the same account. See billingContactEmail, schema.prisma.
+  const billingContactEmail = formData.company.billingContactEmail?.trim();
+  const primaryUserName = `${formData.user.firstName} ${formData.user.lastName}`.trim();
   const firstName = formData.user.firstName?.trim();
   try {
-    await sendCustomEmail(c, {
+    await sendCustomEmail(c, billingContactEmail ? {
+      to: billingContactEmail,
+      subject: "Complete mHUB payment & membership agreement",
+      html:
+        `<p>Hi,</p>` +
+        `<p>${primaryUserName || "A new member"} has started setting up${formData.company.name ? ` ${formData.company.name}'s` : ""} membership with mHUB, ` +
+        `and you've been listed as the billing contact. To finish setting up the membership, please log in and complete the payment and membership agreement using the link below:</p>` +
+        `<p><a href="${gateUrl}">${gateUrl}</a></p>` +
+        `<p>See you soon!</p>`,
+    } : {
       to: formData.user.email,
-      to_name: `${formData.user.firstName} ${formData.user.lastName}`.trim() || undefined,
+      to_name: primaryUserName || undefined,
       subject: "Complete your mHUB payment & membership agreement",
       html:
         `<p>Hi${firstName ? ` ${firstName}` : ""},</p>` +
@@ -171,6 +197,7 @@ const finalizeSubmissionPushToPeopleVine = async (
     memberSource: "subscription",
     active: false,
     accountStatus: "pending_membership",
+    billingContactEmail: formData.company.billingContactEmail || null,
   });
 
   // Fire-and-forget from the caller's perspective — see sendOnboardingPaymentFormEmail
@@ -357,6 +384,7 @@ const buildOnboardingProgress = (
   row: {
     createdAt: Date;
     onboardingPaymentAgreementAt: Date | null;
+    onboardingPaymentAgreementSkippedBy: string | null;
     onboardingSubscriptionAppliedAt: Date | null;
   },
   submission: { mode: string; createdAt: Date } | undefined
@@ -368,6 +396,7 @@ const buildOnboardingProgress = (
     payment: row.onboardingPaymentAgreementAt,
     subscription: row.onboardingSubscriptionAppliedAt,
   },
+  paymentSkipped: !!row.onboardingPaymentAgreementSkippedBy,
 });
 
 // "Default (in-process)" onboarding tab: live Company/User rows still awaiting a
@@ -479,6 +508,58 @@ export const handleApplyOnboardingSubscription = async (c: Context<AppType>) => 
   const response = ApplyOnboardingSubscriptionResponseSchema.parse({
     success: true,
     message: "Subscription marked as applied",
+    data: {
+      record: {
+        id: updated.id,
+        type,
+        name: updated.name,
+        email: updated.email,
+        peopleVineId: updated.peopleVineId,
+        createdAt: updated.createdAt,
+        ...buildOnboardingProgress(updated, submission ?? undefined),
+      },
+    },
+  });
+  return c.json(response);
+};
+
+// Admin override for when payment won't happen through the self-serve PV form (e.g. the
+// company is being invoiced directly). Marked distinctly from a real PV-confirmed
+// payment via onboardingPaymentAgreementSkippedBy, so it's clear in records/reports.
+export const handleSkipOnboardingPayment = async (c: Context<AppType>) => {
+  const prisma: PrismaClient = c.get("db");
+  const user = c.get("user");
+  const type = c.req.param("type");
+  const id = c.req.param("id");
+
+  if (type !== "company" && type !== "user") {
+    throw new HTTPException(400, { message: "Invalid record type" });
+  }
+
+  const row = type === "company"
+    ? await prisma.company.findUnique({ where: { id } })
+    : await prisma.user.findUnique({ where: { id } });
+  if (!row) {
+    throw new HTTPException(404, { message: "Onboarding record not found" });
+  }
+  if (row.onboardingPaymentAgreementAt) {
+    throw new HTTPException(400, { message: "Payment & Agreement has already been completed" });
+  }
+
+  const data = { onboardingPaymentAgreementAt: new Date(), onboardingPaymentAgreementSkippedBy: user?.id ?? null };
+  const updated =
+    type === "company"
+      ? await prisma.company.update({ where: { id }, data })
+      : await prisma.user.update({ where: { id }, data });
+
+  const submission =
+    type === "company"
+      ? await prisma.onboardingSubmission.findFirst({ where: { matchedCompanyId: id }, orderBy: { createdAt: "desc" } })
+      : await prisma.onboardingSubmission.findFirst({ where: { matchedUserId: id }, orderBy: { createdAt: "desc" } });
+
+  const response = SkipOnboardingPaymentResponseSchema.parse({
+    success: true,
+    message: "Payment & Agreement step skipped",
     data: {
       record: {
         id: updated.id,

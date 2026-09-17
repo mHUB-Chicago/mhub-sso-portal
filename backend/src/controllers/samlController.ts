@@ -126,6 +126,7 @@ export const handleSamlMetadata = async (c: Context<AppType>) => {
 
 export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
   const serviceProviderId = c.req.param("serviceProviderId");
+  const relayState = c.req.query("relayState");
   if (!serviceProviderId) {
     return c.json({ message: "Missing service provider ID" }, 400);
   }
@@ -134,7 +135,9 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
   const sessionId = getSessionId(c);
   if (!currentUser || !sessionId) {
     const loginUrl = new URL(`${c.env.FRONTEND_URL}/login`);
-    loginUrl.searchParams.set('returnTo', `${c.env.BACKEND_URL}/saml/sso/${serviceProviderId}`);
+    const retryUrl = new URL(`${c.env.BACKEND_URL}/saml/sso/${serviceProviderId}`);
+    if (relayState) retryUrl.searchParams.set('relayState', relayState);
+    loginUrl.searchParams.set('returnTo', retryUrl.toString());
     return c.redirect(loginUrl.toString());
   }
 
@@ -157,6 +160,7 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
     samlRequest: null,
     user: currentUser,
     sessionId,
+    relayState,
     idp: {
       entityId: c.env.SAML_ENTITY_ID as string,
       certPem: c.env.SAML_PUBLIC_CERT as string,

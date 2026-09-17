@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Lock, Loader2, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppSelector } from '@/store'
 
 interface ChangePasswordFormData {
@@ -15,8 +15,15 @@ interface ChangePasswordFormData {
 }
 
 export function ChangePasswordPage() {
-  const txQueryParam = new URLSearchParams(window.location.search).get('tx')
-  const returnToParam = new URLSearchParams(window.location.search).get('returnTo')
+  // Same reasoning as LoginPage — capture once and strip from the URL so navigating
+  // back to this history entry later doesn't replay a stale returnTo/tx.
+  const [txQueryParam] = useState(() => new URLSearchParams(window.location.search).get('tx'))
+  const [returnToParam] = useState(() => new URLSearchParams(window.location.search).get('returnTo'))
+  useEffect(() => {
+    if (txQueryParam || returnToParam) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
   const { redirectUrl } = useAppSelector(state => state.auth)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)

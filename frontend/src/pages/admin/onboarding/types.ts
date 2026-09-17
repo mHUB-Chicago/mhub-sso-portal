@@ -11,6 +11,9 @@ export interface CompanyDetails {
   // Optional — if left blank, PV falls back to a "+company" alias on the primary
   // user's own email (see buildCompanyPlaceholderEmail, peopleVinePortalService.ts).
   email?: string;
+  // Optional — when the company (not the primary user) is who should pay, this address
+  // receives the onboarding payment link/email instead and can log in to complete it.
+  billingContactEmail?: string;
   website?: string;
   size?: string;
   founded?: string;

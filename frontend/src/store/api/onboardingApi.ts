@@ -115,6 +115,9 @@ export interface OnboardingInProcessRecord {
   createdAt: string
   via: 'invite' | 'admin'
   steps: OnboardingProgressSteps
+  // True when the "payment" step was set via the admin Skip action instead of a real
+  // PV-confirmed payment.
+  paymentSkipped: boolean
 }
 
 // One PV "Attribute" that offers a fixed set of choices — matched by exact `name`
@@ -265,6 +268,11 @@ export const onboardingApi = createApi({
       invalidatesTags: ['OnboardingSubmissions'],
     }),
 
+    skipOnboardingPayment: builder.mutation<ApplySubscriptionResponse, { type: 'company' | 'user'; id: string }>({
+      query: ({ type, id }) => ({ url: `/onboarding/in-process/${type}/${id}/skip-payment`, method: 'POST' }),
+      invalidatesTags: ['OnboardingSubmissions'],
+    }),
+
     getOnboardingMembershipPackages: builder.query<MembershipPackagesResponse, void>({
       query: () => '/onboarding/membership-packages',
       providesTags: ['OnboardingMembershipPackages'],
@@ -305,6 +313,7 @@ export const {
   useDisapproveOnboardingSubmissionMutation,
   useGetOnboardingInProcessQuery,
   useApplyOnboardingSubscriptionMutation,
+  useSkipOnboardingPaymentMutation,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingAddonPackagesQuery,
   useGetOnboardingAttributeOptionsQuery,

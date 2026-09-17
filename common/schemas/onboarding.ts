@@ -14,6 +14,11 @@ export const OnboardingCompanySchema = z.object({
   // Optional — if left blank, PV falls back to a "+company" alias on the primary
   // user's own email (see buildCompanyPlaceholderEmail, peopleVinePortalService.ts).
   email: z.string().optional(),
+  // Optional — for new_company, the company (not the primary user) usually holds the
+  // subscription, so whoever handles billing may be a different person. When set, the
+  // onboarding payment form email goes here instead of the primary user's own email
+  // (see sendOnboardingPaymentFormEmail, onboardingController.ts).
+  billingContactEmail: z.string().optional(),
   website: z.string().optional(),
   size: z.string().optional(),
   founded: z.string().optional(),
@@ -198,6 +203,9 @@ export const OnboardingInProcessRecordSchema = z.object({
   createdAt: z.coerce.date().transform((d) => d.toISOString()),
   via: z.enum(["invite", "admin"]),
   steps: OnboardingProgressStepsSchema,
+  // True when the "payment" step's timestamp was set by handleSkipOnboardingPayment
+  // (admin override) rather than the real PV webhook — see the field's schema.prisma doc.
+  paymentSkipped: z.boolean(),
 });
 
 export const GetOnboardingInProcessResponseSchema = SuccessResponseSchema(
@@ -205,6 +213,10 @@ export const GetOnboardingInProcessResponseSchema = SuccessResponseSchema(
 );
 
 export const ApplyOnboardingSubscriptionResponseSchema = SuccessResponseSchema(
+  z.object({ record: OnboardingInProcessRecordSchema })
+);
+
+export const SkipOnboardingPaymentResponseSchema = SuccessResponseSchema(
   z.object({ record: OnboardingInProcessRecordSchema })
 );
 

@@ -55,6 +55,9 @@ export interface CreateUserInput {
   // "pending_membership" | "membership-removed" | "active". Defaults to "active" so
   // every existing caller keeps its prior behavior unchanged.
   accountStatus?: string;
+  // See schema.prisma — lets a different person (e.g. company AP contact) log in and
+  // complete this account's onboarding payment instead of the primary user.
+  billingContactEmail?: string | null;
 }
 
 export interface UpdateUserInput {
@@ -198,9 +201,11 @@ export const getUserByEmail = (c: Context, email: string): Promise<User | null> 
   // Only used by the login flow (handleStartLogin, handleForgotPassword,
   // createLoginRequest) — those callers already gate on accountStatus/hasPortalAccess,
   // so this can't filter on `active` without also blocking pending_membership users
-  // (who are inactive by definition until they complete onboarding).
+  // (who are inactive by definition until they complete onboarding). Also matches
+  // billingContactEmail so a company's AP/finance contact can log into the same
+  // account to complete onboarding payment instead of the primary user.
   return prisma.user.findFirst({
-    where: { email },
+    where: { OR: [{ email }, { billingContactEmail: email }] },
   });
 }
 
@@ -213,9 +218,10 @@ export const getUserById = (c: Context, id: string): Promise<User | null> => {
 
 export const createUser = async (c: Context, createUserInput: CreateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus } = createUserInput;
+  const { name, email, username, password, role, companyId, peopleVineId, mustResetPassword, emailVerified, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus, billingContactEmail } = createUserInput;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username ? username.trim().toLowerCase() : null;
+  const normalizedBillingContactEmail = billingContactEmail ? billingContactEmail.toLowerCase().trim() : null;
   // Only email is actually unique on User (username is display-only now — login only ever
   // uses email, see loginController). Named in the thrown error so callers parsing it via
   // getUniqueConstraintField() know it's a genuine, unretryable duplicate.
@@ -249,6 +255,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
       memberSource: memberSource ?? 'subscription',
       memberSourceCompany: memberSourceCompany ?? null,
       accountStatus: accountStatus ?? 'active',
+      billingContactEmail: normalizedBillingContactEmail,
     },
   });
   if (!createdUser) {
@@ -273,6 +280,20 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
   const prisma: PrismaClient = c.get("db");
   const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
+
+  // Same reasoning as updateCompany — auto-complete the onboarding tracker's
+  // "Subscription Applied" step when the real PV sync is what promotes this record to
+  // "active", instead of relying on a separate manual admin click.
+  let onboardingSubscriptionAppliedAt: Date | undefined;
+  if (accountStatus === 'active') {
+    const existing = await prisma.user.findUnique({
+      where: { id },
+      select: { onboardingPaymentAgreementAt: true, onboardingSubscriptionAppliedAt: true },
+    });
+    if (existing?.onboardingPaymentAgreementAt && !existing.onboardingSubscriptionAppliedAt) {
+      onboardingSubscriptionAppliedAt = new Date();
+    }
+  }
 
   return prisma.user.update({
     where: { id },
@@ -300,6 +321,7 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       memberSource,
       memberSourceCompany,
       accountStatus,
+      ...(onboardingSubscriptionAppliedAt ? { onboardingSubscriptionAppliedAt } : {}),
     },
   });
 }
