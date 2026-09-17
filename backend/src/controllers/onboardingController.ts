@@ -528,9 +528,20 @@ export const handleUpdateOnboardingSubmission = async (
     throw "Only submissions in Pending Review or Needs Attention can be edited";
   }
 
+  // Re-run the duplicate check against the edited email — an edit that resolves the
+  // conflict (or introduces a new one) should move the submission accordingly instead
+  // of leaving it stuck on whatever match was found at original submission time.
+  const duplicate = await findOnboardingDuplicate(c, formData.user.email);
+
   const updated = await prisma.onboardingSubmission.update({
     where: { id },
-    data: { formData: JSON.stringify(formData) },
+    data: {
+      formData: JSON.stringify(formData),
+      status: duplicate.duplicateMatchType ? "needs_attention" : "pending_review",
+      duplicateMatchType: duplicate.duplicateMatchType,
+      matchedCompanyId: duplicate.matchedCompanyId,
+      matchedUserId: duplicate.matchedUserId,
+    },
   });
 
   const response = UpdateOnboardingSubmissionResponseSchema.parse({
