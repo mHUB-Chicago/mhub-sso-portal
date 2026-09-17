@@ -7,6 +7,7 @@ import { createSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
+import { getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
@@ -96,6 +97,14 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       throw new Error("No portal access");
     }
     const sessionId = await createSession(c, loginRequest.userId);
+    // A pending_membership user hasn't completed onboarding payment yet — send them
+    // there directly regardless of how they reached /login (email link, plain login
+    // page, etc.), instead of relying solely on a `returnTo` query param surviving the
+    // whole email→OTP→set-password chain. Takes priority over the generic
+    // auto-redirect-SP fallback below, which is for already-active members.
+    const pendingOnboardingRedirectUrl = user.role !== 'ADMIN' && user.accountStatus === 'pending_membership'
+      ? await getOnboardingPaymentSsoUrl(c)
+      : null;
     const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);
     const autoRedirectableSp = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
     const response = VerifyLoginResponseSchema.parse({
@@ -103,7 +112,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       message: "Success",
       data: {
         user,
-        redirectUrl: autoRedirectableSp ? autoRedirectableSp.loginUrl : null,
+        redirectUrl: pendingOnboardingRedirectUrl ?? (autoRedirectableSp ? autoRedirectableSp.loginUrl : null),
         sessionId,
       },
     });
