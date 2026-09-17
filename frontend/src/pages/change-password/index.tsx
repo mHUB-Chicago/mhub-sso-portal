@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Lock, Loader2, ShieldCheck } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppSelector } from '@/store'
 
 interface ChangePasswordFormData {
@@ -32,6 +32,9 @@ export function ChangePasswordPage() {
   // finishing the redirect — see the same state in login/index.tsx.
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [openedNewTab, setOpenedNewTab] = useState(false)
+  // Set synchronously in the raw form onSubmit, below — see the same ref in
+  // login/index.tsx for why this can't be opened inside the async onSubmit callback.
+  const redirectTabRef = useRef<Window | null>(null)
 
   const [changePassword, { isLoading }] = useChangePasswordMutation()
 
@@ -57,9 +60,7 @@ export function ChangePasswordPage() {
   }
 
   const onSubmit = async (data: ChangePasswordFormData) => {
-    // Opened now, before the async changePassword call below, so it's still inside
-    // this submit event's user-gesture window — see navigateTab.
-    const redirectTab = window.open('about:blank', '_blank')
+    const redirectTab = redirectTabRef.current
     try {
       await changePassword({ password: data.password }).unwrap()
       toast.success('Password changed successfully!')
@@ -111,7 +112,15 @@ export function ChangePasswordPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form
+          onSubmit={(e) => {
+            // Must run before handleSubmit's own async validation — see
+            // redirectTabRef above.
+            redirectTabRef.current = window.open('about:blank', '_blank')
+            return handleSubmit(onSubmit)(e)
+          }}
+          className="space-y-6"
+        >
           <div>
             <Label htmlFor="password" className="text-sm font-medium text-gray-700">
               New Password

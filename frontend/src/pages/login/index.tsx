@@ -58,6 +58,13 @@ export function LoginPage() {
   // synchronously, so the second call is blocked immediately regardless of render timing.
   const isSubmittingEmailRef = useRef(false)
   const isSubmittingPasswordRef = useRef(false)
+  // Set synchronously in the raw form onSubmit, below — react-hook-form's
+  // handleSubmit(fn) wraps `fn` behind at least one microtask (its internal
+  // validation promise), so window.open() called from inside
+  // handlePasswordSubmit itself is no longer considered part of the original
+  // click, and browsers silently drop or refuse to navigate it. Opening it in
+  // the raw DOM onSubmit handler keeps it in the same tick as the click.
+  const redirectTabRef = useRef<Window | null>(null)
 
   const handleEmailSubmit = async (data: EmailFormData) => {
     if (isSubmittingEmailRef.current) return
@@ -96,9 +103,7 @@ export function LoginPage() {
   const handlePasswordSubmit = async (data: PasswordFormData) => {
     if (isSubmittingPasswordRef.current) return
     isSubmittingPasswordRef.current = true
-    // Opened now, before the async verifyLogin call below, so it's still inside this
-    // submit event's user-gesture window — see navigateTab.
-    const redirectTab = window.open('about:blank', '_blank')
+    const redirectTab = redirectTabRef.current
     try {
       const result = await verifyLogin({
         request_id: requestId,
@@ -243,7 +248,15 @@ export function LoginPage() {
           </form>
         ) : (
           // Step 2: Password/OTP Input
-          <form onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)} className="space-y-6">
+          <form
+            onSubmit={(e) => {
+              // Must run before passwordForm.handleSubmit's own async validation —
+              // see redirectTabRef above.
+              redirectTabRef.current = window.open('about:blank', '_blank')
+              return passwordForm.handleSubmit(handlePasswordSubmit)(e)
+            }}
+            className="space-y-6"
+          >
             {/* Back button with email display */}
             <button
               type="button"
