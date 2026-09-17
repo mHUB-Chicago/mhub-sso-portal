@@ -39,6 +39,12 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [requestId, setRequestId] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  // Covers the gap between a successful verify and the browser actually finishing
+  // the redirect — without this, the "Signing in..." button reverts to idle for a
+  // moment before the page navigates away, which reads as the login silently doing
+  // nothing right before the SSO handoff.
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [openedNewTab, setOpenedNewTab] = useState(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
@@ -72,9 +78,27 @@ export function LoginPage() {
     }
   }
 
+  // Points an already-open tab at `url` once we know it, or falls back to a same-tab
+  // redirect if the tab never opened (popup blocked). Must only be called with a tab
+  // that was opened synchronously inside the original click/submit gesture — a
+  // window.open() called after an `await` is treated as an untrusted popup by most
+  // browsers and gets silently blocked or force-closed.
+  const navigateTab = (tab: Window | null, url: string) => {
+    if (tab) {
+      tab.location.href = url
+      setOpenedNewTab(true)
+    } else {
+      window.location.assign(url)
+    }
+    setIsRedirecting(true)
+  }
+
   const handlePasswordSubmit = async (data: PasswordFormData) => {
     if (isSubmittingPasswordRef.current) return
     isSubmittingPasswordRef.current = true
+    // Opened now, before the async verifyLogin call below, so it's still inside this
+    // submit event's user-gesture window — see navigateTab.
+    const redirectTab = window.open('about:blank', '_blank')
     try {
       const result = await verifyLogin({
         request_id: requestId,
@@ -103,6 +127,9 @@ export function LoginPage() {
 
       // Check if user needs to reset password
       if (user.mustResetPassword) {
+        // Not needed yet — change-password will open its own tab once it knows
+        // whether a redirect actually follows.
+        redirectTab?.close()
         // Preserve tx (SAML flow) and returnTo (plain post-login redirect, e.g. the
         // onboarding payment form gate) so change-password can send them on afterward —
         // dropping either here would strand a first-time login at /dashboard instead.
@@ -116,15 +143,17 @@ export function LoginPage() {
 
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
-        window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+        navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam) {
-        window.location.assign(returnToParam)
+        navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
-        window.location.assign(redirectUrl)
+        navigateTab(redirectTab, redirectUrl)
       } else {
+        redirectTab?.close()
         navigate('/dashboard')
       }
     } catch (error: unknown) {
+      redirectTab?.close()
       const err = error as { data?: { message?: string }; message?: string }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
     } finally {
@@ -136,6 +165,19 @@ export function LoginPage() {
     setStep('email')
     setRequestId('')
     passwordForm.reset()
+  }
+
+  if (isRedirecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-brand" />
+          <p className="text-gray-600">
+            {openedNewTab ? 'Continue in the new tab that just opened.' : 'Redirecting you, please wait...'}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

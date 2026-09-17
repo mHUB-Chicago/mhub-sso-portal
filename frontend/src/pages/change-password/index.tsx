@@ -28,6 +28,10 @@ export function ChangePasswordPage() {
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  // Covers the gap between a successful password change and the browser actually
+  // finishing the redirect — see the same state in login/index.tsx.
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [openedNewTab, setOpenedNewTab] = useState(false)
 
   const [changePassword, { isLoading }] = useChangePasswordMutation()
 
@@ -40,25 +44,55 @@ export function ChangePasswordPage() {
 
   const password = watch('password')
 
+  // Points an already-open tab at `url` once we know it, or falls back to a same-tab
+  // redirect if the tab never opened (popup blocked) — see login/index.tsx's navigateTab.
+  const navigateTab = (tab: Window | null, url: string) => {
+    if (tab) {
+      tab.location.href = url
+      setOpenedNewTab(true)
+    } else {
+      window.location.assign(url)
+    }
+    setIsRedirecting(true)
+  }
+
   const onSubmit = async (data: ChangePasswordFormData) => {
+    // Opened now, before the async changePassword call below, so it's still inside
+    // this submit event's user-gesture window — see navigateTab.
+    const redirectTab = window.open('about:blank', '_blank')
     try {
       await changePassword({ password: data.password }).unwrap()
       toast.success('Password changed successfully!')
 
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
-        window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+        navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam) {
-        window.location.assign(returnToParam)
+        navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
-        window.location.assign(redirectUrl)
+        navigateTab(redirectTab, redirectUrl)
       } else {
+        redirectTab?.close()
         navigate('/dashboard')
       }
     } catch (error: unknown) {
+      redirectTab?.close()
       const err = error as { data?: { message?: string } }
       toast.error(err.data?.message || 'Failed to change password. Please try again.')
     }
+  }
+
+  if (isRedirecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-brand" />
+          <p className="text-gray-600">
+            {openedNewTab ? 'Continue in the new tab that just opened.' : 'Redirecting you, please wait...'}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
