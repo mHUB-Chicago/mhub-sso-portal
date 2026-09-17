@@ -53,13 +53,16 @@ export function AdminOnboardingHistoryDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<OnboardingFormData | null>(null);
   const draftIsExistingCompany = draft?.scenario === "existing_company";
-  // Only queried while editing an existing_company submission, for the
-  // AddonMembershipsStep's "Inherits {name}'s primary membership" message.
+  // Queried whenever viewing or editing an existing_company submission — used both to
+  // resolve the "Parent Company" name (formData.company is left blank for this scenario;
+  // only companyId is captured) and for the AddonMembershipsStep's "Inherits {name}'s
+  // primary membership" message while editing.
+  const isExistingCompanySubmission =
+    draftIsExistingCompany || data?.data?.submission?.formData.scenario === "existing_company";
   const { data: companiesData } = useGetCompaniesQuery(
     { limit: 500, active: "true" },
-    { skip: !draftIsExistingCompany }
+    { skip: !isExistingCompanySubmission }
   );
-  const draftCompanyName = companiesData?.data?.companies.find((co) => co.id === draft?.companyId)?.name;
 
   if (isLoading) {
     return (
@@ -84,10 +87,11 @@ export function AdminOnboardingHistoryDetailPage() {
 
   const canEdit = EDITABLE_STATUSES.has(submission.status);
   const formData = isEditing && draft ? draft : submission.formData;
-  const { company, user, skills, membershipPackage, addonMemberships, scenario } = formData;
+  const { company, user, skills, membershipPackage, addonMemberships, scenario, companyId } = formData;
   const isExistingCompany = scenario === "existing_company";
   const membershipPackageName =
     packagesData?.data?.packages.find((pkg) => pkg.id === membershipPackage)?.name ?? membershipPackage;
+  const parentCompanyName = companiesData?.data?.companies.find((co) => co.id === companyId)?.name;
 
   const startEditing = () => {
     setDraft(submission.formData);
@@ -210,9 +214,15 @@ export function AdminOnboardingHistoryDetailPage() {
 
       {isEditing && draft ? (
         <>
-          <div className="rounded-lg border p-5">
-            <CompanyDetailsStep value={draft.company} onChange={updateCompanyField} attributeOptions={attributeOptions} />
-          </div>
+          {draftIsExistingCompany ? (
+            <Section title="Company">
+              <Field label="Parent Company" value={parentCompanyName} />
+            </Section>
+          ) : (
+            <div className="rounded-lg border p-5">
+              <CompanyDetailsStep value={draft.company} onChange={updateCompanyField} attributeOptions={attributeOptions} />
+            </div>
+          )}
 
           <div className="rounded-lg border p-5">
             <PrimaryUserStep
@@ -229,7 +239,7 @@ export function AdminOnboardingHistoryDetailPage() {
           <div className="rounded-lg border p-5">
             {draftIsExistingCompany ? (
               <AddonMembershipsStep
-                companyName={draftCompanyName}
+                companyName={parentCompanyName}
                 values={draft.addonMemberships}
                 onChange={updateAddonMemberships}
               />
@@ -319,18 +329,24 @@ export function AdminOnboardingHistoryDetailPage() {
         </>
       ) : (
         <>
-          <Section title="Company Details">
-            <Field label="Name" value={company.name} />
-            <Field label="Business Email" value={company.email} />
-            <Field label="Website" value={company.website} />
-            <Field label="Size" value={company.size} />
-            <Field label="Founded" value={company.founded} />
-            <Field label="Industry" value={company.industry} />
-            <Field label="Incorporation" value={company.incorporation} />
-            <Field label="Funding Stage" value={company.fundingStage} />
-            <Field label="Problem" value={company.problem} />
-            <Field label="Target Market" value={company.targetMarket} />
-          </Section>
+          {isExistingCompany ? (
+            <Section title="Company">
+              <Field label="Parent Company" value={parentCompanyName} />
+            </Section>
+          ) : (
+            <Section title="Company Details">
+              <Field label="Name" value={company.name} />
+              <Field label="Business Email" value={company.email} />
+              <Field label="Website" value={company.website} />
+              <Field label="Size" value={company.size} />
+              <Field label="Founded" value={company.founded} />
+              <Field label="Industry" value={company.industry} />
+              <Field label="Incorporation" value={company.incorporation} />
+              <Field label="Funding Stage" value={company.fundingStage} />
+              <Field label="Problem" value={company.problem} />
+              <Field label="Target Market" value={company.targetMarket} />
+            </Section>
+          )}
 
           <Section title="Primary User">
             <Field label="Name" value={[user.firstName, user.lastName].filter(Boolean).join(" ")} />

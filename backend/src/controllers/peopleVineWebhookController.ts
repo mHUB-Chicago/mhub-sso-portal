@@ -112,14 +112,29 @@ export const handlePeopleVineWebhook = async (c: Context) => {
           }
         };
 
-        // Direct hit: customer_no matches a Company's own PV id (legacy/bulk-synced
-        // accounts, where a company-type PV customer is mirrored as both a Company and a
-        // login User under the same id — see syncPhaseUsers).
-        if (directCompany && !directCompany.onboardingPaymentAgreementAt) {
-          await prisma.company.update({
-            where: { id: directCompany.id },
-            data: { onboardingPaymentAgreementAt: new Date() },
+        // Direct hit: customer_no matches a Company's own PV id. This is now the common
+        // case for onboarding, not just legacy/bulk-synced accounts — a pending_membership
+        // User logs into PV's member portal AS their parent Company (see
+        // samlController.ts's resolveSamlIdentityEmail), so this survey submission could be
+        // on behalf of any of that company's still-pending members. Stamp the company
+        // itself, then cascade to every pending_membership User under it that isn't
+        // stamped yet (there's no way to tell which one actually submitted, since they all
+        // share the same PV login identity while pending).
+        if (directCompany) {
+          if (!directCompany.onboardingPaymentAgreementAt) {
+            await prisma.company.update({
+              where: { id: directCompany.id },
+              data: { onboardingPaymentAgreementAt: new Date() },
+            });
+          }
+          const pendingCompanyUsers = await prisma.user.findMany({
+            where: { companyId: directCompany.id, accountStatus: "pending_membership", onboardingPaymentAgreementAt: null },
           });
+          await Promise.all(
+            pendingCompanyUsers.map((u) =>
+              prisma.user.update({ where: { id: u.id }, data: { onboardingPaymentAgreementAt: new Date() } })
+            )
+          );
         }
 
         if (matchedUser) {

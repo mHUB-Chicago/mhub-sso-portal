@@ -73,8 +73,9 @@ export const createOnboardingSubmissionRecord = async (
 const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form/20611";
 // Matches the ServiceProvider seeded for PeopleVine's member portal (see seed.ts) —
 // looked up by entityId rather than hardcoding its DB id, since that id is
-// environment-specific.
-const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
+// environment-specific. Also used by samlController.ts to decide when a pending_membership
+// user's SAML identity should be swapped for their company's (see resolveSamlIdentityEmail).
+export const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
 
 // Shared with handleVerifyLogin (loginController.ts) — a pending_membership user who
 // logs in through ANY path (not just this email's link) should still land on this same
@@ -262,33 +263,20 @@ export const fetchActiveMembershipPackages = async (c: Context): Promise<{ id: s
     .map((m) => ({ id: String(m.id), name: m.title as string }));
 };
 
-// Add-on memberships (Type="add-on" per PV's own /memberships enum — a different kind
-// from the primary "subscription" plans above). For a person being added to an
-// existing_company, the primary membership is inherited from the company rather than
-// chosen here — this list is only ever additional/optional add-ons they might want.
-export const fetchActiveAddonMemberships = async (c: Context): Promise<{ id: string; name: string }[]> => {
-  const memberships: any[] = [];
-  let pageNumber = 1;
-  while (true) {
-    const { data, pagination } = await apiRequestWithPagination(c, {
-      tokenType: PeopleVineTokenType.USER_COMPANY,
-      endpoint: "/memberships",
-      method: "GET",
-      queryParams: {
-        Page_Size: "100",
-        Page_Number: String(pageNumber),
-        Type: "add-on",
-        Status: "active",
-      },
-    });
-    memberships.push(...data);
-    if (!pagination?.has_next_page) break;
-    pageNumber++;
-  }
-
-  return memberships
-    .filter((m) => m.title)
-    .map((m) => ({ id: String(m.id), name: m.title as string }));
+// Add-on memberships. For a person being added to an existing_company, the primary
+// membership is inherited from the company rather than chosen here — this list is only
+// ever additional/optional add-ons they might want. Sourced from mHub's own curated
+// "Add-on Subscription Types" list (managed on the admin Sync settings page, see
+// prisma.addonSubscriptionType / backend/src/index.ts /api/config/addon-subscription-types)
+// rather than PV's live /memberships?Type=add-on catalog — PV's add-on-typed products
+// didn't reliably reflect what staff actually offer, leaving this dropdown empty. This is
+// the same list already used to classify synced subscriptions into the addOns bucket
+// (see peopleVineServiceV2.ts), so it's already the source of truth for "what counts as
+// an add-on" at mHub.
+export const fetchActiveAddonMemberships = async (c: Context<AppType>): Promise<{ id: string; name: string }[]> => {
+  const prisma: PrismaClient = c.get("db");
+  const types = await prisma.addonSubscriptionType.findMany({ orderBy: { name: "asc" } });
+  return types.map((t) => ({ id: t.name, name: t.name }));
 };
 
 const toSubmissionDTO = (row: {
@@ -430,13 +418,13 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
             ],
           },
           orderBy: { createdAt: "desc" },
-          select: { mode: true, createdAt: true, matchedCompanyId: true, matchedUserId: true },
+          select: { id: true, mode: true, createdAt: true, matchedCompanyId: true, matchedUserId: true },
         })
       : [];
   // Most recent submission per target wins (findMany above is already ordered desc, so
   // the first match seen for a given id is kept).
-  const submissionByCompanyId = new Map<string, { mode: string; createdAt: Date }>();
-  const submissionByUserId = new Map<string, { mode: string; createdAt: Date }>();
+  const submissionByCompanyId = new Map<string, { id: string; mode: string; createdAt: Date }>();
+  const submissionByUserId = new Map<string, { id: string; mode: string; createdAt: Date }>();
   for (const s of submissions) {
     if (s.matchedCompanyId && !submissionByCompanyId.has(s.matchedCompanyId)) {
       submissionByCompanyId.set(s.matchedCompanyId, s);
@@ -454,6 +442,7 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       email: co.email,
       peopleVineId: co.peopleVineId,
       createdAt: co.createdAt,
+      submissionId: submissionByCompanyId.get(co.id)?.id ?? null,
       ...buildOnboardingProgress(co, submissionByCompanyId.get(co.id)),
     })),
     ...users.map((u) => ({
@@ -463,6 +452,7 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       email: u.email,
       peopleVineId: u.peopleVineId,
       createdAt: u.createdAt,
+      submissionId: submissionByUserId.get(u.id)?.id ?? null,
       ...buildOnboardingProgress(u, submissionByUserId.get(u.id)),
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -524,6 +514,7 @@ export const handleApplyOnboardingSubscription = async (c: Context<AppType>) => 
         email: updated.email,
         peopleVineId: updated.peopleVineId,
         createdAt: updated.createdAt,
+        submissionId: submission?.id ?? null,
         ...buildOnboardingProgress(updated, submission ?? undefined),
       },
     },
@@ -576,6 +567,7 @@ export const handleSkipOnboardingPayment = async (c: Context<AppType>) => {
         email: updated.email,
         peopleVineId: updated.peopleVineId,
         createdAt: updated.createdAt,
+        submissionId: submission?.id ?? null,
         ...buildOnboardingProgress(updated, submission ?? undefined),
       },
     },

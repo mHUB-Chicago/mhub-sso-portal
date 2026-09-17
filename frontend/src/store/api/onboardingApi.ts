@@ -118,6 +118,9 @@ export interface OnboardingInProcessRecord {
   // True when the "payment" step was set via the admin Skip action instead of a real
   // PV-confirmed payment.
   paymentSkipped: boolean
+  // The originating OnboardingSubmission's id, when still traceable — lets the UI link
+  // to the read-only submission summary (membership package + all other datapoints).
+  submissionId: string | null
 }
 
 // One PV "Attribute" that offers a fixed set of choices — matched by exact `name`

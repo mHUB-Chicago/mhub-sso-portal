@@ -206,6 +206,10 @@ export const OnboardingInProcessRecordSchema = z.object({
   // True when the "payment" step's timestamp was set by handleSkipOnboardingPayment
   // (admin override) rather than the real PV webhook — see the field's schema.prisma doc.
   paymentSkipped: z.boolean(),
+  // The originating OnboardingSubmission's id, when one can still be traced (via
+  // matchedCompanyId/matchedUserId) — lets the UI link to the read-only submission
+  // summary (membership package + all other captured datapoints) for this record.
+  submissionId: z.string().nullable(),
 });
 
 export const GetOnboardingInProcessResponseSchema = SuccessResponseSchema(

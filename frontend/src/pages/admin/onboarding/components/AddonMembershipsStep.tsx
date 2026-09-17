@@ -25,12 +25,14 @@ export const AddonMembershipsStep = ({ companyName, values, onChange }: AddonMem
       {isLoading ? (
         <div className="flex h-9 items-center gap-2 text-sm text-gray-500">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading add-ons from PeopleVine…
+          Loading add-ons…
         </div>
       ) : error ? (
-        <p className="text-xs text-red-500">Failed to load add-on memberships from PeopleVine.</p>
+        <p className="text-xs text-red-500">Failed to load add-on memberships.</p>
       ) : packages.length === 0 ? (
-        <p className="text-sm text-gray-400">No add-on memberships are currently configured in PeopleVine.</p>
+        <p className="text-sm text-gray-400">
+          No add-on memberships are configured yet — add some under Admin &gt; Sync &gt; Add-on Subscription Types.
+        </p>
       ) : (
         <MultiSelectDropdown
           id="addonMemberships"

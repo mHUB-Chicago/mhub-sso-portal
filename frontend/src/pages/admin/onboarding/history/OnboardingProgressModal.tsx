@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Check, Lock, Loader2, Building2, User as UserIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, Lock, Loader2, Building2, User as UserIcon, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  useApplyOnboardingSubscriptionMutation,
   useSkipOnboardingPaymentMutation,
   type OnboardingInProcessRecord,
 } from "@/store/api/onboardingApi";
@@ -15,7 +15,7 @@ const STEPS: { key: StepKey; label: string; waiting: string }[] = [
   { key: "invite", label: "Invitation Sent", waiting: "The onboarding link was generated. Waiting for the invitation email to be sent." },
   { key: "account", label: "Company Account Created in PV", waiting: "Waiting for the company account to be created in PeopleVine." },
   { key: "payment", label: "Payment & Agreement Completed", waiting: "Waiting on the member to complete the payment form and accept the agreement and terms." },
-  { key: "subscription", label: "Subscription Applied", waiting: "Waiting for an admin to apply the membership subscription to the company profile." },
+  { key: "subscription", label: "Subscription Applied", waiting: "Waiting for the PeopleVine sync to confirm the membership subscription is active." },
 ];
 
 const stepsFor = (record: OnboardingInProcessRecord) =>
@@ -31,9 +31,7 @@ interface OnboardingProgressModalProps {
 }
 
 export function OnboardingProgressModal({ record, open, onClose }: OnboardingProgressModalProps) {
-  const [applySubscription, { isLoading }] = useApplyOnboardingSubscriptionMutation();
   const [skipPayment, { isLoading: isSkipping }] = useSkipOnboardingPaymentMutation();
-  const [confirmingApply, setConfirmingApply] = useState(false);
   const [confirmingSkip, setConfirmingSkip] = useState(false);
 
   const steps = stepsFor(record);
@@ -43,22 +41,7 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
     else break;
   }
   const current = doneCount < steps.length ? steps[doneCount] : null;
-  const canApplySubscription = current?.key === "subscription";
   const canSkipPayment = current?.key === "payment";
-
-  const handleApply = async () => {
-    try {
-      await applySubscription({ type: record.type, id: record.id }).unwrap();
-      toast.success("Subscription marked as applied.");
-      setConfirmingApply(false);
-    } catch (err) {
-      const message =
-        err && typeof err === "object" && "data" in err
-          ? (err as { data?: { message?: string } }).data?.message
-          : undefined;
-      toast.error(message || "Failed to mark subscription as applied.");
-    }
-  };
 
   const handleSkipPayment = async () => {
     try {
@@ -197,6 +180,14 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
+          {record.submissionId && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/admin/onboarding/${record.submissionId}`}>
+                <FileText className="h-4 w-4 mr-1.5" />
+                View Summary
+              </Link>
+            </Button>
+          )}
           {canSkipPayment && !confirmingSkip && (
             <Button variant="outline" size="sm" onClick={() => setConfirmingSkip(true)}>
               Skip This Step
@@ -212,22 +203,6 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
               </Button>
               <Button size="sm" onClick={handleSkipPayment} disabled={isSkipping}>
                 {isSkipping ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
-              </Button>
-            </div>
-          )}
-          {canApplySubscription && !confirmingApply && (
-            <Button size="sm" onClick={() => setConfirmingApply(true)}>
-              Mark Subscription Applied
-            </Button>
-          )}
-          {confirmingApply && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Confirm the membership was applied in PV?</span>
-              <Button variant="outline" size="sm" onClick={() => setConfirmingApply(false)} disabled={isLoading}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={handleApply} disabled={isLoading}>
-                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
               </Button>
             </div>
           )}

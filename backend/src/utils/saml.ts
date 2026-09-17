@@ -93,6 +93,10 @@ export type IssueSamlResponseInput = {
   user: User,
   sessionId: string,
   relayState?: string | null;
+  // Overrides the asserted NameID/email — used to log a pending_membership user in as
+  // their parent Company's PV identity instead of their own (see
+  // samlController.ts's resolveSamlIdentityEmail). Defaults to user.email.
+  identityEmail?: string;
   idp: {
     entityId: string;
     certPem: string;
@@ -152,8 +156,8 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const destination = serviceProvider.acsUrl;
 
   const nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress';
-  const nameIdValue = user.email;
-  const email = user.email;
+  const nameIdValue = input.identityEmail ?? user.email;
+  const email = nameIdValue;
 
   const responseInResponseToAttr = samlRequest
     ? `InResponseTo="${escapeHtmlAttr(samlRequest.inResponseTo)}"`
