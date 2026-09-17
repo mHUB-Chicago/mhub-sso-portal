@@ -209,6 +209,7 @@ export const onboardingApi = createApi({
 
     getOnboardingSubmissionById: builder.query<SubmissionResponse, string>({
       query: (id) => `/onboarding/${id}`,
+      providesTags: ['OnboardingSubmissions'],
     }),
 
     updateOnboardingSubmission: builder.mutation<SubmissionResponse, { id: string; formData: OnboardingFormData }>({

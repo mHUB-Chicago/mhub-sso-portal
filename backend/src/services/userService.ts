@@ -195,8 +195,12 @@ export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInpu
 
 export const getUserByEmail = (c: Context, email: string): Promise<User | null> => {
   const prisma: PrismaClient = c.get("db");
+  // Only used by the login flow (handleStartLogin, handleForgotPassword,
+  // createLoginRequest) — those callers already gate on accountStatus/hasPortalAccess,
+  // so this can't filter on `active` without also blocking pending_membership users
+  // (who are inactive by definition until they complete onboarding).
   return prisma.user.findFirst({
-    where: { email, active: true },
+    where: { email },
   });
 }
 

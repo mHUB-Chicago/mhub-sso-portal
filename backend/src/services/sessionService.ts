@@ -17,7 +17,10 @@ export const getActiveSessionById = async (c: Context, sessionId: string): Promi
     include: { user: true },
   });
 
-  if (!session || session.revokedAt || session.expiresAt < new Date() || !session.user.active) {
+  // pending_membership users are inactive by definition until they complete onboarding,
+  // but still need an authenticated session to reach change-password/the payment form.
+  const userAllowed = session?.user.active || session?.user.role === 'ADMIN' || session?.user.accountStatus === 'pending_membership';
+  if (!session || session.revokedAt || session.expiresAt < new Date() || !userAllowed) {
     return null;
   }
   return session.user;
