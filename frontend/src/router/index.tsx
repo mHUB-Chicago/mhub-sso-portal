@@ -9,6 +9,7 @@ import { UnauthorizedPage } from '@/pages/unauthorized'
 import { NotFoundPage } from '@/pages/not-found'
 import { ForgotPasswordPage } from '@/pages/forgot-password'
 import { ChangePasswordPage } from '@/pages/change-password'
+import { AgreementPage } from '@/pages/agreement'
 import { AdminDashboardPage } from '@/pages/admin/dashboard'
 import { AdminUsersPage } from '@/pages/admin/users'
 import { AdminEditUserPage } from '@/pages/admin/users/edit'
@@ -76,6 +77,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <ChangePasswordPage />
+      </ProtectedRoute>
+    )
+  },
+  {
+    path: '/agreement',
+    element: (
+      <ProtectedRoute>
+        <AgreementPage />
       </ProtectedRoute>
     )
   },

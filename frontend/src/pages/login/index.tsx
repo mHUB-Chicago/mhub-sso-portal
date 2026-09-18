@@ -1,5 +1,5 @@
 import { useNavigate, Link } from 'react-router-dom'
-import { useStartLoginMutation, useVerifyLoginMutation } from '@/store/api/authApi'
+import { useStartLoginMutation, useVerifyLoginMutation, useGetMeQuery } from '@/store/api/authApi'
 import { useAppDispatch } from '@/store'
 import { loginSuccess } from '@/store/slices/authSlice'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
+import { openRedirectTab, getRedirectTab, getRedirectTabOpenedAt, clearRedirectTab } from '@/utils/redirectTab'
 
 type LoginStep = 'email' | 'password'
 
@@ -54,6 +55,21 @@ export function LoginPage() {
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
 
+  // While waiting on the PV tab, poll our own session instead of relying on PV's own
+  // post-submit page behavior (a different domain we don't control) — once the payment
+  // webhook lands, onboardingPaymentAgreementAt flips and we can bring the member back
+  // into the portal ourselves.
+  const { data: meData } = useGetMeQuery(undefined, { pollingInterval: 3000, skip: !(isRedirecting && openedNewTab) })
+  const meUser = meData?.data?.user
+  const isPendingMembership = meUser?.accountStatus === 'pending_membership'
+  const paymentCompleted = isPendingMembership && !!meUser?.onboardingPaymentAgreementAt
+
+  useEffect(() => {
+    if (!paymentCompleted) return
+    const timer = setTimeout(() => navigate('/dashboard'), 1500)
+    return () => clearTimeout(timer)
+  }, [paymentCompleted, navigate])
+
   const emailForm = useForm<EmailFormData>()
   const passwordForm = useForm<PasswordFormData>()
 
@@ -63,18 +79,6 @@ export function LoginPage() {
   // synchronously, so the second call is blocked immediately regardless of render timing.
   const isSubmittingEmailRef = useRef(false)
   const isSubmittingPasswordRef = useRef(false)
-  // Set synchronously in the raw form onSubmit, below — react-hook-form's
-  // handleSubmit(fn) wraps `fn` behind at least one microtask (its internal
-  // validation promise), so window.open() called from inside
-  // handlePasswordSubmit itself is no longer considered part of the original
-  // click, and browsers silently drop or refuse to navigate it. Opening it in
-  // the raw DOM onSubmit handler keeps it in the same tick as the click.
-  const redirectTabRef = useRef<Window | null>(null)
-  // Timestamp the tab was opened — navigateTab waits out the rest of
-  // MIN_TAB_LOAD_MS from this point before redirecting it, so the PV payment
-  // form page it opened with has time to actually render before we hijack it
-  // to the SAML relay URL.
-  const redirectTabOpenedAtRef = useRef(0)
 
   const handleEmailSubmit = async (data: EmailFormData) => {
     if (isSubmittingEmailRef.current) return
@@ -96,13 +100,10 @@ export function LoginPage() {
   }
 
   // Points an already-open tab at `url` once we know it, or falls back to a same-tab
-  // redirect if the tab never opened (popup blocked). Must only be called with a tab
-  // that was opened synchronously inside the original click/submit gesture — a
-  // window.open() called after an `await` is treated as an untrusted popup by most
-  // browsers and gets silently blocked or force-closed.
+  // redirect if the tab never opened (popup blocked).
   const navigateTab = async (tab: Window | null, url: string) => {
     if (tab) {
-      const elapsed = Date.now() - redirectTabOpenedAtRef.current
+      const elapsed = Date.now() - getRedirectTabOpenedAt()
       const remaining = MIN_TAB_LOAD_MS - elapsed
       if (remaining > 0) {
         await new Promise((resolve) => setTimeout(resolve, remaining))
@@ -112,13 +113,14 @@ export function LoginPage() {
     } else {
       window.location.assign(url)
     }
+    clearRedirectTab()
     setIsRedirecting(true)
   }
 
   const handlePasswordSubmit = async (data: PasswordFormData) => {
     if (isSubmittingPasswordRef.current) return
     isSubmittingPasswordRef.current = true
-    const redirectTab = redirectTabRef.current
+    const redirectTab = getRedirectTab()
     try {
       const result = await verifyLogin({
         request_id: requestId,
@@ -143,13 +145,15 @@ export function LoginPage() {
         },
         redirectUrl,
         sessionId,
+        membershipAgreementSignedAt: user.membershipAgreementSignedAt,
+        isPendingMembership: user.accountStatus === 'pending_membership',
       }))
 
       // Check if user needs to reset password
       if (user.mustResetPassword) {
-        // Not needed yet — change-password will open its own tab once it knows
-        // whether a redirect actually follows.
-        redirectTab?.close()
+        // Deliberately NOT closing/clearing the tab here — change-password reuses
+        // this same one (getRedirectTab()) instead of opening a second one, so the
+        // flow only ever opens one tab total instead of one per step.
         // Preserve tx (SAML flow) and returnTo (plain post-login redirect, e.g. the
         // onboarding payment form gate) so change-password can send them on afterward —
         // dropping either here would strand a first-time login at /dashboard instead.
@@ -158,6 +162,21 @@ export function LoginPage() {
         if (returnToParam) changePwdParams.set('returnTo', returnToParam)
         const changePwdQuery = changePwdParams.toString()
         navigate(changePwdQuery ? `/change-password?${changePwdQuery}` : '/change-password')
+        return
+      }
+
+      // Membership Agreement gate — additive, purely local record-keeping (see
+      // membershipAgreementService.ts). Doesn't touch onboardingPaymentAgreementAt or
+      // anything about the PV redirect below; only pending members who haven't signed
+      // yet get routed here first, exactly once.
+      if (user.accountStatus === 'pending_membership' && !user.membershipAgreementSignedAt) {
+        // Deliberately NOT closing/clearing the tab here — /agreement reuses this
+        // same one instead of opening a second one.
+        const agreementParams = new URLSearchParams()
+        if (txQueryParam) agreementParams.set('tx', txQueryParam)
+        if (returnToParam) agreementParams.set('returnTo', returnToParam)
+        const agreementQuery = agreementParams.toString()
+        navigate(agreementQuery ? `/agreement?${agreementQuery}` : '/agreement')
         return
       }
 
@@ -170,10 +189,12 @@ export function LoginPage() {
         await navigateTab(redirectTab, redirectUrl)
       } else {
         redirectTab?.close()
+        clearRedirectTab()
         navigate('/dashboard')
       }
     } catch (error: unknown) {
       redirectTab?.close()
+      clearRedirectTab()
       const err = error as { data?: { message?: string }; message?: string }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
     } finally {
@@ -193,7 +214,13 @@ export function LoginPage() {
         <div className="flex flex-col items-center gap-4 text-center">
           <Loader2 className="h-8 w-8 animate-spin text-brand" />
           <p className="text-gray-600">
-            {openedNewTab ? 'Continue in the new tab that just opened.' : 'Redirecting you, please wait...'}
+            {paymentCompleted
+              ? 'Payment completed! Taking you back to your dashboard...'
+              : isPendingMembership && openedNewTab
+                ? "Complete the payment form in the new tab that just opened — we'll bring you back here automatically once it's done."
+                : openedNewTab
+                  ? 'Continue in the new tab that just opened.'
+                  : 'Redirecting you, please wait...'}
           </p>
         </div>
       </div>
@@ -266,14 +293,14 @@ export function LoginPage() {
           <form
             onSubmit={(e) => {
               // Must run before passwordForm.handleSubmit's own async validation —
-              // see redirectTabRef above.
+              // window.open() called after an `await` is treated as an untrusted
+              // popup by most browsers and gets silently blocked or force-closed.
               // Opens straight at the PV payment form (rather than about:blank) so the
               // tab shows the real destination immediately — it gets pointed at the
               // actual SAML relay URL once the request resolves, same as before, this
               // just changes what's visible while that's in flight. Matches the
               // backend's ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
-              redirectTabRef.current = window.open('https://member.mhubchicago.com/form/20611', '_blank')
-              redirectTabOpenedAtRef.current = Date.now()
+              openRedirectTab('https://member.mhubchicago.com/form/20611')
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
             }}
             className="space-y-6"

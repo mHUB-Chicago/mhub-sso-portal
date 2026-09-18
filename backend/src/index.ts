@@ -10,6 +10,7 @@ import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
 import onboardingRoutes from "@/routes/onboarding";
 import publicOnboardingRoutes from "@/routes/publicOnboarding";
+import membershipAgreementRoutes from "@/routes/membershipAgreement";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
 // import seedRoute from "@/database/seed";
@@ -67,6 +68,7 @@ app.route("/api/user", userRoutes);
 app.route("/api/company", companyRoutes);
 app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/public-onboarding", publicOnboardingRoutes);
+app.route("/api/membership-agreement", membershipAgreementRoutes);
 app.route("/api/provider", serviceProviderRoutes);
 
 app.use("/webhook/*", corsMiddleware, databaseMiddleware);

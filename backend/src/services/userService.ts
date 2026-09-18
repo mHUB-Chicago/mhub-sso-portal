@@ -85,6 +85,10 @@ export interface UpdateUserInput {
   memberSource?: string;
   memberSourceCompany?: string | null;
   accountStatus?: string;
+  // Membership Agreement e-signature — additive, see membershipAgreementService.ts.
+  membershipAgreementSignedAt?: Date;
+  membershipAgreementSignedName?: string;
+  membershipAgreementPdf?: string;
 }
 
 export const getPaginatedUsers = async (c: Context, input: GetPaginatedUsersInput): Promise<GetPaginatedUsersResult> => {
@@ -278,7 +282,7 @@ export const createUser = async (c: Context, createUserInput: CreateUserInput): 
 
 export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): Promise<User> => {
   const prisma: PrismaClient = c.get("db");
-  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus } = updateUserInput;
+  const { id, name, email, username, password, role, companyId, peopleVineId, emailVerified, mustResetPassword, primaryMembership, primaryMembershipStatus, addOns, profilePhoto, phone, address, city, state, zipCode, cardStatus, active, memberSource, memberSourceCompany, accountStatus, membershipAgreementSignedAt, membershipAgreementSignedName, membershipAgreementPdf } = updateUserInput;
   const hashedPassword = password ? await hashPassword(password) : undefined;
 
   // Same reasoning as updateCompany — auto-complete the onboarding tracker's
@@ -322,6 +326,9 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       memberSourceCompany,
       accountStatus,
       ...(onboardingSubscriptionAppliedAt ? { onboardingSubscriptionAppliedAt } : {}),
+      membershipAgreementSignedAt,
+      membershipAgreementSignedName,
+      membershipAgreementPdf,
     },
   });
 }

@@ -7,6 +7,7 @@ import {
   ForgotPasswordResponseSchema,
 } from '../../../../common/schemas/login'
 import { GetMyUserResponseSchema } from '../../../../common/schemas/user'
+import { SignMembershipAgreementResponseSchema } from '../../../../common/schemas/membershipAgreement'
 import z from 'zod'
 
 // Request types
@@ -27,12 +28,19 @@ interface ForgotPasswordRequest {
   email: string
 }
 
+interface SignMembershipAgreementRequest {
+  fullLegalName: string
+  signatureType: 'type' | 'draw'
+  signatureImageDataUrl?: string
+}
+
 // Response types inferred from schemas
 type StartLoginResponse = z.infer<typeof StartLoginResponseSchema>
 type VerifyLoginResponse = z.infer<typeof VerifyLoginResponseSchema>
 type ChangePasswordResponse = z.infer<typeof ChangePasswordResponseSchema>
 type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponseSchema>
 type GetMyUserResponse = z.infer<typeof GetMyUserResponseSchema>
+type SignMembershipAgreementResponse = z.infer<typeof SignMembershipAgreementResponseSchema>
 
 // Custom base query using apiFetch
 const customBaseQuery = async (args: {
@@ -115,6 +123,17 @@ export const authApi = createApi({
         schema: GetMyUserResponseSchema,
       }),
     }),
+
+    // Sign the mHUB Membership Agreement (requires auth) — additive, unrelated to the
+    // existing PV payment/agreement tracking. See common/schemas/membershipAgreement.ts.
+    signMembershipAgreement: builder.mutation<SignMembershipAgreementResponse, SignMembershipAgreementRequest>({
+      query: (body) => ({
+        path: 'membership-agreement/sign',
+        method: 'POST',
+        body,
+        schema: SignMembershipAgreementResponseSchema,
+      }),
+    }),
   }),
 })
 
@@ -125,4 +144,5 @@ export const {
   useForgotPasswordMutation,
   useGetMeQuery,
   useLazyGetMeQuery,
+  useSignMembershipAgreementMutation,
 } = authApi

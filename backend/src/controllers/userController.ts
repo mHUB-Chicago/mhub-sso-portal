@@ -58,6 +58,7 @@ export const handleGetUserById = async (c: Context<AppType>) => {
       company,
       allowedServiceProviders: allowedServiceProviders,
       enabledServiceProviders: enabledServiceProviders,
+      membershipAgreementPdf: user.membershipAgreementPdf,
     },
   });
   return c.json(response);

@@ -26,6 +26,17 @@ export const UserSchema = z.object({
   memberSource: z.string().default('subscription'),
   memberSourceCompany: z.string().nullable(),
   membershipStatus: z.string().optional(),
+  // "pending_membership" | "membership-removed" | "active" — lets the frontend poll
+  // /user/me during the onboarding payment redirect to detect completion without
+  // relying on PeopleVine's own post-submit page behavior (outside our control).
+  accountStatus: z.string(),
+  onboardingPaymentAgreementAt: z.coerce.date().nullable().transform(d => d ? d.toISOString() : null),
+  // Membership Agreement e-signature — additive, unrelated to the PV-driven fields
+  // above. membershipAgreementPdf (the signed PDF itself, large) is deliberately left
+  // off this shared schema — it's only added to GetUserResponseSchema below, so it
+  // isn't fetched/serialized for every row in a paginated admin user list.
+  membershipAgreementSignedAt: z.coerce.date().nullable().transform(d => d ? d.toISOString() : null),
+  membershipAgreementSignedName: z.string().nullable(),
   createdAt: z.coerce.date().transform(d => d.toISOString()),
   updatedAt: z.coerce.date().transform(d => d.toISOString()),
 });
@@ -73,6 +84,10 @@ export const GetUserResponseSchema = SuccessResponseSchema(z.object({
   company: CompanySchema,
   allowedServiceProviders: z.array(ServiceProviderSchema), // Company level allowed service providers
   enabledServiceProviders: z.array(ServiceProviderSchema), // User level enabled service providers, always a subset of allowedServiceProviderIds
+  // The signed Membership Agreement PDF (base64 data URI) — kept off the shared
+  // UserSchema (see there) since this is only needed on this single-user detail
+  // fetch, not the paginated user list.
+  membershipAgreementPdf: z.string().nullable(),
 }));
 
 export const UpdateUserRequestSchema = z.object({
