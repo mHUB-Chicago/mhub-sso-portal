@@ -239,7 +239,7 @@ const finalizeSubmissionPushToPeopleVine = async (
 
   const resolutionNote =
     formData.scenario === "existing_company" && !result.linkedViaMembershipCard
-      ? "No active PeopleVine membership card found for this company — the new user was linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
+      ? "Could not attach the new user to the company's PeopleVine membership (no active card found, or that card's membership type doesn't allow additional members) — they were linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
       : null;
 
   return prisma.onboardingSubmission.update({

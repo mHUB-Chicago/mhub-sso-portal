@@ -382,25 +382,36 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     const membershipCardId = companyPvId ? await pvFindActiveMembershipCardId(c, companyPvId) : null;
 
     if (membershipCardId) {
-      const subMember = await pvAddSubMember(c, membershipCardId, companyPvId!, {
-        email: formData.user.email,
-        firstName: formData.user.firstName,
-        lastName: formData.user.lastName,
-        companyTitle: formData.user.title,
-      });
-      await pvUpdateAccountProfile(c, subMember.id, {
-        birthday: formData.user.birthday,
-        gender: formData.user.gender,
-        address: formData.user.address,
-        attributes: userAttributes,
-        source: ONBOARDING_SOURCE_TAGS.personPending,
-      });
-      return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true, companyEmail: null };
+      try {
+        const subMember = await pvAddSubMember(c, membershipCardId, companyPvId!, {
+          email: formData.user.email,
+          firstName: formData.user.firstName,
+          lastName: formData.user.lastName,
+          companyTitle: formData.user.title,
+        });
+        await pvUpdateAccountProfile(c, subMember.id, {
+          birthday: formData.user.birthday,
+          gender: formData.user.gender,
+          address: formData.user.address,
+          attributes: userAttributes,
+          source: ONBOARDING_SOURCE_TAGS.personPending,
+        });
+        return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true, companyEmail: null };
+      } catch (e) {
+        // Some membership types/tiers reject Add Sub Member outright (PV: "This
+        // membership does not allow adding additional members") even though the card
+        // genuinely belongs to this company — a plan-level restriction, not something
+        // wrong with our request. Fall through to the same standalone-customer
+        // fallback used when there's no active card at all, rather than failing the
+        // whole submission over something staff can't fix from here anyway.
+        console.warn(`[onboarding] Add Sub Member failed for membership card ${membershipCardId}, falling back to standalone registration:`, e);
+      }
     }
 
     // No active PV membership card found for this company (or it has no PV record at
-    // all yet) — fall back to a standalone customer, best-effort linked by name only.
-    // The caller records a resolutionNote so staff know to attach it manually in PV.
+    // all yet), or Add Sub Member was rejected by PV for the one that was found — fall
+    // back to a standalone customer, best-effort linked by name only. The caller
+    // records a resolutionNote so staff know to attach it manually in PV.
     const user = await pvRegisterCustomer(c, {
       email: formData.user.email,
       firstName: formData.user.firstName,
