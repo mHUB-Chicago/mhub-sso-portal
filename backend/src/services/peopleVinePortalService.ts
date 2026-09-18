@@ -277,7 +277,11 @@ const pvAddSubMember = async (
     phoneCountryCode?: string;
     address?: OnboardingFormData["user"]["address"];
   }
-): Promise<PvRegisteredCustomer> => {
+  // Add Sub Member returns a SubMembershipCardDTO (the new membership CARD it just
+  // created), not the customer directly — its own `id` is the card's id. The actual
+  // PV customer id to use everywhere else (PV.On_Behalf_Of for the profile PATCH,
+  // and the id we persist as the local User's peopleVineId) is `customer_id`.
+): Promise<{ customer_id: number; email: string; first_name: string; last_name: string }> => {
   // PV's own "Assign Person" Control Panel action succeeds against this same endpoint
   // with the same minimal identity fields, so the 406 "Object reference not set to an
   // instance of an object" crash we saw from our bare-minimum payload (type/email/
@@ -414,14 +418,14 @@ export const pushOnboardingSubmissionToPeopleVine = async (
           phoneCountryCode: formData.user.phoneCountryCode,
           address: formData.user.address,
         });
-        await pvUpdateAccountProfile(c, subMember.id, {
+        await pvUpdateAccountProfile(c, subMember.customer_id, {
           birthday: formData.user.birthday,
           gender: formData.user.gender,
           address: formData.user.address,
           attributes: userAttributes,
           source: ONBOARDING_SOURCE_TAGS.personPending,
         });
-        return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true, companyEmail: null };
+        return { companyPvCustomerId: null, userPvCustomerId: String(subMember.customer_id), linkedViaMembershipCard: true, companyEmail: null };
       } catch (e) {
         // Some membership types/tiers reject Add Sub Member outright (PV: "This
         // membership does not allow adding additional members") even though the card
