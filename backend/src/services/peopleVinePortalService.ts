@@ -266,11 +266,16 @@ const pvFindActiveMembershipCardId = async (c: Context, companyCustomerId: numbe
 const pvAddSubMember = async (
   c: Context,
   membershipCardId: number,
+  companyCustomerId: number,
   input: { email: string; firstName: string; lastName: string; companyName?: string; companyTitle?: string }
 ): Promise<PvRegisteredCustomer> => {
   return pvPortalRequest(c, {
     method: "POST",
     endpoint: `/account/memberships/${membershipCardId}/members`,
+    // PV rejects this endpoint with a 406 "Invalid token type... please use the
+    // 'PV.On_Behalf_Of' header" without this — same requirement as the List
+    // Memberships lookup above, acting on behalf of the company whose card this is.
+    onBehalfOfCustomerId: companyCustomerId,
     body: {
       type: "customer",
       email: input.email,
@@ -377,7 +382,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     const membershipCardId = companyPvId ? await pvFindActiveMembershipCardId(c, companyPvId) : null;
 
     if (membershipCardId) {
-      const subMember = await pvAddSubMember(c, membershipCardId, {
+      const subMember = await pvAddSubMember(c, membershipCardId, companyPvId!, {
         email: formData.user.email,
         firstName: formData.user.firstName,
         lastName: formData.user.lastName,
