@@ -383,6 +383,13 @@ export interface OnboardingPvPushResult {
 export interface PushOnboardingSubmissionOptions {
   // existing_company scenario: the local Company's already-known PV customer id.
   existingCompanyPeopleVineId?: string | null;
+  // existing_company scenario: the local Company's name, stamped onto the new sub
+  // member's PV `company_name` field. The sync engine (peopleVineService.ts's syncOne)
+  // resolves a non-rep member's company by matching this exact string — Add Sub Member
+  // never sets it on its own, so without this the new person's PV customer_no ends up
+  // with a blank company_name and syncOne's `No company found for X — sub-member or
+  // inactive, skipping` branch permanently skips them, leaving them stuck inactive.
+  existingCompanyName?: string | null;
   // new_company scenario: a PV company customer id from a previous, partially-failed
   // Approve attempt. When set, registration of the company customer is skipped
   // entirely and this id is reused, so a retry never creates a second, duplicate
@@ -400,7 +407,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
   options: PushOnboardingSubmissionOptions = {}
 ): Promise<OnboardingPvPushResult> => {
   assertPeopleVineWritesEnabled(c);
-  const { existingCompanyPeopleVineId, resumeCompanyPvCustomerId, onCompanyCreated } = options;
+  const { existingCompanyPeopleVineId, existingCompanyName, resumeCompanyPvCustomerId, onCompanyCreated } = options;
   const userAttributes = buildUserAttributes(formData);
 
   if (formData.scenario === "existing_company") {
@@ -413,6 +420,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
           email: formData.user.email,
           firstName: formData.user.firstName,
           lastName: formData.user.lastName,
+          companyName: existingCompanyName ?? undefined,
           companyTitle: formData.user.title,
           phone: formData.user.phone,
           phoneCountryCode: formData.user.phoneCountryCode,
@@ -452,6 +460,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       birthday: formData.user.birthday,
       gender: formData.user.gender,
       address: formData.user.address,
+      companyName: existingCompanyName ?? undefined,
       companyTitle: formData.user.title,
       attributes: userAttributes,
       source: ONBOARDING_SOURCE_TAGS.personPending,

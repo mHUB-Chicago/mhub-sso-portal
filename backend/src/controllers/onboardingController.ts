@@ -150,6 +150,7 @@ const finalizeSubmissionPushToPeopleVine = async (
 
   let targetCompanyId: string;
   let existingCompanyPeopleVineId: string | null = null;
+  let existingCompanyName: string | null = null;
   if (formData.scenario === "existing_company") {
     const existingCompany = await prisma.company.findUnique({ where: { id: formData.companyId } });
     if (!existingCompany) {
@@ -157,12 +158,14 @@ const finalizeSubmissionPushToPeopleVine = async (
     }
     targetCompanyId = existingCompany.id;
     existingCompanyPeopleVineId = existingCompany.peopleVineId;
+    existingCompanyName = existingCompany.name;
   } else {
     targetCompanyId = ""; // created below once we have the PV push result
   }
 
   const result = await pushOnboardingSubmissionToPeopleVine(c, formData, {
     existingCompanyPeopleVineId,
+    existingCompanyName,
     resumeCompanyPvCustomerId: row.pvCompanyCustomerId,
     onCompanyCreated: async (companyPvCustomerId) => {
       await prisma.onboardingSubmission.update({
