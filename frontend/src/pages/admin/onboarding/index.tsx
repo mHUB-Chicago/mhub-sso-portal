@@ -19,6 +19,7 @@ import { PrimaryUserStep } from "./components/PrimaryUserStep";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
 import { AddonMembershipsStep } from "./components/AddonMembershipsStep";
 import { SkillsStep } from "./components/SkillsStep";
+import { AgreementInfoStep } from "./components/AgreementInfoStep";
 import { NextStepsStep } from "./components/NextStepsStep";
 import type {
   Address,
@@ -30,7 +31,7 @@ import type {
   SkillsDetails,
 } from "./types";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 // RTK Query's `.unwrap()` rejects with `{ status, data }`, not an `Error` — `err
 // instanceof Error` is always false for it, so the real backend message (e.g. "Selected
@@ -259,6 +260,8 @@ const OnboardingPage = () => {
           />
         );
       case 5:
+        return <AgreementInfoStep />;
+      case 6:
         return <NextStepsStep mode={formData.mode} isSubmitting={isSubmitting} onSubmit={handleSubmit} />;
       default:
         return null;

@@ -30,11 +30,7 @@ export function ChangePasswordPage() {
       window.history.replaceState(null, '', window.location.pathname)
     }
   }, [])
-  const {
-    redirectUrl,
-    membershipAgreementSignedAt,
-    isPendingMembership: wasPendingMembershipAtLogin,
-  } = useAppSelector(state => state.auth)
+  const { redirectUrl } = useAppSelector(state => state.auth)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -92,19 +88,6 @@ export function ChangePasswordPage() {
     try {
       await changePassword({ password: data.password }).unwrap()
       toast.success('Password changed successfully!')
-
-      // Membership Agreement gate — additive, doesn't touch the PV payment/agreement
-      // tracking below. See the same check in login/index.tsx.
-      if (wasPendingMembershipAtLogin && !membershipAgreementSignedAt) {
-        // Deliberately NOT closing/clearing the tab here — /agreement reuses this
-        // same one instead of opening a second one.
-        const agreementParams = new URLSearchParams()
-        if (txQueryParam) agreementParams.set('tx', txQueryParam)
-        if (returnToParam) agreementParams.set('returnTo', returnToParam)
-        const agreementQuery = agreementParams.toString()
-        navigate(agreementQuery ? `/agreement?${agreementQuery}` : '/agreement')
-        return
-      }
 
       // Handle SAML flow or regular navigation
       if (txQueryParam) {

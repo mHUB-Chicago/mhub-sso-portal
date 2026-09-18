@@ -165,21 +165,6 @@ export function LoginPage() {
         return
       }
 
-      // Membership Agreement gate — additive, purely local record-keeping (see
-      // membershipAgreementService.ts). Doesn't touch onboardingPaymentAgreementAt or
-      // anything about the PV redirect below; only pending members who haven't signed
-      // yet get routed here first, exactly once.
-      if (user.accountStatus === 'pending_membership' && !user.membershipAgreementSignedAt) {
-        // Deliberately NOT closing/clearing the tab here — /agreement reuses this
-        // same one instead of opening a second one.
-        const agreementParams = new URLSearchParams()
-        if (txQueryParam) agreementParams.set('tx', txQueryParam)
-        if (returnToParam) agreementParams.set('returnTo', returnToParam)
-        const agreementQuery = agreementParams.toString()
-        navigate(agreementQuery ? `/agreement?${agreementQuery}` : '/agreement')
-        return
-      }
-
       // Handle SAML flow or regular navigation
       if (txQueryParam) {
         await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
