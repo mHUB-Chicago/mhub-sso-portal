@@ -267,8 +267,28 @@ const pvAddSubMember = async (
   c: Context,
   membershipCardId: number,
   companyCustomerId: number,
-  input: { email: string; firstName: string; lastName: string; companyName?: string; companyTitle?: string }
+  input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+    companyTitle?: string;
+    phone?: string;
+    phoneCountryCode?: string;
+    address?: OnboardingFormData["user"]["address"];
+  }
 ): Promise<PvRegisteredCustomer> => {
+  // PV's own "Assign Person" Control Panel action succeeds against this same endpoint
+  // with the same minimal identity fields, so the 406 "Object reference not set to an
+  // instance of an object" crash we saw from our bare-minimum payload (type/email/
+  // name/password only) is suspected to come from `address`/`mobile` being entirely
+  // absent from the request rather than present-but-empty — sending them explicitly
+  // (even blank) mirrors what a real form submission would always include.
+  const { street, city, state, zip, country } = input.address ?? {};
+  const mobile =
+    input.phone && input.phoneCountryCode
+      ? { country_code: input.phoneCountryCode, number: input.phone }
+      : undefined;
   return pvPortalRequest(c, {
     method: "POST",
     endpoint: `/account/memberships/${membershipCardId}/members`,
@@ -282,6 +302,8 @@ const pvAddSubMember = async (
       first_name: input.firstName,
       last_name: input.lastName,
       password: crypto.randomUUID(),
+      address: { address: street ?? "", address2: "", address3: "", city: city ?? "", state: state ?? "", zip_code: zip ?? "", country: country ?? "" },
+      mobile: mobile ?? { country_code: "", number: "" },
       ...(input.companyName ? { company_name: input.companyName } : {}),
       ...(input.companyTitle ? { company_title: input.companyTitle } : {}),
     },
@@ -388,6 +410,9 @@ export const pushOnboardingSubmissionToPeopleVine = async (
           firstName: formData.user.firstName,
           lastName: formData.user.lastName,
           companyTitle: formData.user.title,
+          phone: formData.user.phone,
+          phoneCountryCode: formData.user.phoneCountryCode,
+          address: formData.user.address,
         });
         await pvUpdateAccountProfile(c, subMember.id, {
           birthday: formData.user.birthday,
