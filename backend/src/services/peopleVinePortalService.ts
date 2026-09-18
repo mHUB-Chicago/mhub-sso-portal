@@ -404,7 +404,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
         // wrong with our request. Fall through to the same standalone-customer
         // fallback used when there's no active card at all, rather than failing the
         // whole submission over something staff can't fix from here anyway.
-        console.warn(`[onboarding] Add Sub Member failed for membership card ${membershipCardId}, falling back to standalone registration:`, e);
+        console.warn(`[onboarding] Add Sub Member failed for membership card ${membershipCardId}, falling back to standalone registration: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
