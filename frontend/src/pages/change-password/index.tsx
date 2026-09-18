@@ -30,11 +30,13 @@ export function ChangePasswordPage() {
       window.history.replaceState(null, '', window.location.pathname)
     }
   }, [])
-  // isPendingMembership is already in Redux by the time this page mounts — set by
-  // login's mustResetPassword branch or by forgot-password's verifyLogin dispatch —
-  // so it's available synchronously for the tab-open gate below, same reasoning as
-  // login/index.tsx's isPendingMembershipHint.
-  const { redirectUrl, isPendingMembership } = useAppSelector(state => state.auth)
+  // Renamed from the Redux field to avoid colliding with the meUser-derived
+  // isPendingMembership below (a different value, used only for the post-redirect
+  // polling) — this one is set by login's mustResetPassword branch or by
+  // forgot-password's verifyLogin dispatch, and is available synchronously at submit
+  // time for the tab-open gate, same reasoning as login/index.tsx's
+  // isPendingMembershipHint.
+  const { redirectUrl, isPendingMembership: isPendingMembershipHint } = useAppSelector(state => state.auth)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -159,7 +161,7 @@ export function ChangePasswordPage() {
             // browsers and gets silently blocked or force-closed.
             // Only opens when it'll actually be used (see the same reasoning in
             // login/index.tsx) — never for a regular active-member password reset.
-            if (!getRedirectTab() && (txQueryParam || returnToParam || isPendingMembership)) {
+            if (!getRedirectTab() && (txQueryParam || returnToParam || isPendingMembershipHint)) {
               // Opens straight at the PV payment form (rather than about:blank) so
               // the tab shows the real destination immediately — it gets pointed at
               // the actual SAML relay URL once the request resolves, same as
