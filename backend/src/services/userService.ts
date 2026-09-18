@@ -208,8 +208,13 @@ export const getUserByEmail = (c: Context, email: string): Promise<User | null> 
   // (who are inactive by definition until they complete onboarding). Also matches
   // billingContactEmail so a company's AP/finance contact can log into the same
   // account to complete onboarding payment instead of the primary user.
+  // Normalized the same way createUser/updateUser store both fields (lowercased,
+  // trimmed) — the User.email column has no case-insensitive collation, so an
+  // as-typed lookup here silently misses a user whose casing differs even slightly
+  // from what's stored, which reads to them as "wrong credentials" on login.
+  const normalizedEmail = email.toLowerCase().trim();
   return prisma.user.findFirst({
-    where: { OR: [{ email }, { billingContactEmail: email }] },
+    where: { OR: [{ email: normalizedEmail }, { billingContactEmail: normalizedEmail }] },
   });
 }
 

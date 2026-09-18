@@ -71,8 +71,10 @@ export function ChangePasswordPage() {
 
   const password = watch('password')
 
-  // Points an already-open tab at `url` once we know it, or falls back to a same-tab
-  // redirect if the tab never opened (popup blocked) — see login/index.tsx's navigateTab.
+  // Closes the fake tab once it's been shown for MIN_TAB_LOAD_MS, then opens a brand
+  // new tab pointed at the real (SAML) URL — see login/index.tsx's navigateTab for why
+  // (keeps the fake tab and the real one as separate windows) and its popup-blocked
+  // fallback (window.open() here isn't a direct continuation of the original click).
   const navigateTab = async (tab: Window | null, url: string) => {
     if (tab) {
       const elapsed = Date.now() - getRedirectTabOpenedAt()
@@ -80,8 +82,13 @@ export function ChangePasswordPage() {
       if (remaining > 0) {
         await new Promise((resolve) => setTimeout(resolve, remaining))
       }
-      tab.location.href = url
-      setOpenedNewTab(true)
+      tab.close()
+      const realTab = window.open(url, '_blank')
+      if (realTab) {
+        setOpenedNewTab(true)
+      } else {
+        window.location.assign(url)
+      }
     } else {
       window.location.assign(url)
     }

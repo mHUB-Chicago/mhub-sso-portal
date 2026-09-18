@@ -104,8 +104,14 @@ export function LoginPage() {
     }
   }
 
-  // Points an already-open tab at `url` once we know it, or falls back to a same-tab
-  // redirect if the tab never opened (popup blocked).
+  // Closes the fake tab once it's been shown for MIN_TAB_LOAD_MS, then opens a brand
+  // new tab pointed at the real (SAML) URL — the fake tab and the real one are never
+  // the same window, so nothing SAML-related runs against the fake tab in the
+  // background while it's up. Falls back to a same-tab redirect if there was no fake
+  // tab to begin with, or if this second window.open() gets popup-blocked — a fresh
+  // window.open() called here isn't a direct synchronous continuation of the original
+  // click (it's after the verify request + this delay), so most browsers may block it
+  // even though the first one succeeded.
   const navigateTab = async (tab: Window | null, url: string) => {
     if (tab) {
       const elapsed = Date.now() - getRedirectTabOpenedAt()
@@ -113,8 +119,13 @@ export function LoginPage() {
       if (remaining > 0) {
         await new Promise((resolve) => setTimeout(resolve, remaining))
       }
-      tab.location.href = url
-      setOpenedNewTab(true)
+      tab.close()
+      const realTab = window.open(url, '_blank')
+      if (realTab) {
+        setOpenedNewTab(true)
+      } else {
+        window.location.assign(url)
+      }
     } else {
       window.location.assign(url)
     }
