@@ -5,21 +5,20 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { AgreementDetails } from "@/pages/admin/onboarding/types";
+import type { AgreementDetails } from "../types";
 
 const AGREEMENT_PDF_URL = "/mHUB_Membership_Agreement_2026.pdf";
 
-interface PublicAgreementStepProps {
+interface AgreementStepProps {
   value: AgreementDetails;
   onChange: (agreement: AgreementDetails) => void;
 }
 
-// The real signing step — this is the only place a member ever actually signs the
-// Membership Agreement (via the link an admin generated and sent them), not something
-// an admin fills out on their behalf. Same UI/behavior as the mockup's Agreement step;
-// mirrors frontend/src/pages/agreement/index.tsx's signature-capture logic, adapted to
-// a controlled step component instead of its own standalone page.
-export const PublicAgreementStep = ({ value, onChange }: PublicAgreementStepProps) => {
+// Shared between the public onboarding-link wizard (frontend/src/pages/onboard/index.tsx)
+// and the admin "Admin fills out" wizard — whoever is filling out the form signs it
+// right here, same UI/behavior either way. Mirrors frontend/src/pages/agreement/index.tsx's
+// signature-capture logic, adapted to a controlled step component.
+export const AgreementStep = ({ value, onChange }: AgreementStepProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {

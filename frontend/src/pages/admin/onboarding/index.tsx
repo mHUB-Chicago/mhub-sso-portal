@@ -19,10 +19,11 @@ import { PrimaryUserStep } from "./components/PrimaryUserStep";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
 import { AddonMembershipsStep } from "./components/AddonMembershipsStep";
 import { SkillsStep } from "./components/SkillsStep";
-import { AgreementInfoStep } from "./components/AgreementInfoStep";
+import { AgreementStep, isAgreementStepValid } from "./components/AgreementStep";
 import { NextStepsStep } from "./components/NextStepsStep";
 import type {
   Address,
+  AgreementDetails,
   CompanyDetails,
   OnboardingFormData,
   OnboardingMode,
@@ -94,6 +95,7 @@ const createInitialFormData = (): OnboardingFormData => ({
     cvc: "",
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
+  agreement: { agreed: false, signatureType: "type", fullLegalName: "" },
 });
 
 const OnboardingPage = () => {
@@ -163,6 +165,10 @@ const OnboardingPage = () => {
 
   const updateShopSkills = (shopSkills: string[]) => {
     setFormData((prev) => ({ ...prev, skills: { ...prev.skills, shopSkills } }));
+  };
+
+  const updateAgreement = (agreement: AgreementDetails) => {
+    setFormData((prev) => ({ ...prev, agreement }));
   };
 
   const goNext = () => setCurrentStep((step) => Math.min(step + 1, TOTAL_STEPS));
@@ -247,7 +253,12 @@ const OnboardingPage = () => {
             onChange={updateAddonMemberships}
           />
         ) : (
-          <MembershipPackageStep value={formData.membershipPackage} onChange={updateMembershipPackage} />
+          <MembershipPackageStep
+            value={formData.membershipPackage}
+            onChange={updateMembershipPackage}
+            addonValues={formData.addonMemberships}
+            onAddonChange={updateAddonMemberships}
+          />
         );
       case 4:
         return (
@@ -260,13 +271,20 @@ const OnboardingPage = () => {
           />
         );
       case 5:
-        return <AgreementInfoStep />;
+        return (
+          <AgreementStep
+            value={formData.agreement ?? { agreed: false, signatureType: "type", fullLegalName: "" }}
+            onChange={updateAgreement}
+          />
+        );
       case 6:
         return <NextStepsStep mode={formData.mode} isSubmitting={isSubmitting} onSubmit={handleSubmit} />;
       default:
         return null;
     }
   };
+
+  const isCurrentStepValid = currentStep !== 5 || isAgreementStepValid(formData.agreement);
 
   return (
     <div className="container mx-auto max-w-6xl py-8">
@@ -344,7 +362,7 @@ const OnboardingPage = () => {
                 <Button variant="outline" onClick={goBack}>
                   Back
                 </Button>
-                <Button onClick={goNext} className="bg-brand hover:bg-brand-hover">
+                <Button onClick={goNext} disabled={!isCurrentStepValid} className="bg-brand hover:bg-brand-hover">
                   Continue
                 </Button>
               </div>

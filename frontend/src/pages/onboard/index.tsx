@@ -12,10 +12,10 @@ import { CompanyDetailsStep } from "@/pages/admin/onboarding/components/CompanyD
 import { PrimaryUserStep } from "@/pages/admin/onboarding/components/PrimaryUserStep";
 import { SkillsStep } from "@/pages/admin/onboarding/components/SkillsStep";
 import { OnboardingStepper } from "@/pages/admin/onboarding/components/OnboardingStepper";
+import { AgreementStep, isAgreementStepValid } from "@/pages/admin/onboarding/components/AgreementStep";
 import { PublicPackageStep } from "./PublicPackageStep";
 import { PublicAddonMembershipsStep } from "./PublicAddonMembershipsStep";
 import { PublicSelectCompanyStep } from "./PublicSelectCompanyStep";
-import { PublicAgreementStep, isAgreementStepValid } from "./PublicAgreementStep";
 import type {
   Address,
   AgreementDetails,
@@ -250,7 +250,7 @@ const PublicOnboardingPage = () => {
         );
       case 5:
         return (
-          <PublicAgreementStep
+          <AgreementStep
             value={formData.agreement ?? { agreed: false, signatureType: "type", fullLegalName: "" }}
             onChange={updateAgreement}
           />

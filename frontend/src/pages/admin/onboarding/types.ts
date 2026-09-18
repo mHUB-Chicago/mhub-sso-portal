@@ -65,8 +65,9 @@ export type OnboardingMode = "admin" | "link";
 
 export type OnboardingScenario = "new_company" | "existing_company";
 
-// Only ever collected on the public onboarding-link form (PublicAgreementStep) — the
-// member always signs it themselves, never an admin filling the wizard out for them.
+// Collected via AgreementStep (components/AgreementStep.tsx) — shared by both the
+// public onboarding-link form and the admin "Admin fills out" wizard, whoever is
+// actually filling the form out signs it there directly.
 export interface AgreementDetails {
   agreed: boolean;
   signatureType: "type" | "draw";

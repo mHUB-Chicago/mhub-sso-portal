@@ -114,8 +114,25 @@ export const OnboardingFormDataSchema = z
 
 export type OnboardingFormData = z.infer<typeof OnboardingFormDataSchema>;
 
+// Whoever actually fills out the wizard — the admin (mode "admin") or the member via
+// the public link (mode "link") — signs it right there, so both submission paths
+// require it. Only applied at submission time (not to OnboardingFormDataSchema
+// generally, which also validates already-stored rows on read — see
+// toSubmissionDTO/GetOnboardingSubmissionsResponseSchema — and submissions created
+// before this feature existed have no `agreement` at all; baking this into the shared
+// schema would break the admin submissions list for every old row).
+const requireAgreementSuperRefine = (data: OnboardingFormData, ctx: z.RefinementCtx) => {
+  if (!data.agreement?.agreed) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "agreed"], message: "You must agree to the Membership Agreement" });
+  } else if (data.agreement.signatureType === "type" && (!data.agreement.fullLegalName || data.agreement.fullLegalName.trim().length < 2)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "fullLegalName"], message: "Full legal name is required" });
+  } else if (data.agreement.signatureType === "draw" && !data.agreement.signatureImageDataUrl) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "signatureImageDataUrl"], message: "A drawn signature is required" });
+  }
+};
+
 export const CreateOnboardingSubmissionRequestSchema = z.object({
-  formData: OnboardingFormDataSchema,
+  formData: OnboardingFormDataSchema.superRefine(requireAgreementSuperRefine),
 });
 
 export const OnboardingSubmissionSchema = z.object({
@@ -277,22 +294,8 @@ export const GetOnboardingLinkResponseSchema = SuccessResponseSchema(
   })
 );
 
-// The agreement-required check only applies at submission time (this schema), not to
-// OnboardingFormDataSchema generally — that schema also validates already-stored rows
-// on read (see toSubmissionDTO/GetOnboardingSubmissionsResponseSchema), and submissions
-// created before this feature existed have no `agreement` at all. Baking the check into
-// the shared schema would break the admin submissions list for every old link-mode row.
 export const SubmitOnboardingLinkRequestSchema = z.object({
-  formData: OnboardingFormDataSchema.superRefine((data, ctx) => {
-    if (data.mode !== "link") return;
-    if (!data.agreement?.agreed) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "agreed"], message: "You must agree to the Membership Agreement" });
-    } else if (data.agreement.signatureType === "type" && (!data.agreement.fullLegalName || data.agreement.fullLegalName.trim().length < 2)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "fullLegalName"], message: "Full legal name is required" });
-    } else if (data.agreement.signatureType === "draw" && !data.agreement.signatureImageDataUrl) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "signatureImageDataUrl"], message: "A drawn signature is required" });
-    }
-  }),
+  formData: OnboardingFormDataSchema.superRefine(requireAgreementSuperRefine),
 });
 
 export const SubmitOnboardingLinkResponseSchema = SuccessResponseSchema(z.object({}));

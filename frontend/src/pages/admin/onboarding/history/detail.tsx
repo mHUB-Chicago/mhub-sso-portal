@@ -244,7 +244,12 @@ export function AdminOnboardingHistoryDetailPage() {
                 onChange={updateAddonMemberships}
               />
             ) : (
-              <MembershipPackageStep value={draft.membershipPackage} onChange={updateMembershipPackage} />
+              <MembershipPackageStep
+                value={draft.membershipPackage}
+                onChange={updateMembershipPackage}
+                addonValues={draft.addonMemberships}
+                onAddonChange={updateAddonMemberships}
+              />
             )}
           </div>
 
