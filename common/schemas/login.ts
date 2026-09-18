@@ -6,7 +6,11 @@ export const StartLoginRequestSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
 });
 export const StartLoginResponseSchema = SuccessResponseSchema(z.object({
-  request_id: z.string()
+  request_id: z.string(),
+  // Lets the login page decide, before the password step is even submitted, whether
+  // it should pre-open the onboarding payment tab — that tab must only ever appear
+  // for pending_membership users, never for a regular active-member login.
+  isPendingMembership: z.boolean(),
 }));
 
 export const VerifyLoginRequestSchema = z.object({

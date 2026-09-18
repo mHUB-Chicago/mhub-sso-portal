@@ -32,19 +32,23 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
       message: "Success",
       data: {
         request_id: loginRequest.id,
+        isPendingMembership: user.role !== 'ADMIN' && user.accountStatus === 'pending_membership',
       },
     });
     return c.json(response);
   } catch (error) {
     console.error("handleStartLogin error:", error);
 
-    // Still return a response with a fake request_id to avoid user enumeration
+    // Still return a response with a fake request_id to avoid user enumeration —
+    // isPendingMembership defaults to false here for the same reason, so the field's
+    // presence/value never reveals whether the email actually exists.
     const randomUUID = crypto.randomUUID();
     const response = StartLoginResponseSchema.parse({
       success: true,
       message: "Success",
       data: {
         request_id: randomUUID,
+        isPendingMembership: false,
       },
     });
     return c.json(response);

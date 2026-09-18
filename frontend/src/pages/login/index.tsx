@@ -51,6 +51,10 @@ export function LoginPage() {
   // nothing right before the SSO handoff.
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [openedNewTab, setOpenedNewTab] = useState(false)
+  // Known synchronously from the email step (before password submit), so the payment
+  // tab can be gated on it without waiting on verifyLogin — see handlePasswordSubmit's
+  // form onSubmit below.
+  const [isPendingMembershipHint, setIsPendingMembershipHint] = useState(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
@@ -90,6 +94,7 @@ export function LoginPage() {
       }
       setEmail(data.email)
       setRequestId(result.data.request_id)
+      setIsPendingMembershipHint(result.data.isPendingMembership)
       setStep('password')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
@@ -279,13 +284,21 @@ export function LoginPage() {
             onSubmit={(e) => {
               // Must run before passwordForm.handleSubmit's own async validation —
               // window.open() called after an `await` is treated as an untrusted
-              // popup by most browsers and gets silently blocked or force-closed.
+              // popup by most browsers and gets silently blocked or force-closed, so
+              // this can't wait on verifyLogin's response to know the account status.
               // Opens straight at the PV payment form (rather than about:blank) so the
               // tab shows the real destination immediately — it gets pointed at the
               // actual SAML relay URL once the request resolves, same as before, this
               // just changes what's visible while that's in flight. Matches the
               // backend's ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
-              openRedirectTab('https://member.mhubchicago.com/form/20611')
+              // Only opened when it's actually going to be used: a SAML relay (tx), a
+              // plain post-login redirect (returnTo), or a pending_membership member
+              // being sent to the payment form — never for a regular active-member
+              // login, which would otherwise flash this tab open then closed once
+              // handlePasswordSubmit finds nothing to redirect it to.
+              if (txQueryParam || returnToParam || isPendingMembershipHint) {
+                openRedirectTab('https://member.mhubchicago.com/form/20611')
+              }
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
             }}
             className="space-y-6"
