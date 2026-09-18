@@ -278,10 +278,11 @@ const pvAddSubMember = async (
     address?: OnboardingFormData["user"]["address"];
   }
   // Add Sub Member returns a SubMembershipCardDTO (the new membership CARD it just
-  // created), not the customer directly — its own `id` is the card's id. The actual
-  // PV customer id to use everywhere else (PV.On_Behalf_Of for the profile PATCH,
-  // and the id we persist as the local User's peopleVineId) is `customer_id`.
-): Promise<{ customer_id: number; email: string; first_name: string; last_name: string }> => {
+  // created), not the customer directly — its own `id` is the card's id (needed below
+  // to mark the card primary). The actual PV customer id to use everywhere else
+  // (PV.On_Behalf_Of for the profile PATCH, and the id we persist as the local User's
+  // peopleVineId) is `customer_id`.
+): Promise<{ id: number; customer_id: number; email: string; first_name: string; last_name: string }> => {
   // PV's own "Assign Person" Control Panel action succeeds against this same endpoint
   // with the same minimal identity fields, so the 406 "Object reference not set to an
   // instance of an object" crash we saw from our bare-minimum payload (type/email/
@@ -312,6 +313,32 @@ const pvAddSubMember = async (
       ...(input.companyTitle ? { company_title: input.companyTitle } : {}),
     },
   });
+};
+
+// A freshly-created sub member's own card comes back with `primary: false` by default
+// (confirmed against PV — staff manually checking "Set as Primary Membership Card" in
+// the Control Panel is what actually fixed a stuck-inactive test member). Our sync
+// engine's company-lookup for non-rep members reads the sponsoring company's name off
+// the member's own PRIMARY card, so leaving this false means syncOne can never resolve
+// their company and they stay stuck on `accountStatus: "pending_membership"` forever.
+// Best-effort: never let a failure here undo the Add Sub Member call that already
+// succeeded, so this only ever logs and swallows its own errors.
+const pvSetSubMemberPrimary = async (
+  c: Context,
+  membershipCardId: number,
+  subMembershipCardId: number,
+  companyCustomerId: number
+): Promise<void> => {
+  try {
+    await pvPortalRequest(c, {
+      method: "PATCH",
+      endpoint: `/account/memberships/${membershipCardId}/members/${subMembershipCardId}`,
+      onBehalfOfCustomerId: companyCustomerId,
+      body: { primary: true },
+    });
+  } catch (e) {
+    console.warn(`[onboarding] Failed to mark sub member card ${subMembershipCardId} as primary: ${e instanceof Error ? e.message : String(e)}`);
+  }
 };
 
 // Maps our onboarding form's own field names to the exact PV attribute names they were
@@ -433,6 +460,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
           attributes: userAttributes,
           source: ONBOARDING_SOURCE_TAGS.personPending,
         });
+        await pvSetSubMemberPrimary(c, membershipCardId, subMember.id, companyPvId!);
         return { companyPvCustomerId: null, userPvCustomerId: String(subMember.customer_id), linkedViaMembershipCard: true, companyEmail: null };
       } catch (e) {
         // Some membership types/tiers reject Add Sub Member outright (PV: "This
