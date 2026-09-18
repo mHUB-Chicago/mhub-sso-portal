@@ -68,6 +68,19 @@ export const OnboardingBillingSchema = z.object({
   address: OnboardingAddressSchema,
 });
 
+// The member's own e-signature of the mHUB Membership Agreement, collected as part of
+// the public onboarding-link form (the member always fills this out themselves — an
+// admin filling out the form on someone's behalf never collects this). Optional since
+// admin-mode submissions and submissions created before this field existed don't have
+// it. Stamped onto the real agreement PDF and attached to the User record once the
+// submission is approved — see finalizeSubmissionPushToPeopleVine (onboardingController.ts).
+export const OnboardingAgreementSchema = z.object({
+  agreed: z.boolean(),
+  signatureType: z.enum(["type", "draw"]),
+  fullLegalName: z.string().optional(),
+  signatureImageDataUrl: z.string().optional(),
+});
+
 export const OnboardingFormDataSchema = z
   .object({
     mode: z.enum(["admin", "link"]),
@@ -85,6 +98,7 @@ export const OnboardingFormDataSchema = z
     addonMemberships: z.array(z.string()).default([]),
     skills: OnboardingSkillsSchema,
     billing: OnboardingBillingSchema,
+    agreement: OnboardingAgreementSchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (data.scenario === "new_company") {
@@ -263,8 +277,22 @@ export const GetOnboardingLinkResponseSchema = SuccessResponseSchema(
   })
 );
 
+// The agreement-required check only applies at submission time (this schema), not to
+// OnboardingFormDataSchema generally — that schema also validates already-stored rows
+// on read (see toSubmissionDTO/GetOnboardingSubmissionsResponseSchema), and submissions
+// created before this feature existed have no `agreement` at all. Baking the check into
+// the shared schema would break the admin submissions list for every old link-mode row.
 export const SubmitOnboardingLinkRequestSchema = z.object({
-  formData: OnboardingFormDataSchema,
+  formData: OnboardingFormDataSchema.superRefine((data, ctx) => {
+    if (data.mode !== "link") return;
+    if (!data.agreement?.agreed) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "agreed"], message: "You must agree to the Membership Agreement" });
+    } else if (data.agreement.signatureType === "type" && (!data.agreement.fullLegalName || data.agreement.fullLegalName.trim().length < 2)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "fullLegalName"], message: "Full legal name is required" });
+    } else if (data.agreement.signatureType === "draw" && !data.agreement.signatureImageDataUrl) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["agreement", "signatureImageDataUrl"], message: "A drawn signature is required" });
+    }
+  }),
 });
 
 export const SubmitOnboardingLinkResponseSchema = SuccessResponseSchema(z.object({}));

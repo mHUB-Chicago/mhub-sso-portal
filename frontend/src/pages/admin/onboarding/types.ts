@@ -65,6 +65,15 @@ export type OnboardingMode = "admin" | "link";
 
 export type OnboardingScenario = "new_company" | "existing_company";
 
+// Only ever collected on the public onboarding-link form (PublicAgreementStep) — the
+// member always signs it themselves, never an admin filling the wizard out for them.
+export interface AgreementDetails {
+  agreed: boolean;
+  signatureType: "type" | "draw";
+  fullLegalName?: string;
+  signatureImageDataUrl?: string;
+}
+
 export interface OnboardingFormData {
   mode: OnboardingMode;
   scenario: OnboardingScenario;
@@ -75,4 +84,5 @@ export interface OnboardingFormData {
   addonMemberships: string[];
   skills: SkillsDetails;
   billing: BillingDetails;
+  agreement?: AgreementDetails;
 }

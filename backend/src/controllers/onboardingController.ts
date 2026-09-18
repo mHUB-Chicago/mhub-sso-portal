@@ -33,6 +33,7 @@ import {
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { createCompany, updateCompany } from "@/services/companyService";
 import { createUser, updateUser } from "@/services/userService";
+import { generateSignedMembershipAgreementPdf } from "@/services/membershipAgreementService";
 import { getServiceProviderByEntityId } from "@/services/serviceProviderService";
 import {
   assertPeopleVineWritesEnabled,
@@ -192,7 +193,7 @@ const finalizeSubmissionPushToPeopleVine = async (
   // Same "no access yet" reasoning as the company above — applies to both scenarios
   // (a brand-new company's owner, or a person attached to an existing company) since
   // neither has a confirmed real membership at push time.
-  await createUser(c, {
+  const newUser = await createUser(c, {
     name: `${formData.user.firstName} ${formData.user.lastName}`.trim(),
     email: formData.user.email,
     role: Role.USER,
@@ -208,6 +209,29 @@ const finalizeSubmissionPushToPeopleVine = async (
     accountStatus: "pending_membership",
     billingContactEmail: formData.company.billingContactEmail || null,
   });
+
+  // The member already e-signed the Membership Agreement on the public onboarding-link
+  // form itself (OnboardingFormDataSchema requires this for mode "link") — stamp it onto
+  // the real PDF now that the User row finally exists to attach it to. Admin-entered
+  // submissions never have `agreement` (the member always signs, never an admin on
+  // their behalf), so this is skipped for those.
+  if (formData.agreement?.agreed) {
+    const signedAt = new Date();
+    const signedName =
+      formData.agreement.signatureType === "type" ? formData.agreement.fullLegalName!.trim() : newUser.name;
+    const membershipAgreementPdf = await generateSignedMembershipAgreementPdf({
+      fullLegalName: signedName,
+      signatureType: formData.agreement.signatureType,
+      signatureImageDataUrl: formData.agreement.signatureImageDataUrl,
+      signedAt,
+    });
+    await updateUser(c, {
+      id: newUser.id,
+      membershipAgreementSignedAt: signedAt,
+      membershipAgreementSignedName: signedName,
+      membershipAgreementPdf,
+    });
+  }
 
   // Fire-and-forget from the caller's perspective — see sendOnboardingPaymentFormEmail
   // for why this can't be allowed to fail the push that already succeeded above.

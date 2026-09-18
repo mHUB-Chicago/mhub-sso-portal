@@ -280,28 +280,35 @@ const OnboardingPage = () => {
           <p className="text-xs text-gray-400">Home / Onboarding</p>
           <h1 className="text-3xl font-bold">New Member Onboarding</h1>
         </div>
-        <div className="inline-flex rounded-full bg-gray-100 p-1">
-          <button
-            type="button"
-            onClick={() => setMode("admin")}
-            className={cn(
-              "rounded-full px-4 py-1.5 text-xs font-semibold",
-              formData.mode === "admin" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-            )}
-          >
-            Admin fills out
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("link")}
-            className={cn(
-              "rounded-full px-4 py-1.5 text-xs font-semibold",
-              formData.mode === "link" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-            )}
-          >
-            Send a link
-          </button>
-        </div>
+        {/* Only shown on the scenario chooser (step 0) — mode is committed once you
+            Continue past it: "link" mode exits straight to LinkGeneratedStep and never
+            reaches the wizard steps at all, so leaving this switchable mid-wizard let an
+            admin flip to "Send a link" while still looking at the full fill-out form,
+            with no actual effect other than a confusing mismatched toggle state. */}
+        {currentStep === 0 && (
+          <div className="inline-flex rounded-full bg-gray-100 p-1">
+            <button
+              type="button"
+              onClick={() => setMode("admin")}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-xs font-semibold",
+                formData.mode === "admin" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              )}
+            >
+              Admin fills out
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("link")}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-xs font-semibold",
+                formData.mode === "link" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              )}
+            >
+              Send a link
+            </button>
+          </div>
+        )}
       </div>
 
       {currentStep === 0 ? (

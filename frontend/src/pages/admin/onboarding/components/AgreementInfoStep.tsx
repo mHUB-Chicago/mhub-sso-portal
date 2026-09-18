@@ -114,9 +114,10 @@ export const AgreementInfoStep = () => {
       <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
         <Info className="h-4 w-4 flex-shrink-0" />
         <p>
-          After the member sets their password, they&apos;ll be taken to sign this agreement on
-          their own account before continuing to the payment form. Once signed, the signed copy is
-          downloadable from their user profile.
+          Admin fills out mode has no separate sign-off step — the member never signs this
+          themselves here. To have them review and sign it, use <strong>Send a link</strong> instead;
+          they&apos;ll sign it as part of the same form. Once signed, the copy is downloadable from
+          their user profile.
         </p>
       </div>
     </div>

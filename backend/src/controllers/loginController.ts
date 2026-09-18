@@ -32,7 +32,12 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
       message: "Success",
       data: {
         request_id: loginRequest.id,
-        isPendingMembership: user.role !== 'ADMIN' && user.accountStatus === 'pending_membership',
+        // Also excludes anyone who already completed payment — accountStatus can lag
+        // behind onboardingPaymentAgreementAt while waiting on the PV subscription sync
+        // (see "Subscription Applied" in the onboarding progress tracker), and re-sending
+        // an already-paid member back to the payment form on every login is exactly the
+        // bug this field exists to prevent.
+        isPendingMembership: user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt,
       },
     });
     return c.json(response);
@@ -106,7 +111,12 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     // page, etc.), instead of relying solely on a `returnTo` query param surviving the
     // whole email→OTP→set-password chain. Takes priority over the generic
     // auto-redirect-SP fallback below, which is for already-active members.
-    const pendingOnboardingRedirectUrl = user.role !== 'ADMIN' && user.accountStatus === 'pending_membership'
+    // Excludes anyone who already completed payment (onboardingPaymentAgreementAt set) —
+    // accountStatus only flips to "active" once the PV subscription sync confirms it
+    // (see "Subscription Applied" in the onboarding progress tracker), which can lag
+    // behind payment completion, so without this check an already-paid member gets sent
+    // back to the payment form on every login until that sync catches up.
+    const pendingOnboardingRedirectUrl = user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
       ? await getOnboardingPaymentSsoUrl(c)
       : null;
     const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);
