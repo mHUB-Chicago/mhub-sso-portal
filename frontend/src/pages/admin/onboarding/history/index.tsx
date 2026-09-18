@@ -118,10 +118,18 @@ export function AdminOnboardingHistoryPage() {
     }
     return submission.formData.company.name || "—";
   };
-  const membershipDisplayFor = (submission: OnboardingSubmission): string =>
-    submission.formData.scenario === "existing_company"
-      ? "Inherited from company"
-      : (submission.formData.membershipPackage && membershipPackageName(submission.formData.membershipPackage)) || "—";
+  const membershipDisplayFor = (submission: OnboardingSubmission): string => {
+    if (submission.formData.scenario === "existing_company") {
+      // Shows the company's actual membership type(s) instead of a vague placeholder —
+      // lets admins spot up front when a company's membership won't support adding
+      // more members (see pvAddSubMember's "This membership does not allow adding
+      // additional members" rejection from PV).
+      const types = companiesData?.data?.companies.find((co) => co.id === submission.formData.companyId)
+        ?.membershipTypes;
+      return types && types.length > 0 ? `Inherited: ${types.join(", ")}` : "Inherited from company";
+    }
+    return (submission.formData.membershipPackage && membershipPackageName(submission.formData.membershipPackage)) || "—";
+  };
 
   const pendingReview = submissions.filter((s) => s.status === "pending_review");
   const needsAttention = submissions.filter((s) => s.status === "needs_attention");

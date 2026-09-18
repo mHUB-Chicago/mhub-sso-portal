@@ -91,7 +91,14 @@ export function AdminOnboardingHistoryDetailPage() {
   const isExistingCompany = scenario === "existing_company";
   const membershipPackageName =
     packagesData?.data?.packages.find((pkg) => pkg.id === membershipPackage)?.name ?? membershipPackage;
-  const parentCompanyName = companiesData?.data?.companies.find((co) => co.id === companyId)?.name;
+  const parentCompanyRecord = companiesData?.data?.companies.find((co) => co.id === companyId);
+  const parentCompanyName = parentCompanyRecord?.name;
+  // The new user inherits whatever membership the selected company already has — shown
+  // here instead of a vague "Inherited from company" placeholder so admins can see
+  // up front whether that membership actually supports adding more members (PV's own
+  // "Add Sub Member" API rejects some membership types with "This membership does not
+  // allow adding additional members").
+  const parentCompanyMembershipTypes = parentCompanyRecord?.membershipTypes ?? [];
 
   const startEditing = () => {
     setDraft(submission.formData);
@@ -377,7 +384,14 @@ export function AdminOnboardingHistoryDetailPage() {
           <Section title="Membership & Skills">
             {isExistingCompany ? (
               <>
-                <Field label="Primary Membership" value="Inherited from company" />
+                <Field
+                  label="Primary Membership"
+                  value={
+                    parentCompanyMembershipTypes.length > 0
+                      ? `Inherited from company: ${parentCompanyMembershipTypes.join(", ")}`
+                      : "Inherited from company"
+                  }
+                />
                 <Field label="Add-on Memberships" value={addonMemberships.join(", ")} />
               </>
             ) : (
