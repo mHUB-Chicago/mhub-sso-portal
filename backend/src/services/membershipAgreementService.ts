@@ -26,67 +26,81 @@ export interface SignMembershipAgreementInput {
   signedAt: Date;
 }
 
-// Additive only — this is a brand-new, purely local record of the member signing
-// mHUB's own Membership Agreement PDF. It does not touch onboardingPaymentAgreementAt,
-// the PV webhook cascade, or anything else in the existing payment-tracking flow; see
+// Coordinates (PDF points, page is a standard 612x792 Letter page) of the three blank
+// lines on page 12 of MEMBERSHIP_AGREEMENT_TEMPLATE_BASE64 — "Participant's Signature",
+// "Participant's Name (Please Print)", and "Date". Measured directly off the rendered
+// template (pdftoppm at 150dpi, converting pixel coords back to points); these are
+// specific to this exact template file and will need re-measuring if that file is ever
+// replaced with a differently-laid-out version.
+const PAGE_12_INDEX = 11;
+const SIGNATURE_BLOCK_X = 74;
+const SIGNATURE_BLOCK_MAX_WIDTH = 210;
+const SIGNATURE_LINE_Y = 518;
+const NAME_LINE_Y = 481;
+const DATE_LINE_Y = 445;
+// Baseline sits just above the underline, like handwriting resting on a ruled line.
+const TEXT_ABOVE_LINE = 4;
+
+// This is a brand-new, purely local record of the member signing mHUB's own
+// Membership Agreement PDF. It does not touch onboardingPaymentAgreementAt, the PV
+// webhook cascade, or anything else in the existing payment-tracking flow; see
 // membershipAgreementSignedAt/SignedName/Pdf on the User model.
 //
-// Appends a new final page to the real agreement template (rather than trying to
-// overlay text onto the existing 12-page layout, which would need fragile
-// per-version coordinate guesses) recording who signed, when, and their signature —
-// typed name or the drawn signature image.
+// Stamps the name/signature/date straight onto the template's own page 12 signature
+// block (see the PAGE_12_* constants above) — the output is the same 16-page template
+// as 2026MemberAgreement1623Fulton.pdf, with nothing added or removed, just page 12's
+// blank lines filled in.
 export const generateSignedMembershipAgreementPdf = async (
   input: SignMembershipAgreementInput
 ): Promise<string> => {
   const templateBytes = base64ToBytes(MEMBERSHIP_AGREEMENT_TEMPLATE_BASE64);
   const pdfDoc = await PDFDocument.load(templateBytes);
 
-  const page = pdfDoc.addPage();
-  const { width, height } = page.getSize();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const dimText = rgb(0.4, 0.4, 0.4);
-  const black = rgb(0, 0, 0);
-
-  let y = height - 90;
-  page.drawText("Signature Confirmation", { x: 50, y, size: 18, font: boldFont, color: black });
-  y -= 36;
-  page.drawText(`Signed by: ${input.fullLegalName}`, { x: 50, y, size: 12, font, color: black });
-  y -= 20;
-  const dateLabel = input.signedAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-  page.drawText(`Date: ${dateLabel}`, { x: 50, y, size: 12, font, color: black });
-  y -= 50;
-
-  page.drawText("Signature:", { x: 50, y, size: 11, font, color: dimText });
-  y -= 16;
+  const signaturePage = pdfDoc.getPages()[PAGE_12_INDEX];
+  const page12Font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const page12Black = rgb(0, 0, 0);
 
   if (input.signatureType === "draw" && input.signatureImageDataUrl) {
     const match = input.signatureImageDataUrl.match(/^data:image\/(png|jpeg);base64,(.+)$/);
     if (match) {
       const imgBytes = base64ToBytes(match[2]);
       const img = match[1] === "png" ? await pdfDoc.embedPng(imgBytes) : await pdfDoc.embedJpg(imgBytes);
-      const dims = img.scaleToFit(240, 90);
-      page.drawImage(img, { x: 50, y: y - dims.height, width: dims.width, height: dims.height });
-      y -= dims.height;
+      // Capped height keeps a wide/tall drawn signature from crossing into the
+      // "Participant's Name" line just above it.
+      const dims = img.scaleToFit(SIGNATURE_BLOCK_MAX_WIDTH, 32);
+      signaturePage.drawImage(img, {
+        x: SIGNATURE_BLOCK_X,
+        y: SIGNATURE_LINE_Y + TEXT_ABOVE_LINE,
+        width: dims.width,
+        height: dims.height,
+      });
     }
   } else {
-    // pdf-lib's standard fonts have no cursive/script style — the typed name above
-    // already records the legal signature text; this just echoes it near the
-    // signature line at a larger size for visual consistency with a signed document.
-    page.drawText(input.fullLegalName, { x: 50, y: y - 24, size: 22, font: boldFont, color: black });
-    y -= 34;
+    signaturePage.drawText(input.fullLegalName, {
+      x: SIGNATURE_BLOCK_X,
+      y: SIGNATURE_LINE_Y + TEXT_ABOVE_LINE,
+      size: 16,
+      font: page12Font,
+      color: page12Black,
+    });
   }
 
-  page.drawLine({ start: { x: 50, y: y - 6 }, end: { x: 300, y: y - 6 }, thickness: 1, color: rgb(0.7, 0.7, 0.7) });
+  signaturePage.drawText(input.fullLegalName, {
+    x: SIGNATURE_BLOCK_X,
+    y: NAME_LINE_Y + TEXT_ABOVE_LINE,
+    size: 12,
+    font: page12Font,
+    color: page12Black,
+  });
 
-  page.drawText(
-    "By signing above, the signer consents to sign this agreement electronically, with the",
-    { x: 50, y: 70, size: 9, font, color: dimText }
-  );
-  page.drawText(
-    "same legal effect as a handwritten signature.",
-    { x: 50, y: 58, size: 9, font, color: dimText }
-  );
+  const page12DateLabel = input.signedAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  signaturePage.drawText(page12DateLabel, {
+    x: SIGNATURE_BLOCK_X,
+    y: DATE_LINE_Y + TEXT_ABOVE_LINE,
+    size: 12,
+    font: page12Font,
+    color: page12Black,
+  });
 
   const outputBytes = await pdfDoc.save();
   return `data:application/pdf;base64,${bytesToBase64(outputBytes)}`;
