@@ -326,19 +326,19 @@ const pvAddSubMember = async (
 // engine's company-lookup for non-rep members reads the sponsoring company's name off
 // the member's own PRIMARY card, so leaving this false means syncOne can never resolve
 // their company and they stay stuck on `accountStatus: "pending_membership"` forever.
-// Best-effort: never let a failure here undo the Add Sub Member call that already
-// succeeded, so this only ever logs and swallows its own errors.
-const pvSetSubMemberPrimary = async (
-  c: Context,
-  membershipCardId: number,
-  subMembershipCardId: number,
-  companyCustomerId: number
-): Promise<void> => {
+// `PATCH /account/memberships/{card}/members/{sub_card}` (Account Memberships) takes a
+// CustomerUpdate body — no `primary` field exists there at all, so it silently no-ops.
+// The one endpoint that actually accepts `primary` is this top-level (non-`/account`)
+// Memberships one, keyed by the sub member's own card id and typed as
+// MembershipCardPatchRequest — no PV.On_Behalf_Of, same as the plain company token used
+// for fetchActiveMembershipPackages's GET /memberships. Best-effort: never let a
+// failure here undo the Add Sub Member call that already succeeded, so this only ever
+// logs and swallows its own errors.
+const pvSetSubMemberPrimary = async (c: Context, subMembershipCardId: number): Promise<void> => {
   try {
     await pvPortalRequest(c, {
       method: "PATCH",
-      endpoint: `/account/memberships/${membershipCardId}/members/${subMembershipCardId}`,
-      onBehalfOfCustomerId: companyCustomerId,
+      endpoint: `/memberships/members/${subMembershipCardId}`,
       body: { primary: true },
     });
   } catch (e) {
@@ -473,7 +473,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       attributes: userAttributes,
       source: ONBOARDING_SOURCE_TAGS.personPending,
     });
-    await pvSetSubMemberPrimary(c, membershipCardId, subMember.id, companyPvId!);
+    await pvSetSubMemberPrimary(c, subMember.id);
     return { companyPvCustomerId: null, userPvCustomerId: String(subMember.customer_id), linkedViaMembershipCard: true, companyEmail: null };
   }
 
