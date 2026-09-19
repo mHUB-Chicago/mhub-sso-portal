@@ -56,12 +56,17 @@ const pvPortalRequest = async (c: Context, options: PvPortalRequestOptions): Pro
 
   if (!response.ok) {
     const resText = await response.text();
-    let errorDetails = resText;
+    // Full raw body only ever goes to server logs — the admin-facing error (thrown
+    // below) stays short. PV's error JSON shape is { error, title, error_description };
+    // error_description is the one meant to be read by a human, so prefer it.
+    console.error(`[PeopleVinePortal] ${method} ${endpoint} failed with status ${response.status}: ${resText}`);
+    let shortMessage = resText;
     try {
-      errorDetails = JSON.stringify(JSON.parse(resText), null, 2);
+      const parsed = JSON.parse(resText) as { error_description?: string; title?: string; error?: string };
+      shortMessage = parsed.error_description || parsed.title || parsed.error || resText;
     } catch { }
     throw new HTTPException(502, {
-      message: `[PeopleVinePortal] ${method} ${endpoint} failed with status ${response.status}: ${errorDetails}`,
+      message: `PeopleVine: ${shortMessage}`,
     });
   }
   return response.json();
@@ -441,60 +446,35 @@ export const pushOnboardingSubmissionToPeopleVine = async (
     const companyPvId = existingCompanyPeopleVineId ? Number(existingCompanyPeopleVineId) : null;
     const membershipCardId = companyPvId ? await pvFindActiveMembershipCardId(c, companyPvId) : null;
 
-    if (membershipCardId) {
-      try {
-        const subMember = await pvAddSubMember(c, membershipCardId, companyPvId!, {
-          email: formData.user.email,
-          firstName: formData.user.firstName,
-          lastName: formData.user.lastName,
-          companyName: existingCompanyName ?? undefined,
-          companyTitle: formData.user.title,
-          phone: formData.user.phone,
-          phoneCountryCode: formData.user.phoneCountryCode,
-          address: formData.user.address,
-        });
-        await pvUpdateAccountProfile(c, subMember.customer_id, {
-          birthday: formData.user.birthday,
-          gender: formData.user.gender,
-          address: formData.user.address,
-          attributes: userAttributes,
-          source: ONBOARDING_SOURCE_TAGS.personPending,
-        });
-        await pvSetSubMemberPrimary(c, membershipCardId, subMember.id, companyPvId!);
-        return { companyPvCustomerId: null, userPvCustomerId: String(subMember.customer_id), linkedViaMembershipCard: true, companyEmail: null };
-      } catch (e) {
-        // Some membership types/tiers reject Add Sub Member outright (PV: "This
-        // membership does not allow adding additional members") even though the card
-        // genuinely belongs to this company — a plan-level restriction, not something
-        // wrong with our request. Fall through to the same standalone-customer
-        // fallback used when there's no active card at all, rather than failing the
-        // whole submission over something staff can't fix from here anyway.
-        console.warn(`[onboarding] Add Sub Member failed for membership card ${membershipCardId}, falling back to standalone registration: ${e instanceof Error ? e.message : String(e)}`);
-      }
+    // No silent fallback to a standalone, best-effort-linked customer anymore — if this
+    // company has no active membership card, or PV rejects Add Sub Member for it, the
+    // whole approve action now fails with PV's own short error instead of quietly
+    // completing with a "linked by reference only, attach manually" note. The
+    // submission stays in Pending Review (never reaches `pushed_to_pv`) so it can just
+    // be retried once whatever PV-side issue caused it is fixed.
+    if (!membershipCardId) {
+      throw new HTTPException(400, { message: "This company has no active PeopleVine membership card to attach the new member to." });
     }
 
-    // No active PV membership card found for this company (or it has no PV record at
-    // all yet), or Add Sub Member was rejected by PV for the one that was found — fall
-    // back to a standalone customer, best-effort linked by name only. The caller
-    // records a resolutionNote so staff know to attach it manually in PV.
-    const user = await pvRegisterCustomer(c, {
+    const subMember = await pvAddSubMember(c, membershipCardId, companyPvId!, {
       email: formData.user.email,
       firstName: formData.user.firstName,
       lastName: formData.user.lastName,
+      companyName: existingCompanyName ?? undefined,
+      companyTitle: formData.user.title,
       phone: formData.user.phone,
       phoneCountryCode: formData.user.phoneCountryCode,
+      address: formData.user.address,
     });
-    await pvUpdateAccountProfile(c, user.id, {
+    await pvUpdateAccountProfile(c, subMember.customer_id, {
       birthday: formData.user.birthday,
       gender: formData.user.gender,
       address: formData.user.address,
-      companyName: existingCompanyName ?? undefined,
-      companyTitle: formData.user.title,
       attributes: userAttributes,
       source: ONBOARDING_SOURCE_TAGS.personPending,
-      ...(companyPvId ? { customerReference: `pv_company:${companyPvId}` } : {}),
     });
-    return { companyPvCustomerId: null, userPvCustomerId: String(user.id), linkedViaMembershipCard: false, companyEmail: null };
+    await pvSetSubMemberPrimary(c, membershipCardId, subMember.id, companyPvId!);
+    return { companyPvCustomerId: null, userPvCustomerId: String(subMember.customer_id), linkedViaMembershipCard: true, companyEmail: null };
   }
 
   // new_company: register two distinct PV customers (company + user) — there's no PV
