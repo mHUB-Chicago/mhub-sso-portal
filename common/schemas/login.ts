@@ -34,3 +34,5 @@ export const ChangePasswordRequestSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters long"),
 });
 export const ChangePasswordResponseSchema = SuccessResponseSchema();
+
+export const LogoutResponseSchema = SuccessResponseSchema();

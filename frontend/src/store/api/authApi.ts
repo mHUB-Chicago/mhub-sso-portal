@@ -5,6 +5,7 @@ import {
   VerifyLoginResponseSchema,
   ChangePasswordResponseSchema,
   ForgotPasswordResponseSchema,
+  LogoutResponseSchema,
 } from '../../../../common/schemas/login'
 import { GetMyUserResponseSchema } from '../../../../common/schemas/user'
 import { SignMembershipAgreementResponseSchema } from '../../../../common/schemas/membershipAgreement'
@@ -39,6 +40,7 @@ type StartLoginResponse = z.infer<typeof StartLoginResponseSchema>
 type VerifyLoginResponse = z.infer<typeof VerifyLoginResponseSchema>
 type ChangePasswordResponse = z.infer<typeof ChangePasswordResponseSchema>
 type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponseSchema>
+type LogoutResponse = z.infer<typeof LogoutResponseSchema>
 type GetMyUserResponse = z.infer<typeof GetMyUserResponseSchema>
 type SignMembershipAgreementResponse = z.infer<typeof SignMembershipAgreementResponseSchema>
 
@@ -115,6 +117,15 @@ export const authApi = createApi({
       }),
     }),
 
+    // Log out the current session (requires auth)
+    logout: builder.mutation<LogoutResponse, void>({
+      query: () => ({
+        path: 'login/logout',
+        method: 'POST',
+        schema: LogoutResponseSchema,
+      }),
+    }),
+
     // Get current user (check if logged in)
     getMe: builder.query<GetMyUserResponse, void>({
       query: () => ({
@@ -142,6 +153,7 @@ export const {
   useVerifyLoginMutation,
   useChangePasswordMutation,
   useForgotPasswordMutation,
+  useLogoutMutation,
   useGetMeQuery,
   useLazyGetMeQuery,
   useSignMembershipAgreementMutation,

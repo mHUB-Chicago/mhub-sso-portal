@@ -1,6 +1,7 @@
 import { Context } from "hono";
 import { JobType } from "./queueConsumer";
 import { PrismaClient } from "@prisma/client";
+import { sendPaymentAgreementCompletedEmail } from "@/services/emailService";
 
 // Webhook Body: {"customer_no": {@customer_no@}}
 
@@ -102,14 +103,24 @@ export const handlePeopleVineWebhook = async (c: Context) => {
           prisma.user.findUnique({ where: { peopleVineId: pvId } }),
         ]);
 
-        const stampCompanyById = async (companyId: string) => {
+        // Best-effort — a failed confirmation email must never undo or fail the
+        // onboarding stamp that already succeeded, same convention as
+        // sendOnboardingPaymentFormEmail (onboardingController.ts).
+        const notifyPaymentAgreementCompleted = (to: string, to_name: string) =>
+          sendPaymentAgreementCompletedEmail(c, { to, to_name }).catch((e) =>
+            console.error("[webhook] Failed to send payment-agreement-completed email:", e)
+          );
+
+        const stampCompanyById = async (companyId: string): Promise<boolean> => {
           const co = await prisma.company.findUnique({ where: { id: companyId } });
           if (co && !co.onboardingPaymentAgreementAt) {
             await prisma.company.update({
               where: { id: co.id },
               data: { onboardingPaymentAgreementAt: new Date() },
             });
+            return true;
           }
+          return false;
         };
 
         // Direct hit: customer_no matches a Company's own PV id. This is now the common
@@ -121,12 +132,7 @@ export const handlePeopleVineWebhook = async (c: Context) => {
         // stamped yet (there's no way to tell which one actually submitted, since they all
         // share the same PV login identity while pending).
         if (directCompany) {
-          if (!directCompany.onboardingPaymentAgreementAt) {
-            await prisma.company.update({
-              where: { id: directCompany.id },
-              data: { onboardingPaymentAgreementAt: new Date() },
-            });
-          }
+          const companyNewlyStamped = await stampCompanyById(directCompany.id);
           const pendingCompanyUsers = await prisma.user.findMany({
             where: { companyId: directCompany.id, accountStatus: "pending_membership", onboardingPaymentAgreementAt: null },
           });
@@ -135,14 +141,22 @@ export const handlePeopleVineWebhook = async (c: Context) => {
               prisma.user.update({ where: { id: u.id }, data: { onboardingPaymentAgreementAt: new Date() } })
             )
           );
+          await Promise.all(pendingCompanyUsers.map((u) => notifyPaymentAgreementCompleted(u.email, u.name)));
+          // No individual pending members to notify (e.g. a solo company account) — fall
+          // back to notifying the company's own contact email instead of sending nothing.
+          if (companyNewlyStamped && pendingCompanyUsers.length === 0) {
+            await notifyPaymentAgreementCompleted(directCompany.email, directCompany.name);
+          }
         }
 
         if (matchedUser) {
+          let userNewlyStamped = false;
           if (!matchedUser.onboardingPaymentAgreementAt) {
             await prisma.user.update({
               where: { id: matchedUser.id },
               data: { onboardingPaymentAgreementAt: new Date() },
             });
+            userNewlyStamped = true;
           }
           // The onboarding push flow (pushOnboardingSubmissionToPeopleVine) registers the
           // company and the person as two SEPARATE PV customers with different PV ids —
@@ -150,6 +164,9 @@ export const handlePeopleVineWebhook = async (c: Context) => {
           // set at creation) is the only reliable way to also mark the person's company
           // complete from the same "I paid & signed" event.
           await stampCompanyById(matchedUser.companyId);
+          if (userNewlyStamped) {
+            await notifyPaymentAgreementCompleted(matchedUser.email, matchedUser.name);
+          }
         }
       })().catch((e) => console.error("[webhook] Failed to stamp onboardingPaymentAgreementAt:", e))
     );

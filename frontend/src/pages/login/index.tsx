@@ -1,7 +1,7 @@
 import { useNavigate, Link } from 'react-router-dom'
-import { useStartLoginMutation, useVerifyLoginMutation, useGetMeQuery } from '@/store/api/authApi'
+import { useStartLoginMutation, useVerifyLoginMutation, useGetMeQuery, useLogoutMutation } from '@/store/api/authApi'
 import { useAppDispatch } from '@/store'
-import { loginSuccess } from '@/store/slices/authSlice'
+import { loginSuccess, logout } from '@/store/slices/authSlice'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -59,6 +59,11 @@ export function LoginPage() {
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
+  const [logoutMutation] = useLogoutMutation()
+
+  // Holds the real (SSO-authenticated) tab's Window reference so it can be closed once
+  // payment completion is detected below, instead of leaving it open in the background.
+  const realTabRef = useRef<Window | null>(null)
 
   // While waiting on the PV tab, poll our own session instead of relying on PV's own
   // post-submit page behavior (a different domain we don't control) — once the payment
@@ -67,13 +72,27 @@ export function LoginPage() {
   const { data: meData } = useGetMeQuery(undefined, { pollingInterval: 3000, skip: !(isRedirecting && openedNewTab) })
   const meUser = meData?.data?.user
   const isPendingMembership = meUser?.accountStatus === 'pending_membership'
-  const paymentCompleted = isPendingMembership && !!meUser?.onboardingPaymentAgreementAt
+  const paymentCompleted = !!meUser?.onboardingPaymentAgreementAt
 
   useEffect(() => {
     if (!paymentCompleted) return
-    const timer = setTimeout(() => navigate('/dashboard'), 1500)
+    // Onboarding payment is a one-time event — once it's done, close the PV tab and
+    // send the member back to /login for a fresh, real login instead of silently
+    // continuing into /dashboard on this session (see change-password/index.tsx's same
+    // reasoning for why a real login, not an auto-continuation, is required here).
+    realTabRef.current?.close()
+    const timer = setTimeout(async () => {
+      try {
+        await logoutMutation().unwrap()
+      } catch {
+        // Best-effort — even if the server call fails, still clear local auth state
+        // and send them to /login below so they don't appear to still be signed in.
+      }
+      dispatch(logout())
+      navigate('/login')
+    }, 1500)
     return () => clearTimeout(timer)
-  }, [paymentCompleted, navigate])
+  }, [paymentCompleted, navigate, dispatch, logoutMutation])
 
   const emailForm = useForm<EmailFormData>()
   const passwordForm = useForm<PasswordFormData>()
@@ -122,6 +141,7 @@ export function LoginPage() {
       tab.close()
       const realTab = window.open(url, '_blank')
       if (realTab) {
+        realTabRef.current = realTab
         setOpenedNewTab(true)
       } else {
         window.location.assign(url)
@@ -230,7 +250,7 @@ export function LoginPage() {
           <Loader2 className="h-8 w-8 animate-spin text-brand" />
           <p className="text-gray-600">
             {paymentCompleted
-              ? 'Payment completed! Taking you back to your dashboard...'
+              ? 'Payment completed! Please log in again to continue.'
               : isPendingMembership && openedNewTab
                 ? "Complete the payment form in the new tab that just opened — we'll bring you back here automatically once it's done."
                 : openedNewTab

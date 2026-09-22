@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { AppType } from "@/index";
 import { validate } from "@/middleware/validate";
 import { describeRoute } from "@/utils/describeRoute";
-import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
-import { handleChangePassword, handleForgotPassword, handleStartLogin, handleVerifyLogin } from "@/controllers/loginController";
+import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, LogoutResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
+import { handleChangePassword, handleForgotPassword, handleLogout, handleStartLogin, handleVerifyLogin } from "@/controllers/loginController";
 
 const app = new Hono<AppType>();
 
@@ -49,6 +49,16 @@ app.post(
   }),
   validate(ChangePasswordRequestSchema),
   handleChangePassword
+)
+
+app.post(
+  "/logout",
+  describeRoute({
+    summary: "Log out the current session",
+    successMessage: "Logged out successfully",
+    responseSchema: LogoutResponseSchema,
+  }),
+  handleLogout
 )
 
 export default app;

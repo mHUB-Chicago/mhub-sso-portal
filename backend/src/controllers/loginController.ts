@@ -1,13 +1,15 @@
 import { Context } from "hono";
+import { deleteCookie } from "hono/cookie";
 import { AppType, JsonInput } from "..";
-import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
+import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, LogoutResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
 import { getUserByEmail, getUserById, updateUser } from "@/services/userService";
 import { hasPortalAccess } from "@/services/peopleVineService";
-import { createSession } from "@/services/sessionService";
+import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
+import { getSessionId } from "@/middleware/auth";
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
@@ -138,6 +140,35 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       message: "Unauthorized",
     });
     return c.json(response, 401);
+  }
+};
+
+export const handleLogout = async (c: Context<AppType>) => {
+  try {
+    const sessionId = getSessionId(c);
+    if (sessionId) {
+      await revokeSession(c, sessionId);
+    }
+    const isLocal = (c.env.DOMAIN as string) === "localhost";
+    deleteCookie(c, "sid", {
+      httpOnly: true,
+      secure: !isLocal,
+      sameSite: "None",
+      path: "/",
+      domain: c.env.DOMAIN as string,
+    });
+    const response = LogoutResponseSchema.parse({
+      success: true,
+      message: "Logged out successfully",
+    });
+    return c.json(response);
+  } catch (error) {
+    console.error("handleLogout error:", error);
+    const response = FailedResponseSchema.parse({
+      success: false,
+      message: "Failed to log out",
+    });
+    return c.json(response, 400);
   }
 };
 
