@@ -21,16 +21,8 @@ export function DashboardPage() {
   const apps: App[] = data?.data?.apps || []
   const isAdmin = data?.data?.user?.role === 'ADMIN'
   const user = data?.data?.user
-  const stillNeedsOnboardingPayment = user?.accountStatus === 'pending_membership' && !user?.onboardingPaymentAgreementAt
+  const stillNeedsOnboardingPayment = !user?.onboardingPaymentAgreementAt
 
-  // The PeopleVine tile's `url` is a relayState-carrying SSO link (see userController.ts)
-  // rather than a plain page — clicking straight through with a normal <a target="_blank">
-  // would show a blank tab while the SAML round-trip resolves. Opens a brief preview of
-  // the actual PV-domain destination first (the payment form while onboarding payment is
-  // still pending, PV's regular member home once it's done) purely for that reason, then
-  // swaps the same tab to the real SSO url. Deliberate, accepted tradeoff (same as the
-  // login flow): if this browser already holds a stale PV session from a different
-  // member, this brief preview reflects that, not a blank page.
   const handlePeopleVineClick = (e: MouseEvent, url: string) => {
     e.preventDefault()
     const previewUrl = stillNeedsOnboardingPayment
