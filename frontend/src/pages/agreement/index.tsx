@@ -16,7 +16,7 @@ const AGREEMENT_PDF_URL = '/mHUB_Membership_Agreement_2026.pdf'
 // Minimum time to leave the pre-opened tab showing its initial URL before redirecting
 // it to the SAML relay — see the same constant in login/index.tsx and
 // change-password/index.tsx.
-const MIN_TAB_LOAD_MS = 5000
+const MIN_TAB_LOAD_MS = 2000
 
 type SignatureMode = 'type' | 'draw'
 

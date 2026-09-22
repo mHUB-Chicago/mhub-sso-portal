@@ -18,7 +18,7 @@ interface ChangePasswordFormData {
 // Minimum time to leave the pre-opened tab showing its initial URL (the PV payment
 // form) before redirecting it to the SAML relay — gives that page time to actually
 // render instead of being hijacked mid-load.
-const MIN_TAB_LOAD_MS = 5000
+const MIN_TAB_LOAD_MS = 2000
 
 export function ChangePasswordPage() {
   // Same reasoning as LoginPage — capture once and strip from the URL so navigating
@@ -159,10 +159,14 @@ export function ChangePasswordPage() {
 
         <form
           onSubmit={(e) => {
-            // Reuses the tab the login page already opened for this same flow
-            // (mustResetPassword) instead of opening a second one — a tab is only
-            // opened fresh here as a fallback for paths that land on this page
-            // without going through login/index.tsx first (e.g. forgot-password).
+            // This is now the normal place this tab first opens for a first-time
+            // (pending_membership) login — login/index.tsx deliberately does NOT open
+            // it on the OTP step anymore (that's still their account-verification step,
+            // not yet the real password being set here, and opening the payment form
+            // that early made it look like it had launched before they'd even logged
+            // in). `getRedirectTab()` is still checked so a tab already opened by
+            // login/index.tsx (a plain returnTo/tx redirect for an already-active
+            // member forced through a password reset) is reused instead of doubled.
             // Must run before handleSubmit's own async validation — window.open()
             // called after an `await` is treated as an untrusted popup by most
             // browsers and gets silently blocked or force-closed.

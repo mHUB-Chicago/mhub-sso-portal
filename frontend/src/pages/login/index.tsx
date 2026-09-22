@@ -24,7 +24,7 @@ interface PasswordFormData {
 // Minimum time to leave the pre-opened tab showing its initial URL (the PV payment
 // form) before redirecting it to the SAML relay — gives that page time to actually
 // render instead of being hijacked mid-load.
-const MIN_TAB_LOAD_MS = 5000
+const MIN_TAB_LOAD_MS = 2000
 
 export function LoginPage() {
   // Captured once (lazy initializer) rather than re-read from window.location on every
@@ -302,12 +302,18 @@ export function LoginPage() {
               // actual SAML relay URL once the request resolves, same as before, this
               // just changes what's visible while that's in flight. Matches the
               // backend's ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
-              // Only opened when it's actually going to be used: a SAML relay (tx), a
-              // plain post-login redirect (returnTo), or a pending_membership member
-              // being sent to the payment form — never for a regular active-member
-              // login, which would otherwise flash this tab open then closed once
-              // handlePasswordSubmit finds nothing to redirect it to.
-              if (txQueryParam || returnToParam || isPendingMembershipHint) {
+              // Only opened when it's actually going to be used: a SAML relay (tx) or a
+              // plain post-login redirect (returnTo) for an already-active member —
+              // never for a regular active-member login, which would otherwise flash
+              // this tab open then closed once handlePasswordSubmit finds nothing to
+              // redirect it to. A pending_membership member is deliberately excluded
+              // here even though they'll eventually need this same tab — this step is
+              // their OTP/first-login check, not yet the real password they're about to
+              // set, so opening the payment form this early made it look like it had
+              // launched before they'd even logged in. change-password's own
+              // `!getRedirectTab()` fallback opens it instead, once they're actually on
+              // the password-setting step that leads there.
+              if (txQueryParam || returnToParam) {
                 openRedirectTab('https://member.mhubchicago.com/form/20611')
               }
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
