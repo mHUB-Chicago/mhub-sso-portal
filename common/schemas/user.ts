@@ -45,6 +45,10 @@ export const AppSchema = z.object({
   name: z.string(),
   logo: z.string(),
   url: z.string(),
+  // Lets the dashboard identify the PeopleVine tile reliably (to show a brief PV-domain
+  // preview tab before the real SSO redirect) without matching on the human-editable
+  // `name` field, which could change independently of which SP this actually is.
+  isPeopleVine: z.boolean().optional(),
 });
 
 export const GetMyUserResponseSchema = SuccessResponseSchema(z.object({

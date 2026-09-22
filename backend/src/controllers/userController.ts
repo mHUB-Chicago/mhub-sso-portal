@@ -6,10 +6,19 @@ import { allowUserServiceProvider, getAllowedServiceProvidersForUser, revokeUser
 import { getAllowedServiceProvidersForCompany } from "@/services/companyServiceProviderService";
 import { getAllServiceProviders } from "@/services/serviceProviderService";
 import { getCompanyById } from "@/services/companyService";
+import { PEOPLEVINE_SP_ENTITY_ID, getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
 
 export const handleGetMyUser = async (c: Context<AppType>) => {
   const user = c.get("user");
   const serviceProviders = await getAllowedServiceProvidersForUser(c, user.id);
+  // The "mHUB Member Portal" tile needs a different destination depending on where the
+  // member actually is in onboarding: still pending payment → PV's payment form (same
+  // IdP-initiated SSO URL sendOnboardingPaymentFormEmail already uses); already done →
+  // PV's regular member home instead of bouncing them back to the payment form forever.
+  // sp.loginUrl (the seeded SP-initiated URL) is only used as a fallback here — it isn't
+  // relayState-aware, so it can't carry either destination itself.
+  const stillNeedsOnboardingPayment = user.accountStatus === "pending_membership" && !user.onboardingPaymentAgreementAt;
+  const peopleVinePaymentFormSsoUrl = stillNeedsOnboardingPayment ? await getOnboardingPaymentSsoUrl(c) : null;
   const response = GetMyUserResponseSchema.parse({
     success: true,
     message: "Success",
@@ -18,7 +27,11 @@ export const handleGetMyUser = async (c: Context<AppType>) => {
       apps: serviceProviders.map(sp => ({
         name: sp.name,
         logo: sp.logo,
-        url: sp.loginUrl,
+        url: sp.entityId === PEOPLEVINE_SP_ENTITY_ID
+          ? peopleVinePaymentFormSsoUrl
+            ?? `${c.env.BACKEND_URL}/saml/sso/${sp.id}?relayState=${encodeURIComponent("https://member.mhubchicago.com/home")}`
+          : sp.loginUrl,
+        isPeopleVine: sp.entityId === PEOPLEVINE_SP_ENTITY_ID,
       })),
     },
   });
