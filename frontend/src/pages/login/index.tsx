@@ -130,8 +130,8 @@ export function LoginPage() {
     }
   }
 
-  // Closes the fake tab once its own page has actually finished loading (see
-  // getRedirectTabLoadPromise — already awaited before verifyLogin, re-awaited here),
+  // Closes the fake tab once its own page has actually finished loading (or after
+  // redirectTab.ts's load-wait cap, whichever comes first — see getRedirectTabLoadPromise),
   // then opens a brand new tab pointed at the real (SAML) URL — the fake tab and the
   // real one are never the same window, so nothing SAML-related runs against the fake
   // tab in the background while it's up. A fixed timer here previously could swap it out
@@ -163,10 +163,6 @@ export function LoginPage() {
     isSubmittingPasswordRef.current = true
     const redirectTab = getRedirectTab()
     try {
-      // Nothing SSO-related runs until the fake member.mhubchicago.com page has
-      // actually loaded in its tab (so it's the first entry in browser history) —
-      // not even verifyLogin. Throws (caught below) if it was closed or never loaded.
-      if (redirectTab) await getRedirectTabLoadPromise()
       const result = await verifyLogin({
         request_id: requestId,
         password: data.password,
