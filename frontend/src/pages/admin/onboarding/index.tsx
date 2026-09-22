@@ -15,7 +15,7 @@ import { ScenarioChooserStep } from "./components/ScenarioChooserStep";
 import { LinkGeneratedStep } from "./components/LinkGeneratedStep";
 import { CompanyDetailsStep } from "./components/CompanyDetailsStep";
 import { SelectCompanyStep } from "./components/SelectCompanyStep";
-import { PrimaryUserStep } from "./components/PrimaryUserStep";
+import { PrimaryUserStep, isPrimaryUserStepValid } from "./components/PrimaryUserStep";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
 import { AddonMembershipsStep } from "./components/AddonMembershipsStep";
 import { SkillsStep } from "./components/SkillsStep";
@@ -173,6 +173,16 @@ const OnboardingPage = () => {
 
   const goNext = () => setCurrentStep((step) => Math.min(step + 1, TOTAL_STEPS));
   const goBack = () => setCurrentStep((step) => Math.max(step - 1, 0));
+  // A silently-disabled button leaves staff unsure why "Continue" won't respond —
+  // clicking it now always fires, and an incomplete step surfaces a clear toast instead
+  // of nothing happening. See isCurrentStepValid for what "incomplete" checks per step.
+  const handleContinueClick = () => {
+    if (!isCurrentStepValid) {
+      toast.error("Please fill in all required fields before continuing.");
+      return;
+    }
+    goNext();
+  };
 
   const handleChooserContinue = async () => {
     if (formData.mode === "link") {
@@ -284,7 +294,9 @@ const OnboardingPage = () => {
     }
   };
 
-  const isCurrentStepValid = currentStep !== 5 || isAgreementStepValid(formData.agreement);
+  const isCurrentStepValid =
+    (currentStep !== 2 || isPrimaryUserStepValid(formData.user)) &&
+    (currentStep !== 5 || isAgreementStepValid(formData.agreement));
 
   return (
     <div className="container mx-auto max-w-6xl py-8">
@@ -362,7 +374,7 @@ const OnboardingPage = () => {
                 <Button variant="outline" onClick={goBack}>
                   Back
                 </Button>
-                <Button onClick={goNext} disabled={!isCurrentStepValid} className="bg-brand hover:bg-brand-hover">
+                <Button onClick={handleContinueClick} className="bg-brand hover:bg-brand-hover">
                   Continue
                 </Button>
               </div>

@@ -492,6 +492,14 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       email: resolvedCompanyEmail,
       firstName: companyName,
       lastName: "Company",
+      // The onboarding form has no separate "company phone" field either (same gap as
+      // the address reuse below) — without this, the company's PV record NEVER gets a
+      // `mobile` value at all (always entirely absent, not just blank), the same
+      // missing-vs-empty shape that was confirmed to crash PV's backend elsewhere in
+      // this file (see pvAddSubMember). Reusing the primary user's phone at least gives
+      // this record a real value whenever one was provided.
+      phone: formData.user.phone,
+      phoneCountryCode: formData.user.phoneCountryCode,
     });
     await pvUpdateAccountProfile(c, company.id, {
       type: "company",

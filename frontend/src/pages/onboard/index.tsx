@@ -9,7 +9,7 @@ import {
   useGetOnboardingAttributeOptionsQuery,
 } from "@/store/api/publicOnboardingApi";
 import { CompanyDetailsStep } from "@/pages/admin/onboarding/components/CompanyDetailsStep";
-import { PrimaryUserStep } from "@/pages/admin/onboarding/components/PrimaryUserStep";
+import { PrimaryUserStep, isPrimaryUserStepValid } from "@/pages/admin/onboarding/components/PrimaryUserStep";
 import { SkillsStep } from "@/pages/admin/onboarding/components/SkillsStep";
 import { OnboardingStepper } from "@/pages/admin/onboarding/components/OnboardingStepper";
 import { AgreementStep, isAgreementStepValid } from "@/pages/admin/onboarding/components/AgreementStep";
@@ -189,6 +189,16 @@ const PublicOnboardingPage = () => {
 
   const goNext = () => setCurrentStep((step) => Math.min(step + 1, TOTAL_STEPS));
   const goBack = () => setCurrentStep((step) => Math.max(step - 1, 1));
+  // A silently-disabled button leaves the member unsure why "Continue" won't respond —
+  // clicking it now always fires, and an incomplete step surfaces a clear toast instead
+  // of nothing happening. See isCurrentStepValid for what "incomplete" checks per step.
+  const handleContinueClick = () => {
+    if (!isCurrentStepValid) {
+      toast.error("Please fill in all required fields before continuing.");
+      return;
+    }
+    goNext();
+  };
 
   const handleSubmit = async () => {
     if (!formData || !token) return;
@@ -295,7 +305,9 @@ const PublicOnboardingPage = () => {
     }
   };
 
-  const isCurrentStepValid = currentStep !== 5 || isAgreementStepValid(formData?.agreement);
+  const isCurrentStepValid =
+    (currentStep !== 2 || !!formData?.user && isPrimaryUserStepValid(formData.user)) &&
+    (currentStep !== 5 || isAgreementStepValid(formData?.agreement));
 
   return (
     <div className="min-h-screen bg-gray-50 py-10">
@@ -315,7 +327,7 @@ const PublicOnboardingPage = () => {
               Back
             </Button>
             {currentStep < TOTAL_STEPS ? (
-              <Button onClick={goNext} disabled={!isCurrentStepValid} className="bg-brand hover:bg-brand-hover">
+              <Button onClick={handleContinueClick} className="bg-brand hover:bg-brand-hover">
                 Continue
               </Button>
             ) : (
