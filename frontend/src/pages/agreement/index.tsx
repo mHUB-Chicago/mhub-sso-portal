@@ -6,17 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { useAppDispatch, useAppSelector } from '@/store'
+import { useAppDispatch } from '@/store'
 import { membershipAgreementSigned } from '@/store/slices/authSlice'
-import { useSignMembershipAgreementMutation, useGetMeQuery } from '@/store/api/authApi'
-import { openRedirectTab, getRedirectTab, getRedirectTabOpenedAt, clearRedirectTab } from '@/utils/redirectTab'
+import { useSignMembershipAgreementMutation } from '@/store/api/authApi'
 
 const AGREEMENT_PDF_URL = '/mHUB_Membership_Agreement_2026.pdf'
-
-// Minimum time to leave the pre-opened tab showing its initial URL before redirecting
-// it to the SAML relay — see the same constant in login/index.tsx and
-// change-password/index.tsx.
-const MIN_TAB_LOAD_MS = 2000
 
 type SignatureMode = 'type' | 'draw'
 
@@ -29,7 +23,6 @@ export function AgreementPage() {
     }
   }, [])
 
-  const { redirectUrl } = useAppSelector(state => state.auth)
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
 
@@ -40,23 +33,7 @@ export function AgreementPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawnDataUrlRef = useRef<string | null>(null)
 
-  const [isRedirecting, setIsRedirecting] = useState(false)
-  const [openedNewTab, setOpenedNewTab] = useState(false)
-
   const [signMembershipAgreement, { isLoading: isSigning }] = useSignMembershipAgreementMutation()
-
-  // Same reasoning as login/change-password — poll our own session while waiting on
-  // the PV tab instead of relying on PV's own post-submit page behavior.
-  const { data: meData } = useGetMeQuery(undefined, { pollingInterval: 3000, skip: !(isRedirecting && openedNewTab) })
-  const meUser = meData?.data?.user
-  const isPendingMembership = meUser?.accountStatus === 'pending_membership'
-  const paymentCompleted = isPendingMembership && !!meUser?.onboardingPaymentAgreementAt
-
-  useEffect(() => {
-    if (!paymentCompleted) return
-    const timer = setTimeout(() => navigate('/dashboard'), 1500)
-    return () => clearTimeout(timer)
-  }, [paymentCompleted, navigate])
 
   // Signature canvas wiring — draws on mouse/touch, captures a data URL once the
   // member lifts the pointer. Only active while in "draw" mode.
@@ -131,37 +108,13 @@ export function AgreementPage() {
 
   const isValid = agreed && (signatureMode === 'type' ? fullLegalName.trim().length > 1 : hasDrawnSignature)
 
-  // Points an already-open tab at `url` once we know it, or falls back to a same-tab
-  // redirect if the tab never opened (popup blocked) — see login/index.tsx's
-  // navigateTab. Reuses the same tab opened back on the login/change-password step
-  // rather than opening a new one here.
-  const navigateTab = async (tab: Window | null, url: string) => {
-    if (tab) {
-      const elapsed = Date.now() - getRedirectTabOpenedAt()
-      const remaining = MIN_TAB_LOAD_MS - elapsed
-      if (remaining > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remaining))
-      }
-      tab.location.href = url
-      setOpenedNewTab(true)
-    } else {
-      window.location.assign(url)
-    }
-    clearRedirectTab()
-    setIsRedirecting(true)
-  }
-
+  // This page's only job is capturing the signature — it no longer opens the PV tab or
+  // hands off to SSO itself. Once signed, the member is sent back to /login (carrying
+  // tx/returnTo forward) to log in for real; login/index.tsx is the single place that
+  // opens the payment-form tab and polls for completion, so that behavior only ever
+  // lives in one place instead of being duplicated here too.
   const handleSubmit = async () => {
     if (!isValid) return
-    // Falls back to opening a fresh tab if none is already held from a prior step
-    // (e.g. this page was reached some other way) — same fallback pattern used in
-    // change-password/index.tsx. Opens `about:blank`, not the live PV form URL —
-    // opening the real form here risks the tab loading fully authenticated as
-    // whoever's PV session cookie already happened to be sitting in this browser
-    // (e.g. a different member tested moments earlier), which could let the WRONG
-    // customer's payment form get submitted before the real SAML-authenticated tab
-    // swaps in. `about:blank` carries no PV session, so there's nothing to leak.
-    const redirectTab = getRedirectTab() ?? openRedirectTab('about:blank')
     try {
       const result = await signMembershipAgreement({
         fullLegalName: fullLegalName.trim(),
@@ -173,45 +126,17 @@ export function AgreementPage() {
         throw new Error('Invalid response from server')
       }
       dispatch(membershipAgreementSigned(result.data.membershipAgreementSignedAt))
-      toast.success('Membership agreement signed!')
+      toast.success('Membership agreement signed! Please log in to continue.')
 
-      // Continue exactly where the login/change-password flow left off.
-      if (txQueryParam) {
-        await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
-      } else if (returnToParam) {
-        await navigateTab(redirectTab, returnToParam)
-      } else if (redirectUrl) {
-        await navigateTab(redirectTab, redirectUrl)
-      } else {
-        redirectTab?.close()
-        clearRedirectTab()
-        navigate('/dashboard')
-      }
+      const loginParams = new URLSearchParams()
+      if (txQueryParam) loginParams.set('tx', txQueryParam)
+      if (returnToParam) loginParams.set('returnTo', returnToParam)
+      const loginQuery = loginParams.toString()
+      navigate(loginQuery ? `/login?${loginQuery}` : '/login')
     } catch (error: unknown) {
-      redirectTab?.close()
-      clearRedirectTab()
       const err = error as { data?: { message?: string }; message?: string }
       toast.error(err.data?.message || err.message || 'Failed to sign the agreement. Please try again.')
     }
-  }
-
-  if (isRedirecting) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-brand" />
-          <p className="text-gray-600">
-            {paymentCompleted
-              ? 'Payment completed! Taking you back to your dashboard...'
-              : isPendingMembership && openedNewTab
-                ? "Complete the payment form in the new tab that just opened — we'll bring you back here automatically once it's done."
-                : openedNewTab
-                  ? 'Continue in the new tab that just opened.'
-                  : 'Redirecting you, please wait...'}
-          </p>
-        </div>
-      </div>
-    )
   }
 
   return (

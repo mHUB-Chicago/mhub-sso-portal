@@ -33,8 +33,13 @@ export function LoginPage() {
   // a stale returnTo/tx against whichever account logs in next, regardless of who that is.
   const [txQueryParam] = useState(() => new URLSearchParams(window.location.search).get('tx'))
   const [returnToParam] = useState(() => new URLSearchParams(window.location.search).get('returnTo'))
+  // Set only by change-password's redirect back here right after a real password was
+  // just set — see its comment. Distinguishes THIS visit (guaranteed real password at
+  // Step 2) from a brand-new member's very first visit off the onboarding email (Step 2
+  // there is still their OTP, not a password, even though returnTo is present both times).
+  const [passwordJustSetParam] = useState(() => new URLSearchParams(window.location.search).get('passwordJustSet'))
   useEffect(() => {
-    if (txQueryParam || returnToParam) {
+    if (txQueryParam || returnToParam || passwordJustSetParam) {
       window.history.replaceState(null, '', window.location.pathname)
     }
   }, [])
@@ -168,18 +173,32 @@ export function LoginPage() {
         // Preserve tx (SAML flow) and returnTo (plain post-login redirect, e.g. the
         // onboarding payment form gate) so change-password can send them on afterward —
         // dropping either here would strand a first-time login at /dashboard instead.
+        // returnTo is only carried forward while payment is still actually pending —
+        // same stale-link reasoning as handlePasswordSubmit's stillNeedsOnboardingPayment
+        // below (a mustResetPassword reset for someone who already finished onboarding
+        // shouldn't get bounced back to PV just because they clicked an old email link).
+        const stillNeedsOnboardingPayment = user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
         const changePwdParams = new URLSearchParams()
         if (txQueryParam) changePwdParams.set('tx', txQueryParam)
-        if (returnToParam) changePwdParams.set('returnTo', returnToParam)
+        if (returnToParam && stillNeedsOnboardingPayment) changePwdParams.set('returnTo', returnToParam)
         const changePwdQuery = changePwdParams.toString()
         navigate(changePwdQuery ? `/change-password?${changePwdQuery}` : '/change-password')
         return
       }
 
       // Handle SAML flow or regular navigation
+      // `returnToParam` is baked statically into the onboarding email link at send
+      // time — it never updates, so a member who already finished Payment & Agreement
+      // (or whose accountStatus is no longer pending_membership) but clicks that same
+      // old email link again would otherwise get bounced straight back to PV every
+      // time. Only honor it while it's still actually true that they belong there;
+      // `redirectUrl` below already reflects this same live check from the backend
+      // (see handleVerifyLogin's pendingOnboardingRedirectUrl), so falling through to
+      // it (or to /dashboard) once payment is done is the correct outcome, not a bug.
+      const stillNeedsOnboardingPayment = user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
       if (txQueryParam) {
         await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
-      } else if (returnToParam) {
+      } else if (returnToParam && stillNeedsOnboardingPayment) {
         await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
         await navigateTab(redirectTab, redirectUrl)
@@ -292,33 +311,26 @@ export function LoginPage() {
               // window.open() called after an `await` is treated as an untrusted
               // popup by most browsers and gets silently blocked or force-closed, so
               // this can't wait on verifyLogin's response to know the account status.
-              // Opens `about:blank` (NOT the live PV form URL) — opening the real form
-              // here as a "preview" meant the tab could load it fully authenticated as
-              // whoever's PV session cookie already happened to be sitting in this
-              // browser (e.g. a different member tested moments earlier), and a person
-              // interacting with it before the swap below could end up submitting the
-              // WRONG customer's payment form. `about:blank` carries no PV session at
-              // all, so there's nothing to leak; it gets pointed at the actual SAML
-              // relay URL once the request resolves, same as before, this just changes
-              // what's visible while that's in flight. Matches the backend's
-              // ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
-              // Only opened for a SAML relay (tx) — that's the one case where this step
-              // really is the member's own real password (an already-active member
-              // being redirected here by another SP), so nothing else downstream will
-              // open this tab later. `returnToParam` is deliberately EXCLUDED even
-              // though it's also "going to be used" eventually — the only place that
-              // ever builds a `returnTo=` link is the onboarding payment-form email
-              // (`onboardingController.ts`'s gateUrl), which always targets a brand-new
-              // member with no password set yet (`passwordHashed === null`), so this
-              // step is always their OTP/first-login check, never their real password —
-              // opening the payment form's tab this early made it look like it had
-              // launched before they'd even logged in. (isPendingMembershipHint was
-              // removed for the same reason on an earlier pass, but returnToParam alone
-              // still satisfied this condition every time — that was the actual bug.)
-              // change-password's own `!getRedirectTab()` fallback opens it instead,
-              // once they're actually on the password-setting step that leads there.
-              if (txQueryParam) {
-                openRedirectTab('about:blank')
+              // Opens straight at the live PV payment form (rather than about:blank) so
+              // the tab shows a real destination immediately instead of a blank page —
+              // it gets pointed at the actual SAML relay URL once the request resolves
+              // (see MIN_TAB_LOAD_MS below), this just changes what's visible while
+              // that's in flight. Matches the backend's ONBOARDING_PAYMENT_FORM_URL
+              // default (onboardingController.ts). Deliberate, accepted tradeoff: if this
+              // browser already holds a stale PV session cookie from a different member
+              // tested moments earlier, this tab briefly shows THEIR form, not a blank
+              // page — confirmed and reaccepted after weighing it against the plainer
+              // about:blank placeholder this replaced.
+              // Opens for a SAML relay (tx) — always a real password (an already-active
+              // member) — OR a pending-payment redirect (returnTo) but ONLY when
+              // `passwordJustSetParam` confirms this is the revisit after change-password,
+              // not a brand-new member's very first pass through this same step (still
+              // their OTP there, not a password — `returnTo` alone is present on both
+              // visits, since it's carried through every hop, so it can't tell them apart
+              // by itself; passwordJustSetParam is the one thing that's only ever set on
+              // the second, guaranteed-real-password visit).
+              if (txQueryParam || (returnToParam && passwordJustSetParam)) {
+                openRedirectTab('https://member.mhubchicago.com/form/20611')
               }
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
             }}
