@@ -51,10 +51,6 @@ export function LoginPage() {
   // nothing right before the SSO handoff.
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [openedNewTab, setOpenedNewTab] = useState(false)
-  // Known synchronously from the email step (before password submit), so the payment
-  // tab can be gated on it without waiting on verifyLogin — see handlePasswordSubmit's
-  // form onSubmit below.
-  const [isPendingMembershipHint, setIsPendingMembershipHint] = useState(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
@@ -94,7 +90,6 @@ export function LoginPage() {
       }
       setEmail(data.email)
       setRequestId(result.data.request_id)
-      setIsPendingMembershipHint(result.data.isPendingMembership)
       setStep('password')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
