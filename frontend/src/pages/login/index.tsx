@@ -44,6 +44,10 @@ export function LoginPage() {
   const [step, setStep] = useState<LoginStep>('email')
   const [email, setEmail] = useState('')
   const [requestId, setRequestId] = useState('')
+  // From /login/start — true only while Payment & Agreement is still not complete.
+  // Decides which fake PV page the pre-opened tab loads before SSO runs (see the
+  // password form's onSubmit): the payment form while pending, /home once complete.
+  const [needsOnboardingPayment, setNeedsOnboardingPayment] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   // Covers the gap between a successful verify and the browser actually finishing
   // the redirect — without this, the "Signing in..." button reverts to idle for a
@@ -121,6 +125,7 @@ export function LoginPage() {
       }
       setEmail(data.email)
       setRequestId(result.data.request_id)
+      setNeedsOnboardingPayment(result.data.isPendingMembership ?? false)
       setStep('password')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
@@ -196,9 +201,12 @@ export function LoginPage() {
 
       // Check if user needs to reset password
       if (user.mustResetPassword) {
-        // Deliberately NOT closing/clearing the tab here — change-password reuses
-        // this same one (getRedirectTab()) instead of opening a second one, so the
-        // flow only ever opens one tab total instead of one per step.
+        // change-password doesn't use the pre-opened tab — it sends the member back
+        // here to log in for real, which opens a fresh one — so close it rather than
+        // leave it dangling. (Normally not open on an access-code pass at all — see the
+        // form's onSubmit — this just covers a SAML (tx) first login.)
+        redirectTab?.close()
+        clearRedirectTab()
         // Preserve tx (SAML flow) and returnTo (plain post-login redirect, e.g. the
         // onboarding payment form gate) so change-password can send them on afterward —
         // dropping either here would strand a first-time login at /dashboard instead.
@@ -231,6 +239,11 @@ export function LoginPage() {
         setIsOnboardingPaymentFlow(true)
         await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
+        // For a pending member the backend's redirectUrl IS the PV payment form
+        // (handleVerifyLogin's pendingOnboardingRedirectUrl) — same auto-close +
+        // logout-on-completion as the returnTo branch above, for members who came in
+        // through the plain login page instead of the onboarding email link.
+        if (stillNeedsOnboardingPayment) setIsOnboardingPaymentFlow(true)
         await navigateTab(redirectTab, redirectUrl)
       } else {
         redirectTab?.close()
@@ -341,7 +354,8 @@ export function LoginPage() {
               // window.open() called after an `await` is treated as an untrusted
               // popup by most browsers and gets silently blocked or force-closed, so
               // this can't wait on verifyLogin's response to know the account status.
-              // Opens straight at the live PV payment form (rather than about:blank) so
+              // Opens straight at a live PV page — the payment form while Payment &
+              // Agreement is pending, /home once it's complete — (rather than about:blank) so
               // the tab shows a real destination immediately instead of a blank page —
               // it gets pointed at the actual SAML relay URL once the request resolves
               // (see getRedirectTabLoadPromise below), this just changes what's visible while
@@ -358,7 +372,10 @@ export function LoginPage() {
               // their OTP there, not a password — `returnTo` alone is present on both
               // visits, since it's carried through every hop, so it can't tell them apart
               // by itself; passwordJustSetParam is the one thing that's only ever set on
-              // the second, guaranteed-real-password visit).
+              // the second, guaranteed-real-password visit) — OR any member whose
+              // Payment & Agreement is still pending (from /login/start), so a plain-login
+              // pending member also goes through the tab flow and gets the auto-close +
+              // logout once the webhook marks payment complete.
               // This tab must actually open and load before the SAML/SSO request is
               // allowed to proceed — visiting member.mhubchicago.com first is required
               // for the PV-side session to be in a state that doesn't 502 on the
@@ -367,8 +384,16 @@ export function LoginPage() {
               // the browser blocks this window.open(), the submission is aborted here
               // entirely rather than silently falling through to the request we already
               // know breaks without it.
-              if (txQueryParam || (returnToParam && passwordJustSetParam)) {
-                const tab = openRedirectTab('https://member.mhubchicago.com/form/20611')
+              // The email-link access-code pass (returnTo present, passwordJustSet not
+              // yet) is excluded even though payment is pending — that pass goes to
+              // change-password next, not to PV.
+              const isAccessCodePass = !!returnToParam && !passwordJustSetParam
+              if (txQueryParam || (returnToParam && passwordJustSetParam) || (needsOnboardingPayment && !isAccessCodePass)) {
+                const tab = openRedirectTab(
+                  needsOnboardingPayment
+                    ? 'https://member.mhubchicago.com/form/20611'
+                    : 'https://member.mhubchicago.com/home'
+                )
                 if (!tab) {
                   e.preventDefault()
                   toast.error('Please allow pop-ups for this site, then try signing in again.')
