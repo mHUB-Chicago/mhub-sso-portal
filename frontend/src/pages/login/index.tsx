@@ -56,6 +56,12 @@ export function LoginPage() {
   // nothing right before the SSO handoff.
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [openedNewTab, setOpenedNewTab] = useState(false)
+  // Set only right when the tab we're opening is specifically the PV onboarding-payment
+  // one (see handlePasswordSubmit's returnToParam branch) — never for the tx (SAML
+  // relay) or redirectUrl (auto-redirect SP) branches. Distinguishes that one case from
+  // every other login that also opens a tab, without relying on the polled user's
+  // accountStatus (which is broader than just "currently doing the onboarding tab flow").
+  const [isOnboardingPaymentFlow, setIsOnboardingPaymentFlow] = useState(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
@@ -75,7 +81,13 @@ export function LoginPage() {
   const paymentCompleted = !!meUser?.onboardingPaymentAgreementAt
 
   useEffect(() => {
-    if (!paymentCompleted) return
+    // Gated on isOnboardingPaymentFlow too (not just paymentCompleted) — otherwise this
+    // fires for ANY regular member's normal SSO login through the tab-opening flow
+    // below, since a long-since-onboarded active member also has
+    // onboardingPaymentAgreementAt already set. Without this gate, every ordinary login
+    // that opens a new tab gets immediately logged out and its tab closed the moment the
+    // poll below returns, not just the PV onboarding-payment case this is meant for.
+    if (!isOnboardingPaymentFlow || !paymentCompleted) return
     // Onboarding payment is a one-time event — once it's done, close the PV tab and
     // send the member back to /login for a fresh, real login instead of silently
     // continuing into /dashboard on this session (see change-password/index.tsx's same
@@ -92,7 +104,7 @@ export function LoginPage() {
       navigate('/login')
     }, 1500)
     return () => clearTimeout(timer)
-  }, [paymentCompleted, navigate, dispatch, logoutMutation])
+  }, [isOnboardingPaymentFlow, paymentCompleted, navigate, dispatch, logoutMutation])
 
   const emailForm = useForm<EmailFormData>()
   const passwordForm = useForm<PasswordFormData>()
@@ -219,6 +231,7 @@ export function LoginPage() {
       if (txQueryParam) {
         await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam && stillNeedsOnboardingPayment) {
+        setIsOnboardingPaymentFlow(true)
         await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
         await navigateTab(redirectTab, redirectUrl)
