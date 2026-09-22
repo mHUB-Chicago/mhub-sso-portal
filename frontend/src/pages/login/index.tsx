@@ -56,6 +56,10 @@ export function LoginPage() {
   // nothing right before the SSO handoff.
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [openedNewTab, setOpenedNewTab] = useState(false)
+  // Holds the actual real (SSO-authenticated) tab's Window reference so it can be
+  // closed once payment completion is detected below — a plain local variable inside
+  // navigateTab wouldn't survive past that function call.
+  const realTabRef = useRef<Window | null>(null)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
@@ -71,6 +75,11 @@ export function LoginPage() {
 
   useEffect(() => {
     if (!paymentCompleted) return
+    // Close the real PV tab now that the webhook-driven poll above confirms the form
+    // was actually submitted — realTabRef only ever holds a tab this same window
+    // opened (navigateTab below), so browsers allow closing it regardless of what
+    // origin it's since navigated to.
+    realTabRef.current?.close()
     const timer = setTimeout(() => navigate('/dashboard'), 1500)
     return () => clearTimeout(timer)
   }, [paymentCompleted, navigate])
@@ -122,6 +131,7 @@ export function LoginPage() {
       tab.close()
       const realTab = window.open(url, '_blank')
       if (realTab) {
+        realTabRef.current = realTab
         setOpenedNewTab(true)
       } else {
         window.location.assign(url)
