@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { openRedirectTab, getRedirectTab, getRedirectTabOpenedAt, clearRedirectTab } from '@/utils/redirectTab'
+import { openRedirectTab, getRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
 
 type LoginStep = 'email' | 'password'
 
@@ -20,11 +20,6 @@ interface EmailFormData {
 interface PasswordFormData {
   password: string
 }
-
-// Minimum time to leave the pre-opened tab showing its initial URL (the PV payment
-// form) before redirecting it to the SAML relay — gives that page time to actually
-// render instead of being hijacked mid-load.
-const MIN_TAB_LOAD_MS = 2000
 
 export function LoginPage() {
   // Captured once (lazy initializer) rather than re-read from window.location on every
@@ -135,21 +130,19 @@ export function LoginPage() {
     }
   }
 
-  // Closes the fake tab once it's been shown for MIN_TAB_LOAD_MS, then opens a brand
-  // new tab pointed at the real (SAML) URL — the fake tab and the real one are never
-  // the same window, so nothing SAML-related runs against the fake tab in the
-  // background while it's up. Falls back to a same-tab redirect if there was no fake
-  // tab to begin with, or if this second window.open() gets popup-blocked — a fresh
-  // window.open() called here isn't a direct synchronous continuation of the original
-  // click (it's after the verify request + this delay), so most browsers may block it
-  // even though the first one succeeded.
+  // Closes the fake tab once its own page has actually finished loading (or after
+  // redirectTab.ts's load-wait cap, whichever comes first — see getRedirectTabLoadPromise),
+  // then opens a brand new tab pointed at the real (SAML) URL — the fake tab and the
+  // real one are never the same window, so nothing SAML-related runs against the fake
+  // tab in the background while it's up. A fixed timer here previously could swap it out
+  // before the fake page had actually rendered on a slow connection. Falls back to a
+  // same-tab redirect if there was no fake tab to begin with, or if this second
+  // window.open() gets popup-blocked — a fresh window.open() called here isn't a direct
+  // synchronous continuation of the original click (it's after the verify request + the
+  // load wait), so most browsers may block it even though the first one succeeded.
   const navigateTab = async (tab: Window | null, url: string) => {
     if (tab) {
-      const elapsed = Date.now() - getRedirectTabOpenedAt()
-      const remaining = MIN_TAB_LOAD_MS - elapsed
-      if (remaining > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remaining))
-      }
+      await getRedirectTabLoadPromise()
       tab.close()
       const realTab = window.open(url, '_blank')
       if (realTab) {
@@ -347,7 +340,7 @@ export function LoginPage() {
               // Opens straight at the live PV payment form (rather than about:blank) so
               // the tab shows a real destination immediately instead of a blank page —
               // it gets pointed at the actual SAML relay URL once the request resolves
-              // (see MIN_TAB_LOAD_MS below), this just changes what's visible while
+              // (see getRedirectTabLoadPromise below), this just changes what's visible while
               // that's in flight. Matches the backend's ONBOARDING_PAYMENT_FORM_URL
               // default (onboardingController.ts). Deliberate, accepted tradeoff: if this
               // browser already holds a stale PV session cookie from a different member
