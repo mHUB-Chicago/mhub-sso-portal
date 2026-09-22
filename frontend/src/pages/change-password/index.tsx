@@ -173,13 +173,18 @@ export function ChangePasswordPage() {
             // Only opens when it'll actually be used (see the same reasoning in
             // login/index.tsx) — never for a regular active-member password reset.
             if (!getRedirectTab() && (txQueryParam || returnToParam || isPendingMembershipHint)) {
-              // Opens straight at the PV payment form (rather than about:blank) so
-              // the tab shows the real destination immediately — it gets pointed at
-              // the actual SAML relay URL once the request resolves, same as
-              // before, this just changes what's visible while that's in flight.
+              // Opens `about:blank` (NOT the live PV form URL) — opening the real form
+              // here as a "preview" meant the tab could load fully authenticated as
+              // whoever's PV session cookie already happened to be sitting in this
+              // browser (e.g. a different member tested moments earlier on the same
+              // machine), and a person interacting with it before the swap below could
+              // end up submitting the WRONG customer's payment form. `about:blank`
+              // carries no PV session at all, so there's nothing to leak; it gets
+              // pointed at the actual SAML relay URL once the request resolves, same
+              // as before, this just changes what's visible while that's in flight.
               // Matches the backend's ONBOARDING_PAYMENT_FORM_URL default
               // (onboardingController.ts).
-              openRedirectTab('https://member.mhubchicago.com/form/20611')
+              openRedirectTab('about:blank')
             }
             return handleSubmit(onSubmit)(e)
           }}

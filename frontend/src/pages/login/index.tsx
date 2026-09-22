@@ -297,24 +297,33 @@ export function LoginPage() {
               // window.open() called after an `await` is treated as an untrusted
               // popup by most browsers and gets silently blocked or force-closed, so
               // this can't wait on verifyLogin's response to know the account status.
-              // Opens straight at the PV payment form (rather than about:blank) so the
-              // tab shows the real destination immediately — it gets pointed at the
-              // actual SAML relay URL once the request resolves, same as before, this
-              // just changes what's visible while that's in flight. Matches the
-              // backend's ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
-              // Only opened when it's actually going to be used: a SAML relay (tx) or a
-              // plain post-login redirect (returnTo) for an already-active member —
-              // never for a regular active-member login, which would otherwise flash
-              // this tab open then closed once handlePasswordSubmit finds nothing to
-              // redirect it to. A pending_membership member is deliberately excluded
-              // here even though they'll eventually need this same tab — this step is
-              // their OTP/first-login check, not yet the real password they're about to
-              // set, so opening the payment form this early made it look like it had
-              // launched before they'd even logged in. change-password's own
-              // `!getRedirectTab()` fallback opens it instead, once they're actually on
-              // the password-setting step that leads there.
-              if (txQueryParam || returnToParam) {
-                openRedirectTab('https://member.mhubchicago.com/form/20611')
+              // Opens `about:blank` (NOT the live PV form URL) — opening the real form
+              // here as a "preview" meant the tab could load it fully authenticated as
+              // whoever's PV session cookie already happened to be sitting in this
+              // browser (e.g. a different member tested moments earlier), and a person
+              // interacting with it before the swap below could end up submitting the
+              // WRONG customer's payment form. `about:blank` carries no PV session at
+              // all, so there's nothing to leak; it gets pointed at the actual SAML
+              // relay URL once the request resolves, same as before, this just changes
+              // what's visible while that's in flight. Matches the backend's
+              // ONBOARDING_PAYMENT_FORM_URL default (onboardingController.ts).
+              // Only opened for a SAML relay (tx) — that's the one case where this step
+              // really is the member's own real password (an already-active member
+              // being redirected here by another SP), so nothing else downstream will
+              // open this tab later. `returnToParam` is deliberately EXCLUDED even
+              // though it's also "going to be used" eventually — the only place that
+              // ever builds a `returnTo=` link is the onboarding payment-form email
+              // (`onboardingController.ts`'s gateUrl), which always targets a brand-new
+              // member with no password set yet (`passwordHashed === null`), so this
+              // step is always their OTP/first-login check, never their real password —
+              // opening the payment form's tab this early made it look like it had
+              // launched before they'd even logged in. (isPendingMembershipHint was
+              // removed for the same reason on an earlier pass, but returnToParam alone
+              // still satisfied this condition every time — that was the actual bug.)
+              // change-password's own `!getRedirectTab()` fallback opens it instead,
+              // once they're actually on the password-setting step that leads there.
+              if (txQueryParam) {
+                openRedirectTab('about:blank')
               }
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
             }}

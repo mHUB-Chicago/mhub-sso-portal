@@ -155,8 +155,13 @@ export function AgreementPage() {
     if (!isValid) return
     // Falls back to opening a fresh tab if none is already held from a prior step
     // (e.g. this page was reached some other way) — same fallback pattern used in
-    // change-password/index.tsx.
-    const redirectTab = getRedirectTab() ?? openRedirectTab('https://member.mhubchicago.com/form/20611')
+    // change-password/index.tsx. Opens `about:blank`, not the live PV form URL —
+    // opening the real form here risks the tab loading fully authenticated as
+    // whoever's PV session cookie already happened to be sitting in this browser
+    // (e.g. a different member tested moments earlier), which could let the WRONG
+    // customer's payment form get submitted before the real SAML-authenticated tab
+    // swaps in. `about:blank` carries no PV session, so there's nothing to leak.
+    const redirectTab = getRedirectTab() ?? openRedirectTab('about:blank')
     try {
       const result = await signMembershipAgreement({
         fullLegalName: fullLegalName.trim(),
