@@ -355,8 +355,21 @@ export function LoginPage() {
               // visits, since it's carried through every hop, so it can't tell them apart
               // by itself; passwordJustSetParam is the one thing that's only ever set on
               // the second, guaranteed-real-password visit).
+              // This tab must actually open and load before the SAML/SSO request is
+              // allowed to proceed — visiting member.mhubchicago.com first is required
+              // for the PV-side session to be in a state that doesn't 502 on the
+              // subsequent authenticated request, confirmed by testing (blocked pop-up →
+              // straight to a cold SAML POST → 502; pop-up loads first → works). So if
+              // the browser blocks this window.open(), the submission is aborted here
+              // entirely rather than silently falling through to the request we already
+              // know breaks without it.
               if (txQueryParam || (returnToParam && passwordJustSetParam)) {
-                openRedirectTab('https://member.mhubchicago.com/form/20611')
+                const tab = openRedirectTab('https://member.mhubchicago.com/form/20611')
+                if (!tab) {
+                  e.preventDefault()
+                  toast.error('Please allow pop-ups for this site, then try signing in again.')
+                  return
+                }
               }
               return passwordForm.handleSubmit(handlePasswordSubmit)(e)
             }}
