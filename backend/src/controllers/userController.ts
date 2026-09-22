@@ -6,10 +6,19 @@ import { allowUserServiceProvider, getAllowedServiceProvidersForUser, revokeUser
 import { getAllowedServiceProvidersForCompany } from "@/services/companyServiceProviderService";
 import { getAllServiceProviders } from "@/services/serviceProviderService";
 import { getCompanyById } from "@/services/companyService";
+import { PEOPLEVINE_SP_ENTITY_ID, getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
 
 export const handleGetMyUser = async (c: Context<AppType>) => {
   const user = c.get("user");
   const serviceProviders = await getAllowedServiceProvidersForUser(c, user.id);
+  // The PV tile needs a live (relayState-carrying) SSO URL rather than the SP's static
+  // loginUrl — same reasoning as handleVerifyLogin's pendingOnboardingRedirectUrl: which
+  // PV page to land on depends on the user's CURRENT onboarding payment status, not a
+  // value baked in at some earlier point.
+  const stillNeedsOnboardingPayment = !user.onboardingPaymentAgreementAt;
+  const peopleVineSsoUrl = stillNeedsOnboardingPayment
+    ? await getOnboardingPaymentSsoUrl(c)
+    : `${c.env.BACKEND_URL ?? ""}/saml/sso/${serviceProviders.find(sp => sp.entityId === PEOPLEVINE_SP_ENTITY_ID)?.id}?relayState=${encodeURIComponent("https://member.mhubchicago.com/home")}`;
   const response = GetMyUserResponseSchema.parse({
     success: true,
     message: "Success",
@@ -18,7 +27,8 @@ export const handleGetMyUser = async (c: Context<AppType>) => {
       apps: serviceProviders.map(sp => ({
         name: sp.name,
         logo: sp.logo,
-        url: sp.loginUrl,
+        url: sp.entityId === PEOPLEVINE_SP_ENTITY_ID ? peopleVineSsoUrl : sp.loginUrl,
+        isPeopleVine: sp.entityId === PEOPLEVINE_SP_ENTITY_ID,
       })),
     },
   });

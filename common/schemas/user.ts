@@ -45,6 +45,7 @@ export const AppSchema = z.object({
   name: z.string(),
   logo: z.string(),
   url: z.string(),
+  isPeopleVine: z.boolean().optional(),
 });
 
 export const GetMyUserResponseSchema = SuccessResponseSchema(z.object({
