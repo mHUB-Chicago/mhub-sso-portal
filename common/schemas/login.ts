@@ -11,6 +11,12 @@ export const StartLoginResponseSchema = SuccessResponseSchema(z.object({
   // it should pre-open the onboarding payment tab — that tab must only ever appear
   // for pending_membership users, never for a regular active-member login.
   isPendingMembership: z.boolean(),
+  // True when this login's Step 2 takes an emailed access code (no password set yet,
+  // unverified email, or a forced reset) — same rule as createLoginRequest's needsOtp.
+  // Lets the login page tell an access-code pass (which goes on to change-password, not
+  // SSO) from a real password login before submitting, so the fake PV tab only opens
+  // for the latter.
+  requiresOtp: z.boolean(),
 }));
 
 export const VerifyLoginRequestSchema = z.object({

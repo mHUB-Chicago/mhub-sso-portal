@@ -44,6 +44,10 @@ export function LoginPage() {
   const [step, setStep] = useState<LoginStep>('email')
   const [email, setEmail] = useState('')
   const [requestId, setRequestId] = useState('')
+  // From /login/start — decide, before Step 2 is submitted, whether this login will end
+  // in an SSO hop (and so needs the fake PV tab first). See the password form's onSubmit.
+  const [startIsPendingMembership, setStartIsPendingMembership] = useState(false)
+  const [requiresOtp, setRequiresOtp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   // Covers the gap between a successful verify and the browser actually finishing
   // the redirect — without this, the "Signing in..." button reverts to idle for a
@@ -121,6 +125,8 @@ export function LoginPage() {
       }
       setEmail(data.email)
       setRequestId(result.data.request_id)
+      setStartIsPendingMembership(result.data.isPendingMembership)
+      setRequiresOtp(result.data.requiresOtp)
       setStep('password')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
@@ -353,20 +359,15 @@ export function LoginPage() {
               // tested moments earlier, this tab briefly shows THEIR form, not a blank
               // page — confirmed and reaccepted after weighing it against the plainer
               // about:blank placeholder this replaced.
-              // Opens for a SAML relay (tx) — always a real password (an already-active
-              // member) — OR a pending-payment redirect (returnTo) but ONLY when
-              // `passwordJustSetParam` confirms this is the revisit after change-password,
-              // not a brand-new member's very first pass through this same step (still
-              // their OTP there, not a password — `returnTo` alone is present on both
-              // visits, since it's carried through every hop, so it can't tell them apart
-              // by itself; passwordJustSetParam is the one thing that's only ever set on
-              // the second, guaranteed-real-password visit).
               // This tab must actually open and load before the SAML/SSO request is
               // allowed to proceed — PV changed this survey to "Registered Member Only"
               // (2026-09-23), so a real PV session (via this SAML SSO) is required again
               // to reach it. If the browser blocks this window.open(), the submission is
               // aborted here entirely rather than silently falling through.
-              if (txQueryParam || (returnToParam && passwordJustSetParam)) {
+              // Opens ONLY while Payment & Agreement is still pending (startIsPendingMembership,
+              // from /login/start) — and never on an access-code pass (requiresOtp), which
+              // goes on to change-password instead of SSO.
+              if (!requiresOtp && startIsPendingMembership) {
                 const tab = openRedirectTab('https://member.mhubchicago.com/form/20611')
                 if (!tab) {
                   e.preventDefault()

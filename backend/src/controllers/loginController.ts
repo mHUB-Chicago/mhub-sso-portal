@@ -40,6 +40,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
         // an already-paid member back to the payment form on every login is exactly the
         // bug this field exists to prevent.
         isPendingMembership: user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt,
+        requiresOtp: user.passwordHashed === null || !user.emailVerified || user.mustResetPassword,
       },
     });
     return c.json(response);
@@ -47,8 +48,8 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     console.error("handleStartLogin error:", error);
 
     // Still return a response with a fake request_id to avoid user enumeration —
-    // isPendingMembership defaults to false here for the same reason, so the field's
-    // presence/value never reveals whether the email actually exists.
+    // isPendingMembership/requiresOtp default to false here for the same reason, so the fields
+    // presence/values never reveal whether the email actually exists.
     const randomUUID = crypto.randomUUID();
     const response = StartLoginResponseSchema.parse({
       success: true,
@@ -56,6 +57,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
       data: {
         request_id: randomUUID,
         isPendingMembership: false,
+        requiresOtp: false,
       },
     });
     return c.json(response);
