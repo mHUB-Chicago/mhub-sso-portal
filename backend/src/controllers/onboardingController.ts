@@ -34,6 +34,7 @@ import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { createCompany, updateCompany } from "@/services/companyService";
 import { createUser, updateUser } from "@/services/userService";
 import { generateSignedMembershipAgreementPdf } from "@/services/membershipAgreementService";
+import { getServiceProviderByEntityId } from "@/services/serviceProviderService";
 import {
   assertPeopleVineWritesEnabled,
   fetchPvAttributeOptions,
@@ -79,16 +80,21 @@ export const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
 
 // Shared with handleVerifyLogin (loginController.ts) — a pending_membership user who
 // logs in through ANY path (not just this email's link) should still land on this same
-// URL, so the redirect doesn't depend on a `returnTo` query param surviving the whole
-// email→OTP→set-password chain intact.
-// Plain link, not a SAML/SSO redirect — confirmed (2026-09-23) that this survey is a
-// public PV form (blank email field, no PV login reflected in it either way), so
-// authenticating into PV first was unnecessary and was the source of a PV-side 502
-// (their SSO/ACS endpoint erroring on this specific RelayState target regardless of the
-// identity asserted). Our own /login OTP/password gate (see sendOnboardingPaymentFormEmail)
-// still verifies it's the right person before they ever reach this link.
-export const getOnboardingPaymentFormUrl = (c: Context<AppType>): string => {
-  return (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+// SSO+RelayState URL, so the redirect doesn't depend on a `returnTo` query param
+// surviving the whole email→OTP→set-password chain intact.
+// Re-introduced SSO (2026-09-23) after briefly trying a plain form link: PV changed the
+// survey to "Registered Member Only", so an actual PV session is required to reach it at
+// all now — a plain link no longer works. Still SAML/SSO'd through our own IdP, which is
+// what was 502ing for accounts without a real active PV membership (see
+// resolveSamlIdentityEmail, samlController.ts) — that root cause is unresolved and
+// tracked separately (escalated to PV support), not fixed by this URL choice either way.
+export const getOnboardingPaymentSsoUrl = async (c: Context<AppType>): Promise<string> => {
+  const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+  const backendUrl = c.env.BACKEND_URL ?? "";
+  const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
+  return peopleVineSp
+    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
+    : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
 };
 
 // Fires once, right after a person's PV customer record is successfully created —
@@ -97,13 +103,15 @@ export const getOnboardingPaymentFormUrl = (c: Context<AppType>): string => {
 // Best-effort: a SendGrid failure must never undo or fail the PV push that already
 // succeeded, so this only ever logs and swallows its own errors.
 const sendOnboardingPaymentFormEmail = async (c: Context<AppType>, formData: OnboardingFormData): Promise<void> => {
-  // The email links to OUR OWN login page with `returnTo` pointed at the plain PV form
-  // link (see getOnboardingPaymentFormUrl) rather than the form directly, purely so we
-  // verify it's the right person (OTP/password) before they reach it — the form itself
-  // is public and doesn't need a PV session (see that function's comment).
+  // The PV form itself requires a PV-side login — a bare link isn't enough, the person
+  // needs an active PV session too. So the email links to OUR OWN login page with
+  // `returnTo` pointed at OUR IdP-initiated SSO endpoint for PV (not the form directly);
+  // our existing email+OTP+set-password flow (login/index.tsx, change-password/index.tsx)
+  // already forwards `returnTo` through to completion, and the SSO endpoint then signs
+  // them into PV via SAML with RelayState set to the form, landing them there logged in.
   const frontendUrl = c.env.FRONTEND_URL ?? "";
-  const formUrl = getOnboardingPaymentFormUrl(c);
-  const gateUrl = `${frontendUrl}/login?returnTo=${encodeURIComponent(formUrl)}`;
+  const ssoUrl = await getOnboardingPaymentSsoUrl(c);
+  const gateUrl = `${frontendUrl}/login?returnTo=${encodeURIComponent(ssoUrl)}`;
   // new_company only — the company (not the primary user) usually holds the subscription,
   // so an admin may designate a separate billing contact (e.g. AP/finance) to receive and
   // complete this instead. getUserByEmail matches this address too, so they can log in
