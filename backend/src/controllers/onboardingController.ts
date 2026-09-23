@@ -77,6 +77,13 @@ const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form
 // environment-specific. Also used by samlController.ts to decide when a pending_membership
 // user's SAML identity should be swapped for their company's (see resolveSamlIdentityEmail).
 export const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
+// Where a regular (non-onboarding) member should land in PV after SSO. PV ignores
+// RelayState and instead lands on the last PV page viewed in that browser, so the login
+// page loads this page first (see peopleVineLandingUrl, handleStartLogin).
+export const PEOPLEVINE_HOME_URL = "https://member.mhubchicago.com/home";
+
+export const getOnboardingPaymentFormUrl = (c: Context<AppType>): string =>
+  (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
 
 // Shared with handleVerifyLogin (loginController.ts) — a pending_membership user who
 // logs in through ANY path (not just this email's link) should still land on this same
@@ -89,16 +96,16 @@ export const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
 // resolveSamlIdentityEmail, samlController.ts) — that root cause is unresolved and
 // tracked separately (escalated to PV support), not fixed by this URL choice either way.
 export const getOnboardingPaymentSsoUrl = async (c: Context<AppType>): Promise<string> => {
-  const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+  const formUrl = getOnboardingPaymentFormUrl(c);
   const backendUrl = c.env.BACKEND_URL ?? "";
   const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
-  // IdP-initiated SSO with RelayState = the form, so PV is told explicitly where to land.
-  // Previously the login page pre-loaded the form (logged out) in a "fake" tab so PV
-  // would remember it as its post-login destination — but PV keeps that in its own
-  // session cookie, so EVERY later login in that browser (any member, any path) landed
-  // on form 20611 until the browser was closed.
+  // Same SP-initiated entry as the dashboard's "mHUB Member Portal" tile (the SP's own
+  // loginUrl, PV → our /saml → back to PV's ACS). PV ignores RelayState (verified
+  // 2026-09-23): after SSO it lands on the last PV page viewed in that browser, which
+  // is why the login page pre-opens the form before this SSO (peopleVineLandingUrl).
+  if (peopleVineSp?.loginUrl) return peopleVineSp.loginUrl;
   return peopleVineSp
-    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
+    ? `${backendUrl}/saml/sso/${peopleVineSp.id}`
     : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
 };
 

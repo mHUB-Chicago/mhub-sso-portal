@@ -14,6 +14,7 @@ import z from 'zod'
 // Request types
 interface StartLoginRequest {
   email: string
+  tx?: string
 }
 
 interface VerifyLoginRequest {
