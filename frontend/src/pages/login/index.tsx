@@ -45,8 +45,8 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [requestId, setRequestId] = useState('')
   // From /login/start — decide, before Step 2 is submitted, whether this login will end
-  // in an SSO hop (and so needs the fake PV tab first). See the password form's onSubmit.
-  const [startIsPendingMembership, setStartIsPendingMembership] = useState(false)
+  // in an SSO into PV (and so needs the pre-opened tab first). See the password form's onSubmit.
+  const [peopleVineLandingUrl, setPeopleVineLandingUrl] = useState<string | null>(null)
   const [requiresOtp, setRequiresOtp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   // Covers the gap between a successful verify and the browser actually finishing
@@ -119,13 +119,13 @@ export function LoginPage() {
     if (isSubmittingEmailRef.current) return
     isSubmittingEmailRef.current = true
     try {
-      const result = await startLogin({ email: data.email }).unwrap()
+      const result = await startLogin({ email: data.email, tx: txQueryParam ?? undefined }).unwrap()
       if (!result.data) {
         throw new Error('Invalid response from server')
       }
       setEmail(data.email)
       setRequestId(result.data.request_id)
-      setStartIsPendingMembership(result.data.isPendingMembership)
+      setPeopleVineLandingUrl(result.data.peopleVineLandingUrl)
       setRequiresOtp(result.data.requiresOtp)
       setStep('password')
     } catch (error: unknown) {
@@ -136,27 +136,17 @@ export function LoginPage() {
     }
   }
 
-  // Closes the fake tab once its own page has actually finished loading (see
-  // getRedirectTabLoadPromise — already awaited before verifyLogin, re-awaited here),
-  // then opens a brand new tab pointed at the real (SAML) URL — the fake tab and the
-  // real one are never the same window, so nothing SAML-related runs against the fake
-  // tab in the background while it's up. A fixed timer here previously could swap it out
-  // before the fake page had actually rendered on a slow connection. Falls back to a
-  // same-tab redirect if there was no fake tab to begin with, or if this second
-  // window.open() gets popup-blocked — a fresh window.open() called here isn't a direct
-  // synchronous continuation of the original click (it's after the verify request + the
-  // load wait), so most browsers may block it even though the first one succeeded.
+  // Once the pre-opened tab's PV landing page has loaded (getRedirectTabLoadPromise),
+  // points that same tab at the real (SAML) URL. Navigating an existing
+  // Window isn't subject to popup-blocking, unlike a fresh window.open() this late (after
+  // the verify request, no longer a direct continuation of the click). Falls back to a
+  // same-tab redirect if there was no pre-opened tab.
   const navigateTab = async (tab: Window | null, url: string) => {
-    if (tab) {
+    if (tab && !tab.closed) {
       await getRedirectTabLoadPromise()
-      tab.close()
-      const realTab = window.open(url, '_blank')
-      if (realTab) {
-        realTabRef.current = realTab
-        setOpenedNewTab(true)
-      } else {
-        window.location.assign(url)
-      }
+      tab.location.href = url
+      realTabRef.current = tab
+      setOpenedNewTab(true)
     } else {
       window.location.assign(url)
     }
@@ -169,9 +159,8 @@ export function LoginPage() {
     isSubmittingPasswordRef.current = true
     const redirectTab = getRedirectTab()
     try {
-      // Nothing SSO-related runs until the fake member.mhubchicago.com page has
-      // actually loaded in its tab (so it's the first entry in browser history) —
-      // not even verifyLogin. Throws (caught below) if it was closed or never loaded.
+      // Nothing SSO-related runs until the pre-opened tab is ready — not even
+      // verifyLogin. Throws (caught below) if it was closed or never loaded.
       if (redirectTab) await getRedirectTabLoadPromise()
       const result = await verifyLogin({
         request_id: requestId,
@@ -349,26 +338,17 @@ export function LoginPage() {
               // window.open() called after an `await` is treated as an untrusted
               // popup by most browsers and gets silently blocked or force-closed, so
               // this can't wait on verifyLogin's response to know the account status.
-              // Opens straight at the live PV payment form (rather than about:blank) so
-              // the tab shows a real destination immediately instead of a blank page —
-              // it gets pointed at the actual SAML relay URL once the request resolves
-              // (see getRedirectTabLoadPromise below), this just changes what's visible while
-              // that's in flight. Matches the backend's ONBOARDING_PAYMENT_FORM_URL
-              // default (onboardingController.ts). Deliberate, accepted tradeoff: if this
-              // browser already holds a stale PV session cookie from a different member
-              // tested moments earlier, this tab briefly shows THEIR form, not a blank
-              // page — confirmed and reaccepted after weighing it against the plainer
-              // about:blank placeholder this replaced.
-              // This tab must actually open and load before the SAML/SSO request is
-              // allowed to proceed — PV changed this survey to "Registered Member Only"
-              // (2026-09-23), so a real PV session (via this SAML SSO) is required again
-              // to reach it. If the browser blocks this window.open(), the submission is
-              // aborted here entirely rather than silently falling through.
-              // Opens ONLY while Payment & Agreement is still pending (startIsPendingMembership,
+              // Opens ONLY when this login ends in an SSO into PV (peopleVineLandingUrl,
               // from /login/start) — and never on an access-code pass (requiresOtp), which
-              // goes on to change-password instead of SSO.
-              if (!requiresOtp && startIsPendingMembership) {
-                const tab = openRedirectTab('https://member.mhubchicago.com/form/20611')
+              // goes on to change-password instead of SSO. PV ignores RelayState and lands
+              // on the last PV page viewed in this browser, so the tab loads the landing
+              // page first (the payment form while it's pending, PV home otherwise) and
+              // only then runs the SSO. Without that, one visit to the payment form made
+              // every later PV login in this browser land on it.
+              // If the browser blocks this window.open(), the submission is aborted here
+              // entirely rather than silently falling through.
+              if (!requiresOtp && peopleVineLandingUrl) {
+                const tab = openRedirectTab(peopleVineLandingUrl)
                 if (!tab) {
                   e.preventDefault()
                   toast.error('Please allow pop-ups for this site, then try signing in again.')

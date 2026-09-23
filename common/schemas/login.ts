@@ -4,6 +4,9 @@ import { UserSchema } from "./user";
 
 export const StartLoginRequestSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
+  // The pending SAML transaction, if this login came from an SP — lets the backend tell
+  // whether the login will end in PV (see peopleVineLandingUrl).
+  tx: z.string().optional(),
 });
 export const StartLoginResponseSchema = SuccessResponseSchema(z.object({
   request_id: z.string(),
@@ -17,6 +20,10 @@ export const StartLoginResponseSchema = SuccessResponseSchema(z.object({
   // SSO) from a real password login before submitting, so the fake PV tab only opens
   // for the latter.
   requiresOtp: z.boolean(),
+  // Set when this login will end in an SSO into PV. PV ignores RelayState and lands on
+  // the last PV page viewed in the browser, so the login page loads this URL in the
+  // pre-opened tab first: the payment form while it's pending, PV home otherwise.
+  peopleVineLandingUrl: z.string().nullable(),
 }));
 
 export const VerifyLoginRequestSchema = z.object({

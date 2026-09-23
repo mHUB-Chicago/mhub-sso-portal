@@ -8,12 +8,33 @@ import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
-import { getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
+import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl, PEOPLEVINE_HOME_URL, PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 import { getSessionId } from "@/middleware/auth";
+import { getSamlAuthRequestById } from "@/services/samlAuthRequestService";
+import { getServiceProviderById } from "@/services/serviceProviderService";
+import { User } from "@/database/models";
+
+// Where PV should land after this login's SSO, or null if the login won't end in PV.
+// Mirrors handleVerifyLogin's redirect choice: the onboarding payment form while it's
+// pending, otherwise PV only if the SAML transaction (tx) came from PV, or — with no tx —
+// if PV is the user's auto-redirect SP.
+const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendingMembership: boolean, tx?: string): Promise<string | null> => {
+  if (isPendingMembership) return getOnboardingPaymentFormUrl(c);
+  let entityId: string | undefined;
+  if (tx) {
+    const samlAuthRequest = await getSamlAuthRequestById(c, tx);
+    if (!samlAuthRequest) return null;
+    entityId = (await getServiceProviderById(c, samlAuthRequest.serviceProviderId))?.entityId;
+  } else {
+    const availableServiceProviders = await getAllowedServiceProvidersForUser(c, user.id);
+    entityId = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]?.entityId;
+  }
+  return entityId === PEOPLEVINE_SP_ENTITY_ID ? PEOPLEVINE_HOME_URL : null;
+};
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
-    const { email } = c.req.valid("json");
+    const { email, tx } = c.req.valid("json");
     const user = await getUserByEmail(c, email);
     if (!user) {
       throw new Error("User not found");
@@ -28,19 +49,21 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
       return c.json({ success: false, message: "Your account is not fully set up. Please contact mHUB to complete your registration." }, 400);
     }
     const loginRequest = await createLoginRequest(c, { email: user.email });
+    // Also excludes anyone who already completed payment — accountStatus can lag
+    // behind onboardingPaymentAgreementAt while waiting on the PV subscription sync
+    // (see "Subscription Applied" in the onboarding progress tracker), and re-sending
+    // an already-paid member back to the payment form on every login is exactly the
+    // bug this field exists to prevent.
+    const isPendingMembership = user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt;
     // Here you would normally create a login flow/session and send back necessary info
     const response = StartLoginResponseSchema.parse({
       success: true,
       message: "Success",
       data: {
         request_id: loginRequest.id,
-        // Also excludes anyone who already completed payment — accountStatus can lag
-        // behind onboardingPaymentAgreementAt while waiting on the PV subscription sync
-        // (see "Subscription Applied" in the onboarding progress tracker), and re-sending
-        // an already-paid member back to the payment form on every login is exactly the
-        // bug this field exists to prevent.
-        isPendingMembership: user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt,
+        isPendingMembership,
         requiresOtp: user.passwordHashed === null || !user.emailVerified || user.mustResetPassword,
+        peopleVineLandingUrl: await getPeopleVineLandingUrl(c, user, isPendingMembership, tx),
       },
     });
     return c.json(response);
@@ -58,6 +81,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
         request_id: randomUUID,
         isPendingMembership: false,
         requiresOtp: false,
+        peopleVineLandingUrl: null,
       },
     });
     return c.json(response);
