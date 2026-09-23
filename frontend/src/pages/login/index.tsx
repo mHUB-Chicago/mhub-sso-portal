@@ -61,20 +61,27 @@ export function LoginPage() {
   // every other login that also opens a tab, without relying on the polled user's
   // accountStatus (which is broader than just "currently doing the onboarding tab flow").
   const [isOnboardingPaymentFlow, setIsOnboardingPaymentFlow] = useState(false)
+  // Set once the onboarding payment is detected AND the session has been torn down —
+  // switches this page to a static final message (no spinner, no route back to the form).
+  const [onboardingDone, setOnboardingDone] = useState(false)
+  // Run-once guard for the teardown below — a ref (not effect cleanup) so a re-render
+  // from the still-running poll can't abort the logout halfway and strand the spinner.
+  const onboardingTeardownStartedRef = useRef(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
   const [logoutMutation] = useLogoutMutation()
 
-  // Holds the real (SSO-authenticated) tab's Window reference so it can be closed once
-  // payment completion is detected below, instead of leaving it open in the background.
+  // Holds the real (SSO-authenticated) tab's Window reference. Deliberately NOT closed
+  // on payment completion — that tab is sitting on PV's "Thank You" page, which is
+  // where the member should end up.
   const realTabRef = useRef<Window | null>(null)
 
   // While waiting on the PV tab, poll our own session instead of relying on PV's own
   // post-submit page behavior (a different domain we don't control) — once the payment
   // webhook lands, onboardingPaymentAgreementAt flips and we can bring the member back
   // into the portal ourselves.
-  const { data: meData } = useGetMeQuery(undefined, { pollingInterval: 3000, skip: !(isRedirecting && openedNewTab) })
+  const { data: meData } = useGetMeQuery(undefined, { pollingInterval: 3000, skip: !(isRedirecting && openedNewTab) || onboardingDone })
   const meUser = meData?.data?.user
   const isPendingMembership = meUser?.accountStatus === 'pending_membership'
   const paymentCompleted = !!meUser?.onboardingPaymentAgreementAt
@@ -86,24 +93,27 @@ export function LoginPage() {
     // onboardingPaymentAgreementAt already set. Without this gate, every ordinary login
     // that opens a new tab gets immediately logged out and its tab closed the moment the
     // poll below returns, not just the PV onboarding-payment case this is meant for.
-    if (!isOnboardingPaymentFlow || !paymentCompleted) return
-    // Onboarding payment is a one-time event — once it's done, close the PV tab and
-    // send the member back to /login for a fresh, real login instead of silently
-    // continuing into /dashboard on this session (see change-password/index.tsx's same
-    // reasoning for why a real login, not an auto-continuation, is required here).
-    realTabRef.current?.close()
-    const timer = setTimeout(async () => {
+    if (!isOnboardingPaymentFlow || !paymentCompleted || onboardingTeardownStartedRef.current) return
+    onboardingTeardownStartedRef.current = true
+    // Onboarding payment is a one-time event, and the member has no membership yet
+    // (mHUB staff set it up afterward), so there's nothing to log back in to. End the
+    // session here and leave the member on PV's "Thank You" tab — no redirect to /login.
+    // The session is cleared (server + local) BEFORE the final message shows, so a
+    // refresh of this tab lands on a logged-out login form, never back in the flow.
+    ;(async () => {
       try {
         await logoutMutation().unwrap()
       } catch {
-        // Best-effort — even if the server call fails, still clear local auth state
-        // and send them to /login below so they don't appear to still be signed in.
+        // Best-effort — even if the server call fails, still clear local auth state.
       }
       dispatch(logout())
-      navigate('/login')
-    }, 1500)
-    return () => clearTimeout(timer)
-  }, [isOnboardingPaymentFlow, paymentCompleted, navigate, dispatch, logoutMutation])
+      setOnboardingDone(true)
+      // Browsers only honor this for script-opened tabs; this one was usually opened by
+      // the member (email link / typed URL), so it typically stays open showing the
+      // final message below.
+      window.close()
+    })()
+  }, [isOnboardingPaymentFlow, paymentCompleted, dispatch, logoutMutation])
 
   const emailForm = useForm<EmailFormData>()
   const passwordForm = useForm<PasswordFormData>()
@@ -250,14 +260,29 @@ export function LoginPage() {
     passwordForm.reset()
   }
 
+  if (onboardingDone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-md text-center">
+          <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />
+          <h2 className="text-2xl font-semibold mb-3">Thank you!</h2>
+          <p className="text-gray-600">
+            We've received your payment and agreement. The mHUB team will reach out with next steps once your membership is set up.
+          </p>
+          <p className="text-gray-500 text-sm mt-4">You can close this tab.</p>
+        </div>
+      </div>
+    )
+  }
+
   if (isRedirecting) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="flex flex-col items-center gap-4 text-center">
           <Loader2 className="h-8 w-8 animate-spin text-brand" />
           <p className="text-gray-600">
-            {paymentCompleted
-              ? 'Payment completed! Please log in again to continue.'
+            {isOnboardingPaymentFlow && paymentCompleted
+              ? 'Payment received, finishing up...'
               : isPendingMembership && openedNewTab
                 ? "Complete the payment form in the new tab that just opened — we'll bring you back here automatically once it's done."
                 : openedNewTab

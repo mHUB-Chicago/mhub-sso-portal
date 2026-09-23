@@ -132,10 +132,10 @@ export const sendPaymentAgreementCompletedEmail = async (c: Context, input: Send
   const firstName = to_name?.split(' ')[0] ?? to_name ?? 'there';
   const subject = "Your mHUB Payment & Agreement is confirmed";
   const html = `<p>Hi ${firstName},</p>
-<p>This confirms we've received your onboarding payment and signed membership agreement. You're all set!</p>
-<p>You can log back in to your mHUB portal at any time.</p>
+<p>This confirms we've received your onboarding payment and signed membership agreement. Thank you!</p>
+<p>The mHUB team is now setting up your membership. We'll reach out with next steps once it's ready.</p>
 <p>— The mHUB Team</p>`;
-  const text = `Hi ${firstName},\n\nThis confirms we've received your onboarding payment and signed membership agreement. You're all set!\n\nYou can log back in to your mHUB portal at any time.\n\n— The mHUB Team`;
+  const text = `Hi ${firstName},\n\nThis confirms we've received your onboarding payment and signed membership agreement. Thank you!\n\nThe mHUB team is now setting up your membership. We'll reach out with next steps once it's ready.\n\n— The mHUB Team`;
   return sendEmail(c, {
     to,
     to_name,
