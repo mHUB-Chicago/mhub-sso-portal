@@ -92,8 +92,13 @@ export const getOnboardingPaymentSsoUrl = async (c: Context<AppType>): Promise<s
   const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
   const backendUrl = c.env.BACKEND_URL ?? "";
   const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
+  // Same SP-initiated entry as the dashboard's "mHUB Member Portal" tile (the SP's own
+  // loginUrl, PV → our /saml → back to PV's ACS) — no RelayState deep link to the form
+  // (2026-09-23). The member lands on PV's default page and opens the form from there;
+  // the login page's pre-opened tab still loads the form URL first, before this SSO.
+  if (peopleVineSp?.loginUrl) return peopleVineSp.loginUrl;
   return peopleVineSp
-    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
+    ? `${backendUrl}/saml/sso/${peopleVineSp.id}`
     : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
 };
 
