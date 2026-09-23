@@ -133,6 +133,18 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     if (user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
       throw new Error("No portal access");
     }
+    // Paid but not yet active: Payment & Agreement is done, but mHUB staff still have to
+    // set up the membership (accountStatus flips to "active" via the PV subscription
+    // sync). Nothing to use in the portal until then, so no session — the member gets a
+    // specific message instead of the generic Unauthorized. Checked only after the
+    // password/OTP passed, so this never reveals account state for an unverified email.
+    if (user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && user.onboardingPaymentAgreementAt) {
+      const response = FailedResponseSchema.parse({
+        success: false,
+        message: "Thanks for completing your payment and agreement. The mHUB team is setting up your membership and will reach out once it's ready.",
+      });
+      return c.json(response, 403);
+    }
     const sessionId = await createSession(c, loginRequest.userId);
     // A pending_membership user hasn't completed onboarding payment yet — send them
     // there directly regardless of how they reached /login (email link, plain login

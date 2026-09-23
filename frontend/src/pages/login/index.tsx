@@ -238,6 +238,10 @@ export function LoginPage() {
         setIsOnboardingPaymentFlow(true)
         await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
+        // A plain /login (no returnTo, e.g. right after Set Password) still lands a
+        // pending member on the payment form via the backend's redirectUrl — flag it
+        // the same way so the payment-completed teardown above actually runs.
+        if (stillNeedsOnboardingPayment) setIsOnboardingPaymentFlow(true)
         await navigateTab(redirectTab, redirectUrl)
       } else {
         redirectTab?.close()
