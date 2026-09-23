@@ -8,7 +8,7 @@ import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
-import { getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
+import { getOnboardingPaymentFormUrl } from "@/controllers/onboardingController";
 import { getSessionId } from "@/middleware/auth";
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
@@ -119,7 +119,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     // behind payment completion, so without this check an already-paid member gets sent
     // back to the payment form on every login until that sync catches up.
     const pendingOnboardingRedirectUrl = user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
-      ? await getOnboardingPaymentSsoUrl(c)
+      ? getOnboardingPaymentFormUrl(c)
       : null;
     const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);
     const autoRedirectableSp = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;

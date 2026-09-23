@@ -224,8 +224,19 @@ export function LoginPage() {
       if (txQueryParam) {
         await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam && stillNeedsOnboardingPayment) {
+        // Plain public form link (see getOnboardingPaymentFormUrl, onboardingController.ts)
+        // — no PV session/SAML involved, so there's no "fake" placeholder to swap out of;
+        // just open the real destination directly. Safe to fall back to a same-tab
+        // redirect if this gets popup-blocked too, unlike the tx/SAML case above.
         setIsOnboardingPaymentFlow(true)
-        await navigateTab(redirectTab, returnToParam)
+        const paymentTab = window.open(returnToParam, '_blank')
+        if (paymentTab) {
+          realTabRef.current = paymentTab
+          setOpenedNewTab(true)
+        } else {
+          window.location.assign(returnToParam)
+        }
+        setIsRedirecting(true)
       } else if (redirectUrl) {
         await navigateTab(redirectTab, redirectUrl)
       } else {
@@ -355,15 +366,17 @@ export function LoginPage() {
               // visits, since it's carried through every hop, so it can't tell them apart
               // by itself; passwordJustSetParam is the one thing that's only ever set on
               // the second, guaranteed-real-password visit).
-              // This tab must actually open and load before the SAML/SSO request is
-              // allowed to proceed — visiting member.mhubchicago.com first is required
-              // for the PV-side session to be in a state that doesn't 502 on the
-              // subsequent authenticated request, confirmed by testing (blocked pop-up →
-              // straight to a cold SAML POST → 502; pop-up loads first → works). So if
-              // the browser blocks this window.open(), the submission is aborted here
-              // entirely rather than silently falling through to the request we already
-              // know breaks without it.
-              if (txQueryParam || (returnToParam && passwordJustSetParam)) {
+              // Only the tx (SAML relay to some other SP, e.g. Digifaster) branch still
+              // needs a pre-opened placeholder tab — its real destination isn't known
+              // until verifyLogin resolves. The onboarding-payment case (returnToParam)
+              // no longer goes through PV's SSO at all (see getOnboardingPaymentFormUrl,
+              // onboardingController.ts) — it's a plain public form link now, opened
+              // directly in handlePasswordSubmit below instead, so there's nothing to
+              // pre-open here for it. This tab must actually open before the SAML request
+              // proceeds — a fresh window.open() after the verify request/await isn't a
+              // direct gesture continuation and most browsers may block it — so the
+              // submission is aborted here if this one is blocked.
+              if (txQueryParam) {
                 const tab = openRedirectTab('https://member.mhubchicago.com/form/20611')
                 if (!tab) {
                   e.preventDefault()
