@@ -147,16 +147,24 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const now = new Date();
   const isIdpInitiated = samlRequest === null;
   const notOnOrAfter = addMinutes(now, isIdpInitiated ? 5 : 60).toISOString();
-  const notBefore = now.toISOString();
+  // Backdated to tolerate clock skew — the form auto-submits within milliseconds, so an
+  // SP whose clock is even slightly behind ours would otherwise see the assertion as
+  // "not yet valid". Expiry (notOnOrAfter) is still measured from `now`.
+  const notBefore = addMinutes(now, -2).toISOString();
 
   const responseId = `_${crypto.randomUUID()}`;
   const assertionId = `_${crypto.randomUUID()}`;
-  const sessionIndex = `_${input.sessionId}`;
+  // Random, NOT derived from input.sessionId — that's the portal's live `sid` cookie
+  // value, and anything placed here is readable by the SP (and anyone who sees the
+  // SAMLResponse), which would let them hijack the portal session. Nothing reads
+  // SessionIndex back (no SLO), so it needn't map to our session.
+  const sessionIndex = `_${crypto.randomUUID()}`;
 
   const destination = serviceProvider.acsUrl;
 
   const nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress';
-  const nameIdValue = input.identityEmail ?? user.email;
+  // XML-escaped — interpolated into element text below.
+  const nameIdValue = escapeHtmlAttr(input.identityEmail ?? user.email);
   const email = nameIdValue;
 
   const responseInResponseToAttr = samlRequest
