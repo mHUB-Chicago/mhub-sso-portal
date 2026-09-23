@@ -1127,6 +1127,10 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         // function already creates/updates the user unconditionally. Only the
         // accountStatus label below is onboarding-specific.
         const onboardingClassification = classifyOnboardingSource(customer.source);
+        // Tagged onboarding company record — a Company only (created in
+        // syncPhaseOnboardingCompanies), never a User. Same rule as syncOne.
+        if (onboardingClassification === 'company')
+            return;
         const existingByPvId = byPvId.get(pvId);
         const existingByEmail = byEmail.get(customer.email.toLowerCase());
         const existingUser = existingByPvId ?? (existingByEmail && !existingByEmail.peopleVineId ? existingByEmail : undefined);
@@ -2376,7 +2380,15 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
     const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
     const associatedUser = userByPvId ?? userByEmail;
-    if (associatedUser && associatedUser.role === 'ADMIN') {
+    // An onboarding-tagged company record (new_company's PV placeholder for the company
+    // itself, see peopleVinePortalService.ts) is a Company only — the person behind it
+    // has their own separately tagged PV record and User. Creating a User here too would
+    // show one onboarding as two users. Company handling above and the sponsorship
+    // activation below still run; only the user create/update is skipped.
+    if (onboardingClassification === 'company') {
+        console.log(`Customer ${customer.id} is a tagged onboarding company record — no user created.`);
+    }
+    else if (associatedUser && associatedUser.role === 'ADMIN') {
         diffRecord.user = { before: null, after: null };
     }
     else if (associatedUser) {
