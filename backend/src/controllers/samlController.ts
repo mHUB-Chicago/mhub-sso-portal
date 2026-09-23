@@ -60,6 +60,10 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
     samlAuthRequest = await createSamlAuthRequest(c, {
       serviceProviderId: serviceProvider.id,
       inResponseTo: parsedRequest.id,
+      // Must be persisted, not just passed through on the already-logged-in branch
+      // below — otherwise /saml/continue (after a fresh login) returns an empty
+      // RelayState and PV falls back to whatever page its own session last remembered.
+      relayState,
       acsUrl: parsedRequest.assertionConsumerServiceURL,
       requestBinding: SamlBinding.HTTP_REDIRECT,
       responseBinding: SamlBinding.HTTP_POST,

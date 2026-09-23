@@ -55,7 +55,8 @@ const waitForCrossOriginCommit = (openedTab: Window): Promise<void> =>
 export const openRedirectTab = (url: string): Window | null => {
   tab = window.open(url, '_blank')
   openedAt = Date.now()
-  loadedPromise = tab ? waitForCrossOriginCommit(tab) : Promise.resolve()
+  // about:blank never commits cross-origin, so there's nothing to wait for.
+  loadedPromise = tab && url !== 'about:blank' ? waitForCrossOriginCommit(tab) : Promise.resolve()
   // Avoid an unhandled-rejection warning if nothing awaits it (e.g. flow aborted early).
   loadedPromise.catch(() => {})
   return tab
