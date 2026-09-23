@@ -17,12 +17,21 @@ import { PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 // them. So while accountStatus is "pending_membership", SSO into PV specifically asserts
 // the parent Company's identity instead — every other Service Provider (Digifaster,
 // LearnWorlds, mHub Shop) still gets the user's own identity.
+// Only until Payment & Agreement is done, though: accountStatus stays pending_membership
+// until the PV subscription sync catches up, and asserting the Company identity for an
+// already-paid member in that window was 502ing on PV (cleared once the sync flipped them
+// to active) — same onboardingPaymentAgreementAt exclusion as handleStartLogin /
+// handleVerifyLogin's pending checks.
 const resolveSamlIdentityEmail = async (
   c: Context<AppType>,
   user: User,
   serviceProvider: ServiceProvider
 ): Promise<string> => {
-  if (serviceProvider.entityId !== PEOPLEVINE_SP_ENTITY_ID || user.accountStatus !== "pending_membership") {
+  if (
+    serviceProvider.entityId !== PEOPLEVINE_SP_ENTITY_ID ||
+    user.accountStatus !== "pending_membership" ||
+    user.onboardingPaymentAgreementAt
+  ) {
     return user.email;
   }
   const prisma: PrismaClient = c.get("db");
