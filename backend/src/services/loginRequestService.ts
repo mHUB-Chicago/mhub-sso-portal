@@ -107,22 +107,42 @@ export const createLoginRequest = async (c: Context, createLoginRequestInput: Cr
 
 const MAX_LOGIN_ATTEMPTS = 5;
 
+export type LoginErrorCode = "INVALID_CREDENTIALS" | "LOGIN_EXPIRED" | "LOCKED";
+
+// An expected verify failure, carrying the reason the login page shows the user.
+// Everything used to collapse into a bare "Unauthorized", which made a wrong
+// (autofilled) password, an expired login and a lockout indistinguishable.
+export class LoginError extends Error {
+  constructor(public code: LoginErrorCode, message: string, public status: 401 | 429 = 401) {
+    super(message);
+  }
+}
+
+// Same message for an unknown email (whose request_id from /login/start is fake) and a
+// wrong password, so the response never reveals whether the email has an account.
+const INVALID_CREDENTIALS_MESSAGE = "Incorrect email or password.";
+
 export const verifyLoginRequest = async (c: Context, verifyLoginRequestInput: VerifyLoginRequestInput): Promise<LoginRequest> => {
   const prisma: PrismaClient = c.get("db");
   const { requestId, password } = verifyLoginRequestInput;
   const loginRequest = await getLoginRequestById(c, requestId);
   if (!loginRequest) {
     // Can't increment attempts if login request doesn't exist
-    throw new Error("Invalid request ID");
+    throw new LoginError("INVALID_CREDENTIALS", INVALID_CREDENTIALS_MESSAGE);
   }
-  if (loginRequest.expiresAt < new Date()) {
-    throw new Error("Login request has expired");
-  }
-  if (loginRequest.otpVerifiedAt || loginRequest.passwordVerifiedAt) {
-    throw new Error("Login request already verified");
+  if (loginRequest.expiresAt < new Date() || loginRequest.otpVerifiedAt || loginRequest.passwordVerifiedAt) {
+    // Typically the login page was left open past the 15-minute window.
+    throw new LoginError("LOGIN_EXPIRED", "Your sign-in timed out. Please sign in again.");
   }
   if (loginRequest.attemptsCount >= MAX_LOGIN_ATTEMPTS) {
-    throw new Error("Too many attempts. Please request a new login.");
+    // /login/start keeps handing back this same request until it expires, so the
+    // lockout lasts until expiresAt — say how long instead of leaving people retrying.
+    const minutesLeft = Math.max(1, Math.ceil((loginRequest.expiresAt.getTime() - Date.now()) / 60_000));
+    throw new LoginError(
+      "LOCKED",
+      `Too many incorrect attempts. Please try again in ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}.`,
+      429,
+    );
   }
   const user = loginRequest.user;
   const otpValid = !!loginRequest.otpHashed && await verifyPassword(password, loginRequest.otpHashed);
@@ -145,7 +165,7 @@ export const verifyLoginRequest = async (c: Context, verifyLoginRequestInput: Ve
   } else {
     // Invalid password
     await incrementLoginAttempts(c, loginRequest.id);
-    throw new Error("Invalid password");
+    throw new LoginError("INVALID_CREDENTIALS", INVALID_CREDENTIALS_MESSAGE);
   }
 
   // Update attempts count

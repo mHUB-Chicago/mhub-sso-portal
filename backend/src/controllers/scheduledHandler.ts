@@ -19,6 +19,10 @@ const isChicago1amCron = (cron: string, now: Date): boolean => {
 
 const DIRECT_PERSONAL_RECHECK_CRON = '*/30 * * * *';
 
+// Keeps the D1 database warm so the first login after a quiet stretch doesn't pay its
+// wake-up latency — the same fix that stopped the idle-login failures in the AXS QA tool.
+const KEEP_DB_WARM_CRON = '*/5 * * * *';
+
 // "Direct Personal Subscription" (a paying member whose company record is still their own
 // personal placeholder) can only get resolved once *some* PeopleVine webhook fires for that
 // customer — and PV has no dedicated event for "a card got linked to a sponsor's parent card",
@@ -49,6 +53,12 @@ const recheckDirectPersonalSubscriptions = async (env: AppType["Bindings"], ctx:
 };
 
 export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: ExecutionContext) => {
+  if (event.cron === KEEP_DB_WARM_CRON) {
+    // No log line — this fires every 5 minutes and would drown out the real jobs.
+    await env.DB.prepare('SELECT 1').first();
+    return;
+  }
+
   console.log(`Scheduled job triggered: ${event.cron}`);
 
   if (event.cron === DIRECT_PERSONAL_RECHECK_CRON) {

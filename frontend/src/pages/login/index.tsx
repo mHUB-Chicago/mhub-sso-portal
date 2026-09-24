@@ -172,10 +172,21 @@ export function LoginPage() {
       // Nothing SSO-related runs until the pre-opened tab is ready — not even
       // verifyLogin. Throws (caught below) if it was closed or never loaded.
       if (redirectTab) await getRedirectTabLoadPromise()
-      const result = await verifyLogin({
-        request_id: requestId,
-        password: data.password,
-      }).unwrap()
+      const verify = (id: string) => verifyLogin({ request_id: id, password: data.password }).unwrap()
+      let result
+      try {
+        result = await verify(requestId)
+      } catch (error: unknown) {
+        // A login request only lives 15 minutes, so a tab left open on this step used to
+        // reject even the right password. For a password login, start a fresh request and
+        // retry once — not for a one-time password, where a restart emails a new code
+        // that invalidates the one just typed.
+        if ((error as { code?: string }).code !== 'LOGIN_EXPIRED' || requiresOtp) throw error
+        const restarted = await startLogin({ email, tx: txQueryParam ?? undefined }).unwrap()
+        if (!restarted.data) throw error
+        setRequestId(restarted.data.request_id)
+        result = await verify(restarted.data.request_id)
+      }
 
       if (!result.data) {
         throw new Error('Invalid response from server')
@@ -251,8 +262,11 @@ export function LoginPage() {
     } catch (error: unknown) {
       redirectTab?.close()
       clearRedirectTab()
-      const err = error as { data?: { message?: string }; message?: string }
+      const err = error as { data?: { message?: string }; message?: string; code?: string }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
+      // An expired one-time-password login can't be retried in place — send them back
+      // to request a new code.
+      if (err.code === 'LOGIN_EXPIRED') handleBack()
     } finally {
       isSubmittingPasswordRef.current = false
     }
@@ -324,6 +338,7 @@ export function LoginPage() {
                   id="email"
                   type="text"
                   placeholder="john.doe@example.com or username"
+                  autoComplete="username"
                   className="w-full pl-10 pr-3 py-4 border-gray-300 h-12"
                   disabled={isStartingLogin}
                   {...emailForm.register('email', {
@@ -398,6 +413,11 @@ export function LoginPage() {
               <span className="text-sm">{email}</span>
             </button>
 
+            {/* Password managers pick which saved password to fill from the username in
+                the same form. This step had none, so browsers guessed — often filling an
+                old password or another environment's, which then tripped the lockout. */}
+            <input type="text" name="username" autoComplete="username" value={email} readOnly hidden />
+
             <div>
               <Label htmlFor="password" className="text-sm font-medium text-gray-700">
                 Password
@@ -410,6 +430,7 @@ export function LoginPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
+                  autoComplete={requiresOtp ? 'one-time-code' : 'current-password'}
                   className="w-full pl-10 pr-10 py-4 border-gray-300 h-12"
                   disabled={isVerifying}
                   autoFocus
