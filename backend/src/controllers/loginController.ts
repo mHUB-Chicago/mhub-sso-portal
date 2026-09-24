@@ -5,7 +5,7 @@ import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswo
 import { getUserByEmail, getUserById, updateUser } from "@/services/userService";
 import { hasPortalAccess } from "@/services/peopleVineService";
 import { createSession, revokeSession } from "@/services/sessionService";
-import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
+import { createLoginRequest, LoginError, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl, PEOPLEVINE_HOME_URL, PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
@@ -173,11 +173,27 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     return c.json(response);
   } catch (error) {
     console.error("handleVerifyLogin error:", error instanceof Error ? error.message : error);
+    if (error instanceof LoginError) {
+      const response = FailedResponseSchema.parse({ success: false, message: error.message, code: error.code });
+      return c.json(response, error.status);
+    }
+    if (error instanceof Error && error.message === "No portal access") {
+      // Only reachable after the password/OTP passed, so this reveals nothing to a guesser.
+      const response = FailedResponseSchema.parse({
+        success: false,
+        message: "Your account doesn't currently have portal access. Please contact mHUB.",
+        code: "NO_ACCESS",
+      });
+      return c.json(response, 403);
+    }
+    // Anything else is an infrastructure failure (D1, PV, etc.), not a bad password —
+    // it never counts toward the lockout, so don't make it look like one.
     const response = FailedResponseSchema.parse({
       success: false,
-      message: "Unauthorized",
+      message: "Something went wrong signing you in. Please try again.",
+      code: "SERVER_ERROR",
     });
-    return c.json(response, 401);
+    return c.json(response, 500);
   }
 };
 

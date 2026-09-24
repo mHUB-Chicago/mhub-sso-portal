@@ -19,21 +19,36 @@ export async function apiFetch(
   }
   const apiUrl = `${apiBaseUrl}${apiBasePath}/${path}`;
   const authToken = localStorage.getItem("authToken");
+  // Public login endpoints never need the session, and a 401 from them means a bad
+  // password or expired login — not an expired session. Sending a leftover token here
+  // turned every failed sign-in into a misleading "Session expired" toast.
+  const isPublicLoginPath =
+    path.startsWith("login/start") ||
+    path.startsWith("login/verify") ||
+    path.startsWith("login/forgot-password");
+  const sendToken = !!authToken && !isPublicLoginPath;
   const res = await fetch(apiUrl, {
     ...options,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(sendToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...(options.headers || {}),
     },
   });
 
-  const json = await res.json();
-  if (authToken && res.status === 401) {
+  if (sendToken && res.status === 401) {
     localStorage.removeItem("authToken");
     localStorage.removeItem("user");
     throw new Error("Session expired. Please log in again");
+  }
+
+  // A Cloudflare error page (e.g. a 5xx) isn't JSON — don't surface a parse error.
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error("Something went wrong. Please try again.");
   }
 
   let successResponse;

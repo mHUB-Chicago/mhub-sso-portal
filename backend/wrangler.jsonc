@@ -35,7 +35,7 @@
         ]
       },
       "triggers": {
-        "crons": ["0 6 * * *", "0 7 * * *", "*/30 * * * *"]
+        "crons": ["0 6 * * *", "0 7 * * *", "*/30 * * * *", "*/5 * * * *"]
       },
       "observability": {
         "enabled": true,
@@ -84,7 +84,7 @@
         ]
       },
       "triggers": {
-        "crons": ["0 5 * * *", "0 6 * * *"]
+        "crons": ["0 5 * * *", "0 6 * * *", "*/5 * * * *"]
       },
       "observability": {
         "enabled": true,
