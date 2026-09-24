@@ -1,6 +1,6 @@
 import { AppType } from "..";
-import { PrismaD1 } from "@prisma/adapter-d1";
-import { PrismaClient, Role } from "@prisma/client";
+import { Role } from "@prisma/client";
+import { getPrisma } from "@/middleware/database";
 import { JobType } from "./queueConsumer";
 import { createMockContext } from "@/utils/createMockContext";
 import { runConcurrent, syncOne } from "@/services/peopleVineService";
@@ -30,7 +30,7 @@ const KEEP_DB_WARM_CRON = '*/5 * * * *';
 // list (each fixed member drops out of it), so re-checking it directly every 30 minutes is far
 // cheaper than waiting for the once-daily full "Sync All" to catch it.
 const recheckDirectPersonalSubscriptions = async (env: AppType["Bindings"], ctx: ExecutionContext): Promise<void> => {
-  const prisma = new PrismaClient({ adapter: new PrismaD1(env.DB) });
+  const prisma = getPrisma(env.DB);
   const flagged = await prisma.user.findMany({
     where: { role: Role.USER, memberSource: 'subscription', company: { isPersonal: true } },
     select: { peopleVineId: true },
@@ -74,7 +74,7 @@ export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: Exec
   ctx.waitUntil(
     (async () => {
       try {
-        const prisma = new PrismaClient({ adapter: new PrismaD1(env.DB) });
+        const prisma = getPrisma(env.DB);
         const session = await prisma.syncSession.create({
           data: {
             type: 'ALL',

@@ -181,7 +181,11 @@ export function LoginPage() {
         // reject even the right password. For a password login, start a fresh request and
         // retry once — not for a one-time password, where a restart emails a new code
         // that invalidates the one just typed.
-        if ((error as { code?: string }).code !== 'LOGIN_EXPIRED' || requiresOtp) throw error
+        // SERVER_ERROR gets the same one retry: a transient backend crash (e.g. Prisma's
+        // WASM engine running out of memory) resets on the server, so a fresh request
+        // usually succeeds — and a half-completed verify would now read as expired anyway.
+        const code = (error as { code?: string }).code
+        if ((code !== 'LOGIN_EXPIRED' && code !== 'SERVER_ERROR') || requiresOtp) throw error
         const restarted = await startLogin({ email, tx: txQueryParam ?? undefined }).unwrap()
         if (!restarted.data) throw error
         setRequestId(restarted.data.request_id)
