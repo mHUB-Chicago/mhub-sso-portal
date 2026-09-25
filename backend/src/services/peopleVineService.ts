@@ -1,4 +1,5 @@
 import { Context } from 'hono';
+import { serializeSyncLogs } from '@/utils/syncLogs';
 import { Company, PeopleVineToken, PeopleVineTokenType, PrismaClient, Role, User } from '@prisma/client';
 import { createCompany, deactivateCompany, updateCompany } from './companyService';
 import { createUser, deactivateUser, updateUser } from './userService';
@@ -48,6 +49,8 @@ export const classifyOnboardingSource = (source: string | null | undefined): Onb
         return 'person_pending';
     return null;
 };
+
+type SyncUser = Omit<User, 'membershipAgreementPdf'>;
 
 export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined, addOnsJson?: string | null): Promise<boolean> => {
     const prisma: PrismaClient = c.get('db');
@@ -119,7 +122,7 @@ const makeSessionFlusher = (prisma: PrismaClient, sessionId: string | undefined)
             const nextStatus = current?.status === 'cancelled' ? 'cancelled' : status;
             await prisma.syncSession.update({
                 where: { id: sessionId },
-                data: { progress, step, status: nextStatus, logs: JSON.stringify(merged) },
+                data: { progress, step, status: nextStatus, logs: serializeSyncLogs(merged) },
             });
         }
         catch (e) {
@@ -1049,9 +1052,9 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
     const batchCustomersMap = new Map<string, PeopleVineCustomer>();
     for (const cu of batchCustomers)
         batchCustomersMap.set(cu.id.toString(), cu);
-    const existingUsers = await prisma.user.findMany();
-    const byPvId = new Map<string, User>();
-    const byEmail = new Map<string, User>();
+    const existingUsers = await prisma.user.findMany({ omit: { membershipAgreementPdf: true } });
+    const byPvId = new Map<string, SyncUser>();
+    const byEmail = new Map<string, SyncUser>();
     for (const u of existingUsers) {
         if (u.peopleVineId)
             byPvId.set(u.peopleVineId, u);
@@ -1808,9 +1811,9 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             companiesByNameMap.set(key, co);
         }
     }
-    const existingUsers = await prisma.user.findMany();
-    const byPvId = new Map<string, User>();
-    const byEmail = new Map<string, User>();
+    const existingUsers = await prisma.user.findMany({ omit: { membershipAgreementPdf: true } });
+    const byPvId = new Map<string, SyncUser>();
+    const byEmail = new Map<string, SyncUser>();
     for (const u of existingUsers) {
         if (u.peopleVineId)
             byPvId.set(u.peopleVineId, u);
@@ -2719,10 +2722,10 @@ export const syncFiltered = async (c: Context, companies: CompanyImport[], membe
         console.error(`[syncFiltered] Fatal error: ${msg}`);
         if (sessionId) {
             try {
-                const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+                const session = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { logs: true } });
                 const existingLogs: LogEntry[] = session ? JSON.parse(session.logs) : [];
                 existingLogs.push({ time: new Date().toISOString(), level: 'error', message: `Import failed: ${msg}` });
-                await prisma.syncSession.update({ where: { id: sessionId }, data: { status: 'failed', step: 'Failed', logs: JSON.stringify(existingLogs), completedAt: new Date() } });
+                await prisma.syncSession.update({ where: { id: sessionId }, data: { status: 'failed', step: 'Failed', logs: serializeSyncLogs(existingLogs), completedAt: new Date() } });
             }
             catch { }
         }

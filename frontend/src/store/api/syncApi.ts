@@ -24,6 +24,8 @@ export interface SyncSession {
   updatedAt: string
 }
 
+export type SyncSessionSummary = Omit<SyncSession, 'logs'>
+
 interface SyncStatusResponse {
   success: boolean
   data: SyncSession | null
@@ -83,9 +85,12 @@ export const syncApi = createApi({
     }),
     getSyncHistory: builder.query<{
       success: boolean
-      data: { sessions: SyncSession[]; total: number; limit: number; offset: number }
+      data: { sessions: SyncSessionSummary[]; total: number; limit: number; offset: number }
     }, { limit?: number; offset?: number }>({
       query: ({ limit = 50, offset = 0 } = {}) => `/sync/history?limit=${limit}&offset=${offset}`,
+    }),
+    getSyncSessionLogs: builder.query<{ success: boolean; data: SyncLogEntry[] }, string>({
+      query: (sessionId) => `/sync/sessions/${encodeURIComponent(sessionId)}/logs`,
     }),
     getMembershipTypes: builder.query<{ success: boolean; data: string[] }, void>({
       query: () => '/config/membership-types',
@@ -150,4 +155,4 @@ export const syncApi = createApi({
   }),
 })
 
-export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSubscriptionConflictsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi
+export const { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSyncSessionLogsQuery, useGetSubscriptionConflictsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetFreeMemberExclusionTypesQuery, useAddFreeMemberExclusionTypeMutation, useRemoveFreeMemberExclusionTypeMutation, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation } = syncApi
