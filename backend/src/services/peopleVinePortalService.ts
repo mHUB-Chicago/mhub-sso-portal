@@ -3,6 +3,36 @@ import { HTTPException } from "hono/http-exception";
 import { getUserCompanyToken, PEOPLEVINE_API_BASE_URL, ONBOARDING_SOURCE_TAGS } from "./peopleVineService";
 import type { OnboardingFormData } from "@common/schemas/onboarding";
 
+const PASSWORD_LENGTH = 24;
+const PASSWORD_GROUPS = [
+  "ABCDEFGHJKLMNPQRSTUVWXYZ",
+  "abcdefghijkmnopqrstuvwxyz",
+  "23456789",
+  "!@#$%^&*-_=+",
+];
+
+const randomIndex = (max: number): number => {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const buffer = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buffer);
+  } while (buffer[0] >= limit);
+  return buffer[0] % max;
+};
+
+const generatePlaceholderPassword = (): string => {
+  const allCharacters = PASSWORD_GROUPS.join("");
+  const characters = PASSWORD_GROUPS.map((group) => group[randomIndex(group.length)]);
+  while (characters.length < PASSWORD_LENGTH) {
+    characters.push(allCharacters[randomIndex(allCharacters.length)]);
+  }
+  for (let i = characters.length - 1; i > 0; i--) {
+    const j = randomIndex(i + 1);
+    [characters[i], characters[j]] = [characters[j], characters[i]];
+  }
+  return characters.join("");
+};
+
 // This is a SEPARATE, write-capable PeopleVine (PV) client. It does not touch the
 // read-only-guarded `apiRequest`/`apiRequestWithPagination` helpers in
 // `peopleVineService.ts`, which stay exactly as-is for the existing sync jobs.
@@ -126,7 +156,7 @@ export const pvRegisterCustomer = async (
 ): Promise<PvRegisteredCustomer> => {
   // Admin-created accounts have no member-supplied password; PV's own reset/invite
   // flow is expected to hand the member control of the account afterward.
-  const placeholderPassword = crypto.randomUUID();
+  const placeholderPassword = generatePlaceholderPassword();
   // PV rejects `mobile` without an explicit country code (Mobile.Country_Code is
   // required) — the form captures it as its own field rather than guessing it from
   // the phone string or the address country.
@@ -311,7 +341,7 @@ const pvAddSubMember = async (
       email: input.email,
       first_name: input.firstName,
       last_name: input.lastName,
-      password: crypto.randomUUID(),
+      password: generatePlaceholderPassword(),
       address: { address: street ?? "", address2: "", address3: "", city: city ?? "", state: state ?? "", zip_code: zip ?? "", country: country ?? "" },
       mobile: mobile ?? { country_code: "", number: "" },
       ...(input.companyName ? { company_name: input.companyName } : {}),

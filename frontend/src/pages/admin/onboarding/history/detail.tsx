@@ -15,6 +15,7 @@ import {
 import { useGetCompaniesQuery } from "@/store/api/companyApi";
 import { CompanyDetailsStep } from "../components/CompanyDetailsStep";
 import { PrimaryUserStep } from "../components/PrimaryUserStep";
+import { AddressFields } from "../components/AddressFields";
 import { MembershipPackageStep } from "../components/MembershipPackageStep";
 import { AddonMembershipsStep } from "../components/AddonMembershipsStep";
 import { SkillsStep } from "../components/SkillsStep";
@@ -309,33 +310,7 @@ export function AdminOnboardingHistoryDetailPage() {
             </div>
             <div className="space-y-3">
               <Label>Billing Address</Label>
-              <Input
-                placeholder="Street address"
-                value={draft.billing.address.street}
-                onChange={(e) => updateBillingAddress("street", e.target.value)}
-              />
-              <div className="grid grid-cols-3 gap-4">
-                <Input
-                  placeholder="City"
-                  value={draft.billing.address.city}
-                  onChange={(e) => updateBillingAddress("city", e.target.value)}
-                />
-                <Input
-                  placeholder="State"
-                  value={draft.billing.address.state}
-                  onChange={(e) => updateBillingAddress("state", e.target.value)}
-                />
-                <Input
-                  placeholder="Zip / Postal"
-                  value={draft.billing.address.zip}
-                  onChange={(e) => updateBillingAddress("zip", e.target.value)}
-                />
-              </div>
-              <Input
-                placeholder="Country"
-                value={draft.billing.address.country}
-                onChange={(e) => updateBillingAddress("country", e.target.value)}
-              />
+              <AddressFields idPrefix="editBillingAddress" value={draft.billing.address} onChange={updateBillingAddress} />
             </div>
           </div>
         </>
