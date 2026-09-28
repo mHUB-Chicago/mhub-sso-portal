@@ -2,6 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { SectionHeading } from "./SectionHeading";
+import { AddressFields } from "./AddressFields";
 import type { Address, BillingDetails, PaymentType } from "../types";
 
 type BillingTextField = keyof Omit<BillingDetails, "address" | "paymentType">;
@@ -110,38 +111,7 @@ export const BillingStep = ({ value, onChange, onAddressChange, onPaymentTypeCha
 
       <div className="space-y-3">
         <SectionHeading>Billing Address</SectionHeading>
-        <Input
-          placeholder="Street address"
-          autoComplete="street-address"
-          value={value.address.street}
-          onChange={(e) => onAddressChange("street", e.target.value)}
-        />
-        <div className="grid grid-cols-3 gap-4">
-          <Input
-            placeholder="City"
-            autoComplete="address-level2"
-            value={value.address.city}
-            onChange={(e) => onAddressChange("city", e.target.value)}
-          />
-          <Input
-            placeholder="State"
-            autoComplete="address-level1"
-            value={value.address.state}
-            onChange={(e) => onAddressChange("state", e.target.value)}
-          />
-          <Input
-            placeholder="Zip"
-            autoComplete="postal-code"
-            value={value.address.zip}
-            onChange={(e) => onAddressChange("zip", e.target.value)}
-          />
-        </div>
-        <Input
-          placeholder="Country"
-          autoComplete="country-name"
-          value={value.address.country}
-          onChange={(e) => onAddressChange("country", e.target.value)}
-        />
+        <AddressFields idPrefix="billingAddress" value={value.address} onChange={onAddressChange} />
       </div>
     </div>
   );

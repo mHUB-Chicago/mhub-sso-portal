@@ -58,8 +58,8 @@
         "SAML_ENTITY_ID": "https://sso.mhubchicago.com/",
         "SEED_ENABLED": "true",
         "SENDGRID_EMAIL_FROM": "noreply@mhubsso.com",
-        "PEOPLEVINE_READONLY": "false",
-        "PEOPLEVINE_WRITE_ENABLED": "false",
+        "PEOPLEVINE_READONLY": "true",
+        "PEOPLEVINE_WRITE_ENABLED": "true",
         "PEOPLEVINE_ATTRIBUTE_REFERENCE_CUSTOMER_ID": "2915305"
       },
       "routes": [

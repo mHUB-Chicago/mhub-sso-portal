@@ -5,6 +5,9 @@ import { Textarea } from "@/components/ui/textarea";
 import type { OnboardingAttributeOption } from "@/store/api/onboardingApi";
 import { findAttributeOptionValues } from "../attributeOptionsUtil";
 import { MultiSelectDropdown } from "./MultiSelectDropdown";
+import { AddressFields } from "./AddressFields";
+import { OptionCombobox } from "./OptionCombobox";
+import { PHONE_CODE_OPTIONS, TITLE_OPTIONS } from "../locations";
 import { SectionHeading } from "./SectionHeading";
 import type { Address, OnboardingScenario, PrimaryUserDetails } from "../types";
 
@@ -119,15 +122,14 @@ export const PrimaryUserStep = ({
             className="mt-1"
           />
         </div>
-        <div>
-          <Label htmlFor="userTitle">Title / Role</Label>
-          <Input
-            id="userTitle"
-            value={value.title}
-            onChange={(e) => onChange("title", e.target.value)}
-            className="mt-1"
-          />
-        </div>
+        <FormSelect
+          id="userTitle"
+          label="Title"
+          placeholder="Select title"
+          value={value.title}
+          options={TITLE_OPTIONS}
+          onChange={(title) => onChange("title", title)}
+        />
         <div>
           <Label htmlFor="userBirthday">Birthday</Label>
           <Input
@@ -143,15 +145,15 @@ export const PrimaryUserStep = ({
             Phone <span className="text-red-500">*</span>
           </Label>
           <div className="mt-1 flex gap-2">
-            <Input
+            <OptionCombobox
               id="userPhoneCountryCode"
-              type="text"
-              inputMode="numeric"
               placeholder="+1"
-              autoComplete="tel-country-code"
+              searchPlaceholder="Search country or code..."
+              options={PHONE_CODE_OPTIONS}
               value={value.phoneCountryCode}
-              onChange={(e) => onChange("phoneCountryCode", e.target.value)}
-              className="w-16 shrink-0"
+              onChange={(code) => onChange("phoneCountryCode", code)}
+              className="w-24 shrink-0"
+              contentClassName="w-80"
             />
             <Input
               id="userPhone"
@@ -217,38 +219,7 @@ export const PrimaryUserStep = ({
 
       <div className="space-y-3">
         <SectionHeading>Personal Address *</SectionHeading>
-        <Input
-          placeholder="Street address"
-          autoComplete="street-address"
-          value={value.address.street}
-          onChange={(e) => onAddressChange("street", e.target.value)}
-        />
-        <div className="grid grid-cols-3 gap-4">
-          <Input
-            placeholder="City"
-            autoComplete="address-level2"
-            value={value.address.city}
-            onChange={(e) => onAddressChange("city", e.target.value)}
-          />
-          <Input
-            placeholder="State"
-            autoComplete="address-level1"
-            value={value.address.state}
-            onChange={(e) => onAddressChange("state", e.target.value)}
-          />
-          <Input
-            placeholder="Zip / Postal"
-            autoComplete="postal-code"
-            value={value.address.zip}
-            onChange={(e) => onAddressChange("zip", e.target.value)}
-          />
-        </div>
-        <Input
-          placeholder="Country"
-          autoComplete="country-name"
-          value={value.address.country}
-          onChange={(e) => onAddressChange("country", e.target.value)}
-        />
+        <AddressFields idPrefix="userAddress" value={value.address} onChange={onAddressChange} />
       </div>
     </div>
   );
