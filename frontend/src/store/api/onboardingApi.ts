@@ -55,6 +55,15 @@ export interface OnboardingBilling {
   address: OnboardingAddress
 }
 
+// Only ever collected on the public onboarding-link form — the member always signs it
+// themselves, never an admin filling the wizard out for them.
+export interface OnboardingAgreement {
+  agreed: boolean
+  signatureType: 'type' | 'draw'
+  fullLegalName?: string
+  signatureImageDataUrl?: string
+}
+
 export interface OnboardingFormData {
   mode: 'admin' | 'link'
   scenario: 'new_company' | 'existing_company'
@@ -67,6 +76,7 @@ export interface OnboardingFormData {
   addonMemberships: string[]
   skills: OnboardingSkills
   billing: OnboardingBilling
+  agreement?: OnboardingAgreement
 }
 
 export interface OnboardingSubmission {
@@ -118,6 +128,9 @@ export interface OnboardingInProcessRecord {
   // True when the "payment" step was set via the admin Skip action instead of a real
   // PV-confirmed payment.
   paymentSkipped: boolean
+  // The originating OnboardingSubmission's id, when still traceable — lets the UI link
+  // to the read-only submission summary (membership package + all other datapoints).
+  submissionId: string | null
 }
 
 // One PV "Attribute" that offers a fixed set of choices — matched by exact `name`

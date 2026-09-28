@@ -1,4 +1,5 @@
 import { Context } from 'hono';
+import { serializeSyncLogs } from '@/utils/syncLogs';
 import { Company, PeopleVineToken, PeopleVineTokenType, PrismaClient, Role, User } from '@prisma/client';
 import { createCompany, deactivateCompany, updateCompany } from './companyService';
 import { createUser, deactivateUser, updateUser } from './userService';
@@ -48,6 +49,8 @@ export const classifyOnboardingSource = (source: string | null | undefined): Onb
         return 'person_pending';
     return null;
 };
+
+type SyncUser = Omit<User, 'membershipAgreementPdf'>;
 
 export const hasPortalAccess = async (c: Context, primaryMembership: string | null | undefined, addOnsJson?: string | null): Promise<boolean> => {
     const prisma: PrismaClient = c.get('db');
@@ -119,7 +122,7 @@ const makeSessionFlusher = (prisma: PrismaClient, sessionId: string | undefined)
             const nextStatus = current?.status === 'cancelled' ? 'cancelled' : status;
             await prisma.syncSession.update({
                 where: { id: sessionId },
-                data: { progress, step, status: nextStatus, logs: JSON.stringify(merged) },
+                data: { progress, step, status: nextStatus, logs: serializeSyncLogs(merged) },
             });
         }
         catch (e) {
@@ -1049,9 +1052,9 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
     const batchCustomersMap = new Map<string, PeopleVineCustomer>();
     for (const cu of batchCustomers)
         batchCustomersMap.set(cu.id.toString(), cu);
-    const existingUsers = await prisma.user.findMany();
-    const byPvId = new Map<string, User>();
-    const byEmail = new Map<string, User>();
+    const existingUsers = await prisma.user.findMany({ omit: { membershipAgreementPdf: true } });
+    const byPvId = new Map<string, SyncUser>();
+    const byEmail = new Map<string, SyncUser>();
     for (const u of existingUsers) {
         if (u.peopleVineId)
             byPvId.set(u.peopleVineId, u);
@@ -1127,6 +1130,10 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         // function already creates/updates the user unconditionally. Only the
         // accountStatus label below is onboarding-specific.
         const onboardingClassification = classifyOnboardingSource(customer.source);
+        // Tagged onboarding company record — a Company only (created in
+        // syncPhaseOnboardingCompanies), never a User. Same rule as syncOne.
+        if (onboardingClassification === 'company')
+            return;
         const existingByPvId = byPvId.get(pvId);
         const existingByEmail = byEmail.get(customer.email.toLowerCase());
         const existingUser = existingByPvId ?? (existingByEmail && !existingByEmail.peopleVineId ? existingByEmail : undefined);
@@ -1804,9 +1811,9 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             companiesByNameMap.set(key, co);
         }
     }
-    const existingUsers = await prisma.user.findMany();
-    const byPvId = new Map<string, User>();
-    const byEmail = new Map<string, User>();
+    const existingUsers = await prisma.user.findMany({ omit: { membershipAgreementPdf: true } });
+    const byPvId = new Map<string, SyncUser>();
+    const byEmail = new Map<string, SyncUser>();
     for (const u of existingUsers) {
         if (u.peopleVineId)
             byPvId.set(u.peopleVineId, u);
@@ -2376,7 +2383,15 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
     const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
     const associatedUser = userByPvId ?? userByEmail;
-    if (associatedUser && associatedUser.role === 'ADMIN') {
+    // An onboarding-tagged company record (new_company's PV placeholder for the company
+    // itself, see peopleVinePortalService.ts) is a Company only — the person behind it
+    // has their own separately tagged PV record and User. Creating a User here too would
+    // show one onboarding as two users. Company handling above and the sponsorship
+    // activation below still run; only the user create/update is skipped.
+    if (onboardingClassification === 'company') {
+        console.log(`Customer ${customer.id} is a tagged onboarding company record — no user created.`);
+    }
+    else if (associatedUser && associatedUser.role === 'ADMIN') {
         diffRecord.user = { before: null, after: null };
     }
     else if (associatedUser) {
@@ -2707,10 +2722,10 @@ export const syncFiltered = async (c: Context, companies: CompanyImport[], membe
         console.error(`[syncFiltered] Fatal error: ${msg}`);
         if (sessionId) {
             try {
-                const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+                const session = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { logs: true } });
                 const existingLogs: LogEntry[] = session ? JSON.parse(session.logs) : [];
                 existingLogs.push({ time: new Date().toISOString(), level: 'error', message: `Import failed: ${msg}` });
-                await prisma.syncSession.update({ where: { id: sessionId }, data: { status: 'failed', step: 'Failed', logs: JSON.stringify(existingLogs), completedAt: new Date() } });
+                await prisma.syncSession.update({ where: { id: sessionId }, data: { status: 'failed', step: 'Failed', logs: serializeSyncLogs(existingLogs), completedAt: new Date() } });
             }
             catch { }
         }

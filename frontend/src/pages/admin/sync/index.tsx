@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
 import { toCsv, downloadCsv } from '@/utils/csv'
-import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, type SyncSession, type SyncLogEntry } from '@/store/api/syncApi'
+import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSyncSessionLogsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, type SyncSession, type SyncSessionSummary, type SyncLogEntry } from '@/store/api/syncApi'
 import { useGetUsersQuery } from '@/store/api/userApi'
 import { useGetCompaniesQuery } from '@/store/api/companyApi'
 
@@ -627,8 +627,6 @@ const SYNC_TYPE_LABELS: Record<string, string> = {
 
 const BASE_URL = `${import.meta.env.VITE_API_URL ?? 'http://localhost:8787'}${import.meta.env.VITE_API_BASE_PATH ?? '/api'}`
 
-const ESTIMATED_RAW_BYTES = 10 * 1024 * 1024 // 10 MB estimate for progress bar
-
 const downloadAudit = async (sessionId: string) => {
   const token = localStorage.getItem('authToken')
   const res = await fetch(`${BASE_URL}/sync/sessions/${sessionId}/audit`, {
@@ -647,83 +645,40 @@ const downloadAudit = async (sessionId: string) => {
   URL.revokeObjectURL(url)
 }
 
+function SessionLogs({ sessionId }: { sessionId: string }) {
+  const { data, isLoading, isError } = useGetSyncSessionLogsQuery(sessionId)
+  const logs = data?.data ?? []
+
+  if (isLoading) {
+    return <div className="border-t border-gray-200 bg-gray-900 p-4 text-xs text-gray-400">Loading logs...</div>
+  }
+  if (isError) {
+    return <div className="border-t border-gray-200 bg-gray-900 p-4 text-xs text-red-400">Could not load logs.</div>
+  }
+  if (logs.length === 0) return null
+
+  return (
+    <div className="border-t border-gray-200 bg-gray-900 p-4 h-64 overflow-y-auto space-y-1">
+      {logs.map((entry, i) => <LogLine key={i} entry={entry} />)}
+    </div>
+  )
+}
+
 function AuditLogsTab() {
-  const [selectedSession, setSelectedSession] = useState<SyncSession | null>(null)
-  const [dlState, setDlState] = useState<{ active: boolean; bytes: number; done: boolean }>({ active: false, bytes: 0, done: false })
+  const [selectedSession, setSelectedSession] = useState<SyncSessionSummary | null>(null)
   const { data, isLoading, refetch } = useGetSyncHistoryQuery({})
 
   const sessions = data?.data?.sessions ?? []
   const total = data?.data?.total ?? 0
 
-  const handleRawDownload = async () => {
-    setDlState({ active: true, bytes: 0, done: false })
-    try {
-      const token = localStorage.getItem('authToken')
-      const res = await fetch(`${BASE_URL}/sync/raw-export`, {
-        credentials: 'include',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (!res.ok || !res.body) return
-
-      const reader = res.body.getReader()
-      const chunks: Uint8Array<ArrayBuffer>[] = []
-      let received = 0
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(value)
-        received += value.length
-        setDlState({ active: true, bytes: received, done: false })
-      }
-
-      setDlState({ active: true, bytes: received, done: true })
-
-      const blob = new Blob(chunks, { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `pv-raw-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } finally {
-      setTimeout(() => setDlState({ active: false, bytes: 0, done: false }), 2000)
-    }
-  }
-
-  const dlPct = dlState.done
-    ? 100
-    : Math.min(Math.round((dlState.bytes / ESTIMATED_RAW_BYTES) * 100), 99)
-  const dlMb = (dlState.bytes / (1024 * 1024)).toFixed(1)
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{total} total sync sessions</p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRawDownload} disabled={dlState.active}>
-            <Download className="h-4 w-4 mr-2" />Raw
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-2" />Refresh
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-2" />Refresh
+        </Button>
       </div>
-
-      {dlState.active && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <span>{dlState.done ? 'Download complete' : 'Downloading raw PV data…'}</span>
-            <span className="font-medium tabular-nums">{dlPct}% · {dlMb} MB</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-            <div
-              className={`h-2 rounded-full transition-all duration-300 ease-out ${dlState.done ? 'bg-green-500' : 'bg-brand'}`}
-              style={{ width: `${dlPct}%` }}
-            />
-          </div>
-        </div>
-      )}
 
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-gray-400 py-8 justify-center">
@@ -771,11 +726,7 @@ function AuditLogsTab() {
                 )}
               </div>
 
-              {selectedSession?.id === session.id && session.logs.length > 0 && (
-                <div className="border-t border-gray-200 bg-gray-900 p-4 h-64 overflow-y-auto space-y-1">
-                  {session.logs.map((entry, i) => <LogLine key={i} entry={entry} />)}
-                </div>
-              )}
+              {selectedSession?.id === session.id && <SessionLogs sessionId={session.id} />}
             </div>
           ))}
         </div>

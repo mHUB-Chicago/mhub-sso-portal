@@ -4,17 +4,22 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { useGetOnboardingMembershipPackagesQuery } from "@/store/api/onboardingApi";
+import { useGetOnboardingMembershipPackagesQuery, useGetOnboardingAddonPackagesQuery } from "@/store/api/onboardingApi";
+import { MultiSelectDropdown } from "./MultiSelectDropdown";
 
 interface MembershipPackageStepProps {
   value: string;
   onChange: (value: string) => void;
   optional?: boolean;
+  addonValues: string[];
+  onAddonChange: (values: string[]) => void;
 }
 
-export const MembershipPackageStep = ({ value, onChange, optional }: MembershipPackageStepProps) => {
+export const MembershipPackageStep = ({ value, onChange, optional, addonValues, onAddonChange }: MembershipPackageStepProps) => {
   const { data, isLoading, error } = useGetOnboardingMembershipPackagesQuery();
   const packages = data?.data?.packages ?? [];
+  const { data: addonData, isLoading: isLoadingAddons } = useGetOnboardingAddonPackagesQuery();
+  const addonPackages = addonData?.data?.packages ?? [];
   const selected = packages.find((pkg) => pkg.id === value);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,6 +96,28 @@ export const MembershipPackageStep = ({ value, onChange, optional }: MembershipP
               </Command>
             )}
           </>
+        )}
+      </div>
+
+      <div>
+        {isLoadingAddons ? (
+          <div className="flex h-9 items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading add-ons…
+          </div>
+        ) : addonPackages.length === 0 ? (
+          <p className="text-sm text-gray-400">
+            No add-on memberships are configured yet — add some under Admin &gt; Sync &gt; Add-on Subscription Types.
+          </p>
+        ) : (
+          <MultiSelectDropdown
+            id="addonMemberships"
+            label="Add-on Subscription Types (optional)"
+            placeholder="Select any add-ons…"
+            options={addonPackages.map((pkg) => pkg.name)}
+            values={addonValues}
+            onValuesChange={onAddonChange}
+          />
         )}
       </div>
     </div>

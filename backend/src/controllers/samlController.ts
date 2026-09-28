@@ -2,11 +2,42 @@ import { Context } from "hono";
 import { AppType, QueryInput } from "..";
 import { SamlContinueRequestSchema, SamlRequestSchema } from "@common/schemas/saml";
 import { createSamlAuthRequest, getSamlAuthRequestById, updateSamlAuthRequest } from "@/services/samlAuthRequestService";
-import { SamlBinding } from "@/database/models";
+import { PrismaClient, SamlBinding, ServiceProvider, User } from "@/database/models";
 import { buildIdpMetadataXml, decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
 import { getServiceProviderByEntityId, getServiceProviderById } from "@/services/serviceProviderService";
 import { getSessionId, verifySession } from "@/middleware/auth";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
+import { PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
+
+// A pending_membership user's own PV customer (new_company: a standalone registration;
+// existing_company fallback: best-effort customer_reference only) never has a real
+// membership/subscription attached yet — only the parent Company's PV customer does (see
+// pushOnboardingSubmissionToPeopleVine, peopleVinePortalService.ts). Logging such a user
+// into PV's member portal as themselves 502s there, since PV finds no membership for
+// them. So while accountStatus is "pending_membership", SSO into PV specifically asserts
+// the parent Company's identity instead — every other Service Provider (Digifaster,
+// LearnWorlds, mHub Shop) still gets the user's own identity.
+// Only until Payment & Agreement is done, though: accountStatus stays pending_membership
+// until the PV subscription sync catches up, and asserting the Company identity for an
+// already-paid member in that window was 502ing on PV (cleared once the sync flipped them
+// to active) — same onboardingPaymentAgreementAt exclusion as handleStartLogin /
+// handleVerifyLogin's pending checks.
+const resolveSamlIdentityEmail = async (
+  c: Context<AppType>,
+  user: User,
+  serviceProvider: ServiceProvider
+): Promise<string> => {
+  if (
+    serviceProvider.entityId !== PEOPLEVINE_SP_ENTITY_ID ||
+    user.accountStatus !== "pending_membership" ||
+    user.onboardingPaymentAgreementAt
+  ) {
+    return user.email;
+  }
+  const prisma: PrismaClient = c.get("db");
+  const company = await prisma.company.findUnique({ where: { id: user.companyId } });
+  return company?.peopleVineId ? company.email : user.email;
+};
 
 export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<typeof SamlRequestSchema>>) => {
   const { SAMLRequest: samlRequest, RelayState: relayState } = c.req.valid("query");
@@ -29,6 +60,10 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
     samlAuthRequest = await createSamlAuthRequest(c, {
       serviceProviderId: serviceProvider.id,
       inResponseTo: parsedRequest.id,
+      // Must be persisted, not just passed through on the already-logged-in branch
+      // below — otherwise /saml/continue (after a fresh login) returns an empty
+      // RelayState and PV falls back to whatever page its own session last remembered.
+      relayState,
       acsUrl: parsedRequest.assertionConsumerServiceURL,
       requestBinding: SamlBinding.HTTP_REDIRECT,
       responseBinding: SamlBinding.HTTP_POST,
@@ -55,6 +90,7 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
       user: currentUser,
       sessionId,
       relayState,
+      identityEmail: await resolveSamlIdentityEmail(c, currentUser, serviceProvider),
       idp: {
         entityId: c.env.SAML_ENTITY_ID as string,
         certPem: c.env.SAML_PUBLIC_CERT as string,
@@ -103,6 +139,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
     user: currentUser,
     relayState: samlAuthRequest.relayState || undefined,
     sessionId,
+    identityEmail: await resolveSamlIdentityEmail(c, currentUser, serviceProvider),
     idp: {
       entityId: c.env.SAML_ENTITY_ID as string,
       certPem: c.env.SAML_PUBLIC_CERT as string,
@@ -161,6 +198,7 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
     user: currentUser,
     sessionId,
     relayState,
+    identityEmail: await resolveSamlIdentityEmail(c, currentUser, serviceProvider),
     idp: {
       entityId: c.env.SAML_ENTITY_ID as string,
       certPem: c.env.SAML_PUBLIC_CERT as string,

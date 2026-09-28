@@ -8,6 +8,26 @@ import { MultiSelectDropdown } from "./MultiSelectDropdown";
 import { SectionHeading } from "./SectionHeading";
 import type { Address, OnboardingScenario, PrimaryUserDetails } from "../types";
 
+// Phone and address are required here (not just cosmetically marked) because they ride
+// straight into PeopleVine as the `mobile`/`address` objects on both the person's own
+// record and, for new_company, the company's placeholder record (formData.user.address/
+// phone is reused there — see peopleVinePortalService.ts). Leaving them blank doesn't
+// just mean an incomplete profile — PV's own backend has been confirmed (via a live
+// NullReferenceException) to crash on some of its endpoints when these fields are
+// entirely absent from a create/update request rather than merely empty, so this isn't
+// optional the way Title/LinkedIn/Bio genuinely are.
+export const isPrimaryUserStepValid = (value: PrimaryUserDetails): boolean =>
+  value.firstName.trim() !== "" &&
+  value.lastName.trim() !== "" &&
+  value.email.trim() !== "" &&
+  value.phoneCountryCode.trim() !== "" &&
+  value.phone.trim() !== "" &&
+  value.address.street.trim() !== "" &&
+  value.address.city.trim() !== "" &&
+  value.address.state.trim() !== "" &&
+  value.address.zip.trim() !== "" &&
+  value.address.country.trim() !== "";
+
 interface PrimaryUserStepProps {
   value: PrimaryUserDetails;
   onChange: (field: keyof Omit<PrimaryUserDetails, "address" | "ethnicity">, fieldValue: string) => void;
@@ -119,7 +139,9 @@ export const PrimaryUserStep = ({
           />
         </div>
         <div>
-          <Label htmlFor="userPhone">Phone</Label>
+          <Label htmlFor="userPhone">
+            Phone <span className="text-red-500">*</span>
+          </Label>
           <div className="mt-1 flex gap-2">
             <Input
               id="userPhoneCountryCode"
@@ -194,7 +216,7 @@ export const PrimaryUserStep = ({
       />
 
       <div className="space-y-3">
-        <SectionHeading>Personal Address</SectionHeading>
+        <SectionHeading>Personal Address *</SectionHeading>
         <Input
           placeholder="Street address"
           autoComplete="street-address"

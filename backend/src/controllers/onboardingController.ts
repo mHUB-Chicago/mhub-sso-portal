@@ -33,6 +33,7 @@ import {
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { createCompany, updateCompany } from "@/services/companyService";
 import { createUser, updateUser } from "@/services/userService";
+import { generateSignedMembershipAgreementPdf } from "@/services/membershipAgreementService";
 import { getServiceProviderByEntityId } from "@/services/serviceProviderService";
 import {
   assertPeopleVineWritesEnabled,
@@ -73,19 +74,38 @@ export const createOnboardingSubmissionRecord = async (
 const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form/20611";
 // Matches the ServiceProvider seeded for PeopleVine's member portal (see seed.ts) —
 // looked up by entityId rather than hardcoding its DB id, since that id is
-// environment-specific.
-const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
+// environment-specific. Also used by samlController.ts to decide when a pending_membership
+// user's SAML identity should be swapped for their company's (see resolveSamlIdentityEmail).
+export const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
+// Where a regular (non-onboarding) member should land in PV after SSO. PV ignores
+// RelayState and instead lands on the last PV page viewed in that browser, so the login
+// page loads this page first (see peopleVineLandingUrl, handleStartLogin).
+export const PEOPLEVINE_HOME_URL = "https://member.mhubchicago.com/home";
+
+export const getOnboardingPaymentFormUrl = (c: Context<AppType>): string =>
+  (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
 
 // Shared with handleVerifyLogin (loginController.ts) — a pending_membership user who
 // logs in through ANY path (not just this email's link) should still land on this same
 // SSO+RelayState URL, so the redirect doesn't depend on a `returnTo` query param
 // surviving the whole email→OTP→set-password chain intact.
+// Re-introduced SSO (2026-09-23) after briefly trying a plain form link: PV changed the
+// survey to "Registered Member Only", so an actual PV session is required to reach it at
+// all now — a plain link no longer works. Still SAML/SSO'd through our own IdP, which is
+// what was 502ing for accounts without a real active PV membership (see
+// resolveSamlIdentityEmail, samlController.ts) — that root cause is unresolved and
+// tracked separately (escalated to PV support), not fixed by this URL choice either way.
 export const getOnboardingPaymentSsoUrl = async (c: Context<AppType>): Promise<string> => {
-  const formUrl = (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;
+  const formUrl = getOnboardingPaymentFormUrl(c);
   const backendUrl = c.env.BACKEND_URL ?? "";
   const peopleVineSp = await getServiceProviderByEntityId(c, PEOPLEVINE_SP_ENTITY_ID);
+  // Same SP-initiated entry as the dashboard's "mHUB Member Portal" tile (the SP's own
+  // loginUrl, PV → our /saml → back to PV's ACS). PV ignores RelayState (verified
+  // 2026-09-23): after SSO it lands on the last PV page viewed in that browser, which
+  // is why the login page pre-opens the form before this SSO (peopleVineLandingUrl).
+  if (peopleVineSp?.loginUrl) return peopleVineSp.loginUrl;
   return peopleVineSp
-    ? `${backendUrl}/saml/sso/${peopleVineSp.id}?relayState=${encodeURIComponent(formUrl)}`
+    ? `${backendUrl}/saml/sso/${peopleVineSp.id}`
     : formUrl; // fall back to the bare form link if the SP isn't seeded in this environment
 };
 
@@ -148,6 +168,7 @@ const finalizeSubmissionPushToPeopleVine = async (
 
   let targetCompanyId: string;
   let existingCompanyPeopleVineId: string | null = null;
+  let existingCompanyName: string | null = null;
   if (formData.scenario === "existing_company") {
     const existingCompany = await prisma.company.findUnique({ where: { id: formData.companyId } });
     if (!existingCompany) {
@@ -155,12 +176,14 @@ const finalizeSubmissionPushToPeopleVine = async (
     }
     targetCompanyId = existingCompany.id;
     existingCompanyPeopleVineId = existingCompany.peopleVineId;
+    existingCompanyName = existingCompany.name;
   } else {
     targetCompanyId = ""; // created below once we have the PV push result
   }
 
   const result = await pushOnboardingSubmissionToPeopleVine(c, formData, {
     existingCompanyPeopleVineId,
+    existingCompanyName,
     resumeCompanyPvCustomerId: row.pvCompanyCustomerId,
     onCompanyCreated: async (companyPvCustomerId) => {
       await prisma.onboardingSubmission.update({
@@ -191,7 +214,7 @@ const finalizeSubmissionPushToPeopleVine = async (
   // Same "no access yet" reasoning as the company above — applies to both scenarios
   // (a brand-new company's owner, or a person attached to an existing company) since
   // neither has a confirmed real membership at push time.
-  await createUser(c, {
+  const newUser = await createUser(c, {
     name: `${formData.user.firstName} ${formData.user.lastName}`.trim(),
     email: formData.user.email,
     role: Role.USER,
@@ -208,13 +231,36 @@ const finalizeSubmissionPushToPeopleVine = async (
     billingContactEmail: formData.company.billingContactEmail || null,
   });
 
+  // The member already e-signed the Membership Agreement on the public onboarding-link
+  // form itself (OnboardingFormDataSchema requires this for mode "link") — stamp it onto
+  // the real PDF now that the User row finally exists to attach it to. Admin-entered
+  // submissions never have `agreement` (the member always signs, never an admin on
+  // their behalf), so this is skipped for those.
+  if (formData.agreement?.agreed) {
+    const signedAt = new Date();
+    const signedName =
+      formData.agreement.signatureType === "type" ? formData.agreement.fullLegalName!.trim() : newUser.name;
+    const membershipAgreementPdf = await generateSignedMembershipAgreementPdf({
+      fullLegalName: signedName,
+      signatureType: formData.agreement.signatureType,
+      signatureImageDataUrl: formData.agreement.signatureImageDataUrl,
+      signedAt,
+    });
+    await updateUser(c, {
+      id: newUser.id,
+      membershipAgreementSignedAt: signedAt,
+      membershipAgreementSignedName: signedName,
+      membershipAgreementPdf,
+    });
+  }
+
   // Fire-and-forget from the caller's perspective — see sendOnboardingPaymentFormEmail
   // for why this can't be allowed to fail the push that already succeeded above.
   c.executionCtx.waitUntil(sendOnboardingPaymentFormEmail(c, formData));
 
   const resolutionNote =
     formData.scenario === "existing_company" && !result.linkedViaMembershipCard
-      ? "No active PeopleVine membership card found for this company — the new user was linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
+      ? "Could not attach the new user to the company's PeopleVine membership (no active card found, or that card's membership type doesn't allow additional members) — they were linked by reference only. Attach them to the company's membership manually in the PV Control Panel."
       : null;
 
   return prisma.onboardingSubmission.update({
@@ -262,33 +308,20 @@ export const fetchActiveMembershipPackages = async (c: Context): Promise<{ id: s
     .map((m) => ({ id: String(m.id), name: m.title as string }));
 };
 
-// Add-on memberships (Type="add-on" per PV's own /memberships enum — a different kind
-// from the primary "subscription" plans above). For a person being added to an
-// existing_company, the primary membership is inherited from the company rather than
-// chosen here — this list is only ever additional/optional add-ons they might want.
-export const fetchActiveAddonMemberships = async (c: Context): Promise<{ id: string; name: string }[]> => {
-  const memberships: any[] = [];
-  let pageNumber = 1;
-  while (true) {
-    const { data, pagination } = await apiRequestWithPagination(c, {
-      tokenType: PeopleVineTokenType.USER_COMPANY,
-      endpoint: "/memberships",
-      method: "GET",
-      queryParams: {
-        Page_Size: "100",
-        Page_Number: String(pageNumber),
-        Type: "add-on",
-        Status: "active",
-      },
-    });
-    memberships.push(...data);
-    if (!pagination?.has_next_page) break;
-    pageNumber++;
-  }
-
-  return memberships
-    .filter((m) => m.title)
-    .map((m) => ({ id: String(m.id), name: m.title as string }));
+// Add-on memberships. For a person being added to an existing_company, the primary
+// membership is inherited from the company rather than chosen here — this list is only
+// ever additional/optional add-ons they might want. Sourced from mHub's own curated
+// "Add-on Subscription Types" list (managed on the admin Sync settings page, see
+// prisma.addonSubscriptionType / backend/src/index.ts /api/config/addon-subscription-types)
+// rather than PV's live /memberships?Type=add-on catalog — PV's add-on-typed products
+// didn't reliably reflect what staff actually offer, leaving this dropdown empty. This is
+// the same list already used to classify synced subscriptions into the addOns bucket
+// (see peopleVineServiceV2.ts), so it's already the source of truth for "what counts as
+// an add-on" at mHub.
+export const fetchActiveAddonMemberships = async (c: Context<AppType>): Promise<{ id: string; name: string }[]> => {
+  const prisma: PrismaClient = c.get("db");
+  const types = await prisma.addonSubscriptionType.findMany({ orderBy: { name: "asc" } });
+  return types.map((t) => ({ id: t.name, name: t.name }));
 };
 
 const toSubmissionDTO = (row: {
@@ -430,13 +463,13 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
             ],
           },
           orderBy: { createdAt: "desc" },
-          select: { mode: true, createdAt: true, matchedCompanyId: true, matchedUserId: true },
+          select: { id: true, mode: true, createdAt: true, matchedCompanyId: true, matchedUserId: true },
         })
       : [];
   // Most recent submission per target wins (findMany above is already ordered desc, so
   // the first match seen for a given id is kept).
-  const submissionByCompanyId = new Map<string, { mode: string; createdAt: Date }>();
-  const submissionByUserId = new Map<string, { mode: string; createdAt: Date }>();
+  const submissionByCompanyId = new Map<string, { id: string; mode: string; createdAt: Date }>();
+  const submissionByUserId = new Map<string, { id: string; mode: string; createdAt: Date }>();
   for (const s of submissions) {
     if (s.matchedCompanyId && !submissionByCompanyId.has(s.matchedCompanyId)) {
       submissionByCompanyId.set(s.matchedCompanyId, s);
@@ -454,6 +487,7 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       email: co.email,
       peopleVineId: co.peopleVineId,
       createdAt: co.createdAt,
+      submissionId: submissionByCompanyId.get(co.id)?.id ?? null,
       ...buildOnboardingProgress(co, submissionByCompanyId.get(co.id)),
     })),
     ...users.map((u) => ({
@@ -463,6 +497,7 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       email: u.email,
       peopleVineId: u.peopleVineId,
       createdAt: u.createdAt,
+      submissionId: submissionByUserId.get(u.id)?.id ?? null,
       ...buildOnboardingProgress(u, submissionByUserId.get(u.id)),
     })),
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -524,6 +559,7 @@ export const handleApplyOnboardingSubscription = async (c: Context<AppType>) => 
         email: updated.email,
         peopleVineId: updated.peopleVineId,
         createdAt: updated.createdAt,
+        submissionId: submission?.id ?? null,
         ...buildOnboardingProgress(updated, submission ?? undefined),
       },
     },
@@ -576,6 +612,7 @@ export const handleSkipOnboardingPayment = async (c: Context<AppType>) => {
         email: updated.email,
         peopleVineId: updated.peopleVineId,
         createdAt: updated.createdAt,
+        submissionId: submission?.id ?? null,
         ...buildOnboardingProgress(updated, submission ?? undefined),
       },
     },

@@ -9,20 +9,23 @@ import {
   useGetOnboardingAttributeOptionsQuery,
 } from "@/store/api/publicOnboardingApi";
 import { CompanyDetailsStep } from "@/pages/admin/onboarding/components/CompanyDetailsStep";
-import { PrimaryUserStep } from "@/pages/admin/onboarding/components/PrimaryUserStep";
+import { PrimaryUserStep, isPrimaryUserStepValid } from "@/pages/admin/onboarding/components/PrimaryUserStep";
 import { SkillsStep } from "@/pages/admin/onboarding/components/SkillsStep";
+import { OnboardingStepper } from "@/pages/admin/onboarding/components/OnboardingStepper";
+import { AgreementStep, isAgreementStepValid } from "@/pages/admin/onboarding/components/AgreementStep";
 import { PublicPackageStep } from "./PublicPackageStep";
 import { PublicAddonMembershipsStep } from "./PublicAddonMembershipsStep";
 import { PublicSelectCompanyStep } from "./PublicSelectCompanyStep";
 import type {
   Address,
+  AgreementDetails,
   CompanyDetails,
   OnboardingFormData,
   PrimaryUserDetails,
   SkillsDetails,
 } from "@/pages/admin/onboarding/types";
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 6;
 
 const createInitialFormData = (scenario: "new_company" | "existing_company"): OnboardingFormData => ({
   mode: "link",
@@ -74,6 +77,7 @@ const createInitialFormData = (scenario: "new_company" | "existing_company"): On
     cvc: "",
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
+  agreement: { agreed: false, signatureType: "type", fullLegalName: "" },
 });
 
 const PublicOnboardingPage = () => {
@@ -179,8 +183,22 @@ const PublicOnboardingPage = () => {
     setFormData((prev) => (prev ? { ...prev, skills: { ...prev.skills, shopSkills } } : prev));
   };
 
+  const updateAgreement = (agreement: AgreementDetails) => {
+    setFormData((prev) => (prev ? { ...prev, agreement } : prev));
+  };
+
   const goNext = () => setCurrentStep((step) => Math.min(step + 1, TOTAL_STEPS));
   const goBack = () => setCurrentStep((step) => Math.max(step - 1, 1));
+  // A silently-disabled button leaves the member unsure why "Continue" won't respond —
+  // clicking it now always fires, and an incomplete step surfaces a clear toast instead
+  // of nothing happening. See isCurrentStepValid for what "incomplete" checks per step.
+  const handleContinueClick = () => {
+    if (!isCurrentStepValid) {
+      toast.error("Please fill in all required fields before continuing.");
+      return;
+    }
+    goNext();
+  };
 
   const handleSubmit = async () => {
     if (!formData || !token) return;
@@ -240,10 +258,56 @@ const PublicOnboardingPage = () => {
             attributeOptions={attributeOptions}
           />
         );
+      case 5:
+        return (
+          <AgreementStep
+            value={formData.agreement ?? { agreed: false, signatureType: "type", fullLegalName: "" }}
+            onChange={updateAgreement}
+          />
+        );
+      case 6:
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="mb-2 text-2xl font-semibold">Next Steps</h2>
+              <p className="text-gray-600">What happens after you submit.</p>
+            </div>
+            <div className="space-y-4">
+              {[
+                {
+                  title: "Your application is reviewed",
+                  description: "mHUB staff review your submission and assign your membership.",
+                },
+                {
+                  title: "You'll get a confirmation email",
+                  description: "Once approved, we'll email you to set your password and log in.",
+                },
+                {
+                  title: "Complete your payment",
+                  description: "After logging in, you'll be taken to the payment form to finish setting up your membership.",
+                },
+              ].map((item, index) => (
+                <div key={item.title} className="flex gap-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand/10 text-sm font-semibold text-brand">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                    <p className="text-sm text-gray-600">{item.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
       default:
         return null;
     }
   };
+
+  const isCurrentStepValid =
+    (currentStep !== 2 || !!formData?.user && isPrimaryUserStepValid(formData.user)) &&
+    (currentStep !== 5 || isAgreementStepValid(formData?.agreement));
 
   return (
     <div className="min-h-screen bg-gray-50 py-10">
@@ -253,6 +317,8 @@ const PublicOnboardingPage = () => {
           <p className="mt-1 text-gray-600">Complete this form to get started.</p>
         </div>
 
+        <OnboardingStepper currentStep={currentStep} scenario={formData?.scenario} />
+
         <div className="rounded-xl border bg-white p-10">
           {renderStep()}
 
@@ -261,7 +327,7 @@ const PublicOnboardingPage = () => {
               Back
             </Button>
             {currentStep < TOTAL_STEPS ? (
-              <Button onClick={goNext} className="bg-brand hover:bg-brand-hover">
+              <Button onClick={handleContinueClick} className="bg-brand hover:bg-brand-hover">
                 Continue
               </Button>
             ) : (

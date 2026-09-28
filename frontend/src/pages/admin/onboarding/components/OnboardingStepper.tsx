@@ -10,8 +10,8 @@ interface OnboardingStepperProps {
 export const OnboardingStepper = ({ currentStep, scenario = "new_company" }: OnboardingStepperProps) => {
   const STEPS =
     scenario === "existing_company"
-      ? ["Select Company", "Primary User", "Add-ons", "Skills", "Next Steps"]
-      : ["Company", "Primary User", "Package", "Skills", "Next Steps"];
+      ? ["Select Company", "Primary User", "Add-ons", "Skills", "Agreement", "Next Steps"]
+      : ["Company", "Primary User", "Package", "Skills", "Agreement", "Next Steps"];
 
   return (
     <div className="mb-10">

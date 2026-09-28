@@ -93,6 +93,10 @@ export type IssueSamlResponseInput = {
   user: User,
   sessionId: string,
   relayState?: string | null;
+  // Overrides the asserted NameID/email — used to log a pending_membership user in as
+  // their parent Company's PV identity instead of their own (see
+  // samlController.ts's resolveSamlIdentityEmail). Defaults to user.email.
+  identityEmail?: string;
   idp: {
     entityId: string;
     certPem: string;
@@ -141,23 +145,27 @@ function addMinutes(date: Date, minutes: number): Date {
 function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const { user, serviceProvider, samlRequest } = input;
   const now = new Date();
-  // Same window regardless of who initiated — PeopleVine's ACS returned a 502 (their own
-  // server erroring, not a validation rejection) specifically on the IdP-initiated path,
-  // and the only structural differences were this shorter window and <saml:OneTimeUse/>
-  // below. Older/simpler SAML parsers (PV's stack is classic ASP.NET) are known to choke
-  // on the less-common OneTimeUse condition, so both are unified here as a fix attempt.
-  const notOnOrAfter = addMinutes(now, 60).toISOString();
-  const notBefore = now.toISOString();
+  const isIdpInitiated = samlRequest === null;
+  const notOnOrAfter = addMinutes(now, isIdpInitiated ? 5 : 60).toISOString();
+  // Backdated to tolerate clock skew — the form auto-submits within milliseconds, so an
+  // SP whose clock is even slightly behind ours would otherwise see the assertion as
+  // "not yet valid". Expiry (notOnOrAfter) is still measured from `now`.
+  const notBefore = addMinutes(now, -2).toISOString();
 
   const responseId = `_${crypto.randomUUID()}`;
   const assertionId = `_${crypto.randomUUID()}`;
-  const sessionIndex = `_${input.sessionId}`;
+  // Random, NOT derived from input.sessionId — that's the portal's live `sid` cookie
+  // value, and anything placed here is readable by the SP (and anyone who sees the
+  // SAMLResponse), which would let them hijack the portal session. Nothing reads
+  // SessionIndex back (no SLO), so it needn't map to our session.
+  const sessionIndex = `_${crypto.randomUUID()}`;
 
   const destination = serviceProvider.acsUrl;
 
   const nameIdFormat = 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress';
-  const nameIdValue = user.email;
-  const email = user.email;
+  // XML-escaped — interpolated into element text below.
+  const nameIdValue = escapeHtmlAttr(input.identityEmail ?? user.email);
+  const email = nameIdValue;
 
   const responseInResponseToAttr = samlRequest
     ? `InResponseTo="${escapeHtmlAttr(samlRequest.inResponseTo)}"`
@@ -195,7 +203,8 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
     <saml:Conditions NotBefore="${notBefore}" NotOnOrAfter="${notOnOrAfter}">
       <saml:AudienceRestriction>
         <saml:Audience>${input.serviceProvider.entityId}</saml:Audience>
-      </saml:AudienceRestriction>
+      </saml:AudienceRestriction>${isIdpInitiated ? `
+      <saml:OneTimeUse/>` : ""}
     </saml:Conditions>
 
     <saml:AuthnStatement AuthnInstant="${now.toISOString()}" SessionIndex="${sessionIndex}">

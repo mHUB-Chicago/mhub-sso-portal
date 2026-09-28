@@ -8,6 +8,7 @@
   "env": {
     "staging": {
       "name": "mhub-sso-portal",
+      "account_id": "178f56d221a91e021554d796df27b8ae",
       "routes": [
         { "pattern": "sso.mhubsso.com/webhook/*", "zone_name": "mhubsso.com" }
       ],
@@ -29,14 +30,17 @@
           {
             "queue": "mhub-sso-portal",
             "max_retries": 3,
-            "max_concurrency": 5
+            "max_concurrency": 2
           }
         ]
       },
       "triggers": {
-        // 06:00 UTC = 1am CDT (summer), 07:00 UTC = 1am CST (winter) — both registered, handler picks the correct one
-        // */30 * * * * — re-checks Direct Personal Subscription users directly
-        "crons": ["0 6 * * *", "0 7 * * *", "*/30 * * * *"]
+        "crons": [
+          "0 6 * * *",
+          "0 7 * * *",
+          // "*/30 * * * *",
+          "*/5 * * * *"
+        ]
       },
       "observability": {
         "enabled": true,
@@ -83,14 +87,12 @@
           {
             "queue": "mhub-sso-portal",
             "max_retries": 3,
-            "max_concurrency": 5
+            "max_concurrency": 2
           }
         ]
       },
       "triggers": {
-        // Midnight America/Chicago: 05:00 UTC during CDT, 06:00 UTC during CST.
-        // scheduledHandler picks whichever matches the current Chicago offset.
-        "crons": ["0 5 * * *", "0 6 * * *"]
+        "crons": ["0 5 * * *", "0 6 * * *", "*/5 * * * *"]
       },
       "observability": {
         "enabled": true,

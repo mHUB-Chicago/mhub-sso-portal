@@ -15,13 +15,15 @@ import { ScenarioChooserStep } from "./components/ScenarioChooserStep";
 import { LinkGeneratedStep } from "./components/LinkGeneratedStep";
 import { CompanyDetailsStep } from "./components/CompanyDetailsStep";
 import { SelectCompanyStep } from "./components/SelectCompanyStep";
-import { PrimaryUserStep } from "./components/PrimaryUserStep";
+import { PrimaryUserStep, isPrimaryUserStepValid } from "./components/PrimaryUserStep";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
 import { AddonMembershipsStep } from "./components/AddonMembershipsStep";
 import { SkillsStep } from "./components/SkillsStep";
+import { AgreementStep, isAgreementStepValid } from "./components/AgreementStep";
 import { NextStepsStep } from "./components/NextStepsStep";
 import type {
   Address,
+  AgreementDetails,
   CompanyDetails,
   OnboardingFormData,
   OnboardingMode,
@@ -30,7 +32,7 @@ import type {
   SkillsDetails,
 } from "./types";
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 // RTK Query's `.unwrap()` rejects with `{ status, data }`, not an `Error` — `err
 // instanceof Error` is always false for it, so the real backend message (e.g. "Selected
@@ -93,6 +95,7 @@ const createInitialFormData = (): OnboardingFormData => ({
     cvc: "",
     address: { street: "", city: "", state: "", zip: "", country: "" },
   },
+  agreement: { agreed: false, signatureType: "type", fullLegalName: "" },
 });
 
 const OnboardingPage = () => {
@@ -164,8 +167,22 @@ const OnboardingPage = () => {
     setFormData((prev) => ({ ...prev, skills: { ...prev.skills, shopSkills } }));
   };
 
+  const updateAgreement = (agreement: AgreementDetails) => {
+    setFormData((prev) => ({ ...prev, agreement }));
+  };
+
   const goNext = () => setCurrentStep((step) => Math.min(step + 1, TOTAL_STEPS));
   const goBack = () => setCurrentStep((step) => Math.max(step - 1, 0));
+  // A silently-disabled button leaves staff unsure why "Continue" won't respond —
+  // clicking it now always fires, and an incomplete step surfaces a clear toast instead
+  // of nothing happening. See isCurrentStepValid for what "incomplete" checks per step.
+  const handleContinueClick = () => {
+    if (!isCurrentStepValid) {
+      toast.error("Please fill in all required fields before continuing.");
+      return;
+    }
+    goNext();
+  };
 
   const handleChooserContinue = async () => {
     if (formData.mode === "link") {
@@ -246,7 +263,12 @@ const OnboardingPage = () => {
             onChange={updateAddonMemberships}
           />
         ) : (
-          <MembershipPackageStep value={formData.membershipPackage} onChange={updateMembershipPackage} />
+          <MembershipPackageStep
+            value={formData.membershipPackage}
+            onChange={updateMembershipPackage}
+            addonValues={formData.addonMemberships}
+            onAddonChange={updateAddonMemberships}
+          />
         );
       case 4:
         return (
@@ -259,11 +281,22 @@ const OnboardingPage = () => {
           />
         );
       case 5:
+        return (
+          <AgreementStep
+            value={formData.agreement ?? { agreed: false, signatureType: "type", fullLegalName: "" }}
+            onChange={updateAgreement}
+          />
+        );
+      case 6:
         return <NextStepsStep mode={formData.mode} isSubmitting={isSubmitting} onSubmit={handleSubmit} />;
       default:
         return null;
     }
   };
+
+  const isCurrentStepValid =
+    (currentStep !== 2 || isPrimaryUserStepValid(formData.user)) &&
+    (currentStep !== 5 || isAgreementStepValid(formData.agreement));
 
   return (
     <div className="container mx-auto max-w-6xl py-8">
@@ -277,28 +310,35 @@ const OnboardingPage = () => {
           <p className="text-xs text-gray-400">Home / Onboarding</p>
           <h1 className="text-3xl font-bold">New Member Onboarding</h1>
         </div>
-        <div className="inline-flex rounded-full bg-gray-100 p-1">
-          <button
-            type="button"
-            onClick={() => setMode("admin")}
-            className={cn(
-              "rounded-full px-4 py-1.5 text-xs font-semibold",
-              formData.mode === "admin" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-            )}
-          >
-            Admin fills out
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("link")}
-            className={cn(
-              "rounded-full px-4 py-1.5 text-xs font-semibold",
-              formData.mode === "link" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-            )}
-          >
-            Send a link
-          </button>
-        </div>
+        {/* Only shown on the scenario chooser (step 0) — mode is committed once you
+            Continue past it: "link" mode exits straight to LinkGeneratedStep and never
+            reaches the wizard steps at all, so leaving this switchable mid-wizard let an
+            admin flip to "Send a link" while still looking at the full fill-out form,
+            with no actual effect other than a confusing mismatched toggle state. */}
+        {currentStep === 0 && (
+          <div className="inline-flex rounded-full bg-gray-100 p-1">
+            <button
+              type="button"
+              onClick={() => setMode("admin")}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-xs font-semibold",
+                formData.mode === "admin" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              )}
+            >
+              Admin fills out
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("link")}
+              className={cn(
+                "rounded-full px-4 py-1.5 text-xs font-semibold",
+                formData.mode === "link" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              )}
+            >
+              Send a link
+            </button>
+          </div>
+        )}
       </div>
 
       {currentStep === 0 ? (
@@ -334,7 +374,7 @@ const OnboardingPage = () => {
                 <Button variant="outline" onClick={goBack}>
                   Back
                 </Button>
-                <Button onClick={goNext} className="bg-brand hover:bg-brand-hover">
+                <Button onClick={handleContinueClick} className="bg-brand hover:bg-brand-hover">
                   Continue
                 </Button>
               </div>

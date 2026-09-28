@@ -122,6 +122,29 @@ const sendBulkEmails = async (c: Context, sendEmailInputs: SendEmailInput[]): Pr
   console.log(`Bulk email sent to ${sendEmailInputs.length} recipients`);
 };
 
+export interface SendPaymentAgreementCompletedInput {
+  to: string;
+  to_name: string;
+}
+
+export const sendPaymentAgreementCompletedEmail = async (c: Context, input: SendPaymentAgreementCompletedInput): Promise<void> => {
+  const { to, to_name } = input;
+  const firstName = to_name?.split(' ')[0] ?? to_name ?? 'there';
+  const subject = "Your mHUB Payment & Agreement is confirmed";
+  const html = `<p>Hi ${firstName},</p>
+<p>This confirms we've received your onboarding payment and signed membership agreement. Thank you!</p>
+<p>The mHUB team is now setting up your membership. We'll reach out with next steps once it's ready.</p>
+<p>— The mHUB Team</p>`;
+  const text = `Hi ${firstName},\n\nThis confirms we've received your onboarding payment and signed membership agreement. Thank you!\n\nThe mHUB team is now setting up your membership. We'll reach out with next steps once it's ready.\n\n— The mHUB Team`;
+  return sendEmail(c, {
+    to,
+    to_name,
+    subject,
+    html,
+    text,
+  });
+};
+
 export const sendOneTimePasswordEmail = async (c: Context, sendOneTimePasswordInput: SendOneTimePasswordInput): Promise<void> => {
   const { to, to_name, password } = sendOneTimePasswordInput;
   const firstName = to_name?.split(' ')[0] ?? to_name ?? 'there';

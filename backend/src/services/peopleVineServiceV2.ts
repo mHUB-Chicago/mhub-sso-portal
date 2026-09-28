@@ -1,4 +1,5 @@
 import { Context } from 'hono';
+import { serializeSyncLogs } from '@/utils/syncLogs';
 import { Company, PrismaClient, Role } from '@prisma/client';
 import {
     fetchAllPvData,
@@ -28,7 +29,7 @@ const appendLog = async (prisma: PrismaClient, sessionId: string | undefined, le
     const session = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { logs: true } }).catch(() => null);
     const logs = session?.logs ? JSON.parse(session.logs) : [];
     logs.push({ time: new Date().toISOString(), level, message });
-    await prisma.syncSession.update({ where: { id: sessionId }, data: { logs: JSON.stringify(logs) } }).catch(() => { });
+    await prisma.syncSession.update({ where: { id: sessionId }, data: { logs: serializeSyncLogs(logs) } }).catch(() => { });
 };
 
 const setProgress = async (prisma: PrismaClient, sessionId: string | undefined, progress: number, step: string, status?: string): Promise<void> => {

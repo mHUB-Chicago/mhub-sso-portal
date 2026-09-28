@@ -5,13 +5,16 @@ import {
   VerifyLoginResponseSchema,
   ChangePasswordResponseSchema,
   ForgotPasswordResponseSchema,
+  LogoutResponseSchema,
 } from '../../../../common/schemas/login'
 import { GetMyUserResponseSchema } from '../../../../common/schemas/user'
+import { SignMembershipAgreementResponseSchema } from '../../../../common/schemas/membershipAgreement'
 import z from 'zod'
 
 // Request types
 interface StartLoginRequest {
   email: string
+  tx?: string
 }
 
 interface VerifyLoginRequest {
@@ -27,12 +30,20 @@ interface ForgotPasswordRequest {
   email: string
 }
 
+interface SignMembershipAgreementRequest {
+  fullLegalName: string
+  signatureType: 'type' | 'draw'
+  signatureImageDataUrl?: string
+}
+
 // Response types inferred from schemas
 type StartLoginResponse = z.infer<typeof StartLoginResponseSchema>
 type VerifyLoginResponse = z.infer<typeof VerifyLoginResponseSchema>
 type ChangePasswordResponse = z.infer<typeof ChangePasswordResponseSchema>
 type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponseSchema>
+type LogoutResponse = z.infer<typeof LogoutResponseSchema>
 type GetMyUserResponse = z.infer<typeof GetMyUserResponseSchema>
+type SignMembershipAgreementResponse = z.infer<typeof SignMembershipAgreementResponseSchema>
 
 // Custom base query using apiFetch
 const customBaseQuery = async (args: {
@@ -107,12 +118,32 @@ export const authApi = createApi({
       }),
     }),
 
+    // Log out the current session (requires auth)
+    logout: builder.mutation<LogoutResponse, void>({
+      query: () => ({
+        path: 'login/logout',
+        method: 'POST',
+        schema: LogoutResponseSchema,
+      }),
+    }),
+
     // Get current user (check if logged in)
     getMe: builder.query<GetMyUserResponse, void>({
       query: () => ({
         path: 'user/me',
         method: 'GET',
         schema: GetMyUserResponseSchema,
+      }),
+    }),
+
+    // Sign the mHUB Membership Agreement (requires auth) — additive, unrelated to the
+    // existing PV payment/agreement tracking. See common/schemas/membershipAgreement.ts.
+    signMembershipAgreement: builder.mutation<SignMembershipAgreementResponse, SignMembershipAgreementRequest>({
+      query: (body) => ({
+        path: 'membership-agreement/sign',
+        method: 'POST',
+        body,
+        schema: SignMembershipAgreementResponseSchema,
       }),
     }),
   }),
@@ -123,6 +154,8 @@ export const {
   useVerifyLoginMutation,
   useChangePasswordMutation,
   useForgotPasswordMutation,
+  useLogoutMutation,
   useGetMeQuery,
   useLazyGetMeQuery,
+  useSignMembershipAgreementMutation,
 } = authApi

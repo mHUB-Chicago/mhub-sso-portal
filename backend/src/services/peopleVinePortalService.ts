@@ -56,12 +56,17 @@ const pvPortalRequest = async (c: Context, options: PvPortalRequestOptions): Pro
 
   if (!response.ok) {
     const resText = await response.text();
-    let errorDetails = resText;
+    // Full raw body only ever goes to server logs — the admin-facing error (thrown
+    // below) stays short. PV's error JSON shape is { error, title, error_description };
+    // error_description is the one meant to be read by a human, so prefer it.
+    console.error(`[PeopleVinePortal] ${method} ${endpoint} failed with status ${response.status}: ${resText}`);
+    let shortMessage = resText;
     try {
-      errorDetails = JSON.stringify(JSON.parse(resText), null, 2);
+      const parsed = JSON.parse(resText) as { error_description?: string; title?: string; error?: string };
+      shortMessage = parsed.error_description || parsed.title || parsed.error || resText;
     } catch { }
     throw new HTTPException(502, {
-      message: `[PeopleVinePortal] ${method} ${endpoint} failed with status ${response.status}: ${errorDetails}`,
+      message: `PeopleVine: ${shortMessage}`,
     });
   }
   return response.json();
@@ -266,21 +271,79 @@ const pvFindActiveMembershipCardId = async (c: Context, companyCustomerId: numbe
 const pvAddSubMember = async (
   c: Context,
   membershipCardId: number,
-  input: { email: string; firstName: string; lastName: string; companyName?: string; companyTitle?: string }
-): Promise<PvRegisteredCustomer> => {
+  companyCustomerId: number,
+  input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+    companyTitle?: string;
+    phone?: string;
+    phoneCountryCode?: string;
+    address?: OnboardingFormData["user"]["address"];
+  }
+  // Add Sub Member returns a SubMembershipCardDTO (the new membership CARD it just
+  // created), not the customer directly — its own `id` is the card's id (needed below
+  // to mark the card primary). The actual PV customer id to use everywhere else
+  // (PV.On_Behalf_Of for the profile PATCH, and the id we persist as the local User's
+  // peopleVineId) is `customer_id`.
+): Promise<{ id: number; customer_id: number; email: string; first_name: string; last_name: string }> => {
+  // PV's own "Assign Person" Control Panel action succeeds against this same endpoint
+  // with the same minimal identity fields, so the 406 "Object reference not set to an
+  // instance of an object" crash we saw from our bare-minimum payload (type/email/
+  // name/password only) is suspected to come from `address`/`mobile` being entirely
+  // absent from the request rather than present-but-empty — sending them explicitly
+  // (even blank) mirrors what a real form submission would always include.
+  const { street, city, state, zip, country } = input.address ?? {};
+  const mobile =
+    input.phone && input.phoneCountryCode
+      ? { country_code: input.phoneCountryCode, number: input.phone }
+      : undefined;
   return pvPortalRequest(c, {
     method: "POST",
     endpoint: `/account/memberships/${membershipCardId}/members`,
+    // PV rejects this endpoint with a 406 "Invalid token type... please use the
+    // 'PV.On_Behalf_Of' header" without this — same requirement as the List
+    // Memberships lookup above, acting on behalf of the company whose card this is.
+    onBehalfOfCustomerId: companyCustomerId,
     body: {
       type: "customer",
       email: input.email,
       first_name: input.firstName,
       last_name: input.lastName,
       password: crypto.randomUUID(),
+      address: { address: street ?? "", address2: "", address3: "", city: city ?? "", state: state ?? "", zip_code: zip ?? "", country: country ?? "" },
+      mobile: mobile ?? { country_code: "", number: "" },
       ...(input.companyName ? { company_name: input.companyName } : {}),
       ...(input.companyTitle ? { company_title: input.companyTitle } : {}),
     },
   });
+};
+
+// A freshly-created sub member's own card comes back with `primary: false` by default
+// (confirmed against PV — staff manually checking "Set as Primary Membership Card" in
+// the Control Panel is what actually fixed a stuck-inactive test member). Our sync
+// engine's company-lookup for non-rep members reads the sponsoring company's name off
+// the member's own PRIMARY card, so leaving this false means syncOne can never resolve
+// their company and they stay stuck on `accountStatus: "pending_membership"` forever.
+// `PATCH /account/memberships/{card}/members/{sub_card}` (Account Memberships) takes a
+// CustomerUpdate body — no `primary` field exists there at all, so it silently no-ops.
+// The one endpoint that actually accepts `primary` is this top-level (non-`/account`)
+// Memberships one, keyed by the sub member's own card id and typed as
+// MembershipCardPatchRequest — no PV.On_Behalf_Of, same as the plain company token used
+// for fetchActiveMembershipPackages's GET /memberships. Best-effort: never let a
+// failure here undo the Add Sub Member call that already succeeded, so this only ever
+// logs and swallows its own errors.
+const pvSetSubMemberPrimary = async (c: Context, subMembershipCardId: number): Promise<void> => {
+  try {
+    await pvPortalRequest(c, {
+      method: "PATCH",
+      endpoint: `/memberships/members/${subMembershipCardId}`,
+      body: { primary: true },
+    });
+  } catch (e) {
+    console.warn(`[onboarding] Failed to mark sub member card ${subMembershipCardId} as primary: ${e instanceof Error ? e.message : String(e)}`);
+  }
 };
 
 // Maps our onboarding form's own field names to the exact PV attribute names they were
@@ -352,6 +415,13 @@ export interface OnboardingPvPushResult {
 export interface PushOnboardingSubmissionOptions {
   // existing_company scenario: the local Company's already-known PV customer id.
   existingCompanyPeopleVineId?: string | null;
+  // existing_company scenario: the local Company's name, stamped onto the new sub
+  // member's PV `company_name` field. The sync engine (peopleVineService.ts's syncOne)
+  // resolves a non-rep member's company by matching this exact string — Add Sub Member
+  // never sets it on its own, so without this the new person's PV customer_no ends up
+  // with a blank company_name and syncOne's `No company found for X — sub-member or
+  // inactive, skipping` branch permanently skips them, leaving them stuck inactive.
+  existingCompanyName?: string | null;
   // new_company scenario: a PV company customer id from a previous, partially-failed
   // Approve attempt. When set, registration of the company customer is skipped
   // entirely and this id is reused, so a retry never creates a second, duplicate
@@ -369,50 +439,42 @@ export const pushOnboardingSubmissionToPeopleVine = async (
   options: PushOnboardingSubmissionOptions = {}
 ): Promise<OnboardingPvPushResult> => {
   assertPeopleVineWritesEnabled(c);
-  const { existingCompanyPeopleVineId, resumeCompanyPvCustomerId, onCompanyCreated } = options;
+  const { existingCompanyPeopleVineId, existingCompanyName, resumeCompanyPvCustomerId, onCompanyCreated } = options;
   const userAttributes = buildUserAttributes(formData);
 
   if (formData.scenario === "existing_company") {
     const companyPvId = existingCompanyPeopleVineId ? Number(existingCompanyPeopleVineId) : null;
     const membershipCardId = companyPvId ? await pvFindActiveMembershipCardId(c, companyPvId) : null;
 
-    if (membershipCardId) {
-      const subMember = await pvAddSubMember(c, membershipCardId, {
-        email: formData.user.email,
-        firstName: formData.user.firstName,
-        lastName: formData.user.lastName,
-        companyTitle: formData.user.title,
-      });
-      await pvUpdateAccountProfile(c, subMember.id, {
-        birthday: formData.user.birthday,
-        gender: formData.user.gender,
-        address: formData.user.address,
-        attributes: userAttributes,
-        source: ONBOARDING_SOURCE_TAGS.personPending,
-      });
-      return { companyPvCustomerId: null, userPvCustomerId: String(subMember.id), linkedViaMembershipCard: true, companyEmail: null };
+    // No silent fallback to a standalone, best-effort-linked customer anymore — if this
+    // company has no active membership card, or PV rejects Add Sub Member for it, the
+    // whole approve action now fails with PV's own short error instead of quietly
+    // completing with a "linked by reference only, attach manually" note. The
+    // submission stays in Pending Review (never reaches `pushed_to_pv`) so it can just
+    // be retried once whatever PV-side issue caused it is fixed.
+    if (!membershipCardId) {
+      throw new HTTPException(400, { message: "This company has no active PeopleVine membership card to attach the new member to." });
     }
 
-    // No active PV membership card found for this company (or it has no PV record at
-    // all yet) — fall back to a standalone customer, best-effort linked by name only.
-    // The caller records a resolutionNote so staff know to attach it manually in PV.
-    const user = await pvRegisterCustomer(c, {
+    const subMember = await pvAddSubMember(c, membershipCardId, companyPvId!, {
       email: formData.user.email,
       firstName: formData.user.firstName,
       lastName: formData.user.lastName,
+      companyName: existingCompanyName ?? undefined,
+      companyTitle: formData.user.title,
       phone: formData.user.phone,
       phoneCountryCode: formData.user.phoneCountryCode,
+      address: formData.user.address,
     });
-    await pvUpdateAccountProfile(c, user.id, {
+    await pvUpdateAccountProfile(c, subMember.customer_id, {
       birthday: formData.user.birthday,
       gender: formData.user.gender,
       address: formData.user.address,
-      companyTitle: formData.user.title,
       attributes: userAttributes,
       source: ONBOARDING_SOURCE_TAGS.personPending,
-      ...(companyPvId ? { customerReference: `pv_company:${companyPvId}` } : {}),
     });
-    return { companyPvCustomerId: null, userPvCustomerId: String(user.id), linkedViaMembershipCard: false, companyEmail: null };
+    await pvSetSubMemberPrimary(c, subMember.id);
+    return { companyPvCustomerId: null, userPvCustomerId: String(subMember.customer_id), linkedViaMembershipCard: true, companyEmail: null };
   }
 
   // new_company: register two distinct PV customers (company + user) — there's no PV
@@ -430,6 +492,14 @@ export const pushOnboardingSubmissionToPeopleVine = async (
       email: resolvedCompanyEmail,
       firstName: companyName,
       lastName: "Company",
+      // The onboarding form has no separate "company phone" field either (same gap as
+      // the address reuse below) — without this, the company's PV record NEVER gets a
+      // `mobile` value at all (always entirely absent, not just blank), the same
+      // missing-vs-empty shape that was confirmed to crash PV's backend elsewhere in
+      // this file (see pvAddSubMember). Reusing the primary user's phone at least gives
+      // this record a real value whenever one was provided.
+      phone: formData.user.phone,
+      phoneCountryCode: formData.user.phoneCountryCode,
     });
     await pvUpdateAccountProfile(c, company.id, {
       type: "company",

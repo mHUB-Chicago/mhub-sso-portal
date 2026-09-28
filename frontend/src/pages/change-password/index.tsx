@@ -7,8 +7,6 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Lock, Loader2, ShieldCheck } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { useAppSelector } from '@/store'
-import { completeSsoAndRedirect } from '@/lib/ssoRedirect'
 
 interface ChangePasswordFormData {
   password: string
@@ -25,7 +23,6 @@ export function ChangePasswordPage() {
       window.history.replaceState(null, '', window.location.pathname)
     }
   }, [])
-  const { redirectUrl } = useAppSelector(state => state.auth)
   const navigate = useNavigate()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -41,21 +38,26 @@ export function ChangePasswordPage() {
 
   const password = watch('password')
 
+  // This page's only job now is setting the password — it no longer opens the PV tab
+  // or hands off to SSO itself. Once the password is set, the member is sent back to
+  // /login (carrying tx/returnTo forward) to log in for real with it; login/index.tsx
+  // is the single place that opens the payment-form tab and polls for completion, so
+  // that behavior only ever lives in one place instead of being duplicated here too.
   const onSubmit = async (data: ChangePasswordFormData) => {
     try {
       await changePassword({ password: data.password }).unwrap()
-      toast.success('Password changed successfully!')
+      toast.success('Password changed successfully! Please log in with your new password.')
 
-      // Handle SAML flow or regular navigation
-      if (txQueryParam) {
-        window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
-      } else if (returnToParam) {
-        completeSsoAndRedirect(returnToParam)
-      } else if (redirectUrl) {
-        completeSsoAndRedirect(redirectUrl)
-      } else {
-        navigate('/dashboard')
-      }
+      const loginParams = new URLSearchParams()
+      if (txQueryParam) loginParams.set('tx', txQueryParam)
+      if (returnToParam) loginParams.set('returnTo', returnToParam)
+      // Marks this /login visit as coming right after a real password was just set —
+      // login/index.tsx's Step 2 only opens the payment-form tab when this is present
+      // alongside returnTo, so the very first (OTP) pass through Step 2 for a brand-new
+      // member never opens it prematurely, only this guaranteed-real-password revisit.
+      if (returnToParam) loginParams.set('passwordJustSet', '1')
+      const loginQuery = loginParams.toString()
+      navigate(loginQuery ? `/login?${loginQuery}` : '/login')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
       toast.error(err.data?.message || 'Failed to change password. Please try again.')

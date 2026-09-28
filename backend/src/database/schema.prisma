@@ -101,6 +101,14 @@ model User {
   onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
+  // Membership Agreement e-signature — set-once, same convention as the onboarding
+  // markers above. Purely additive to the existing PV-driven payment/agreement
+  // tracking; does not affect onboardingPaymentAgreementAt or the webhook cascade.
+  // membershipAgreementPdf is a base64 data URI, same storage pattern as
+  // ServiceProvider.logo (no R2/blob storage configured for this Worker).
+  membershipAgreementSignedAt   DateTime?
+  membershipAgreementSignedName String?
+  membershipAgreementPdf        String?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   userServiceProviders UserServiceProvider[]

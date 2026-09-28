@@ -7,6 +7,7 @@ import { useGetUsersQuery } from "@/store/api/userApi"
 import { useGetCompaniesQuery } from "@/store/api/companyApi"
 import { useMemo, useState } from "react"
 
+
 const PAGE_SIZE = 10
 
 export function AdminManagementPage() {

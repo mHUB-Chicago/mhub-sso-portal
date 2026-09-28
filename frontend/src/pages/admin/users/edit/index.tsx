@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from 'sonner'
-import { Loader2, ExternalLink } from 'lucide-react'
+import { Loader2, ExternalLink, FileText, Download } from 'lucide-react'
 import { useGetUserByIdQuery, useUpdateUserMutation } from '@/store/api/userApi'
 
 export function AdminEditUserPage() {
@@ -92,7 +92,7 @@ export function AdminEditUserPage() {
     )
   }
 
-  const { user, company, allowedServiceProviders } = userData.data
+  const { user, company, allowedServiceProviders, membershipAgreementPdf } = userData.data
   const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
 
   return (
@@ -176,6 +176,40 @@ export function AdminEditUserPage() {
               {[user.address, user.city, user.state, user.zipCode].filter(Boolean).join(', ') || <span className="text-gray-400">—</span>}
             </p>
           </div>
+        </div>
+
+        {/* Membership Agreement — additive, unrelated to the PV payment/agreement
+            tracking shown elsewhere; see membershipAgreementService.ts (backend). */}
+        <div className="space-y-2">
+          <h2 className="text-lg font-medium">Membership Agreement</h2>
+          {user.membershipAgreementSignedAt && membershipAgreementPdf ? (
+            <div className="flex items-center gap-3 border rounded-lg bg-gray-50 p-3.5">
+              <div className="h-10 w-9 rounded bg-white border flex items-center justify-center text-red-600 flex-shrink-0">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold">Membership Agreement</p>
+                  <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Signed</Badge>
+                </div>
+                <p className="text-xs text-gray-500 truncate">
+                  Signed by {user.membershipAgreementSignedName ?? user.name} on{' '}
+                  {new Date(user.membershipAgreementSignedAt).toLocaleDateString()} &bull; mHUB_Membership_Agreement_{user.name.replace(/\s+/g, '')}_Signed.pdf
+                </p>
+              </div>
+              <a
+                href={membershipAgreementPdf}
+                download={`mHUB_Membership_Agreement_${user.name.replace(/\s+/g, '')}_Signed.pdf`}
+              >
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  Download Signed Agreement
+                </Button>
+              </a>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 italic">Not signed yet.</p>
+          )}
         </div>
 
         {/* Role Selection */}

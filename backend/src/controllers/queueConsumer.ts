@@ -25,6 +25,7 @@ import {
 } from "@/services/peopleVineServiceV2";
 import { PrismaClient } from "@/database/models";
 import { createMockContext } from "@/utils/createMockContext";
+import { serializeSyncLogs } from "@/utils/syncLogs";
 
 export interface Message {
   jobId: string;
@@ -371,7 +372,7 @@ export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionCont
           logs.push({ time: new Date().toISOString(), level: 'error', message: `Job ${jobType} failed: ${err instanceof Error ? err.message : String(err)}` });
           await prisma.syncSession.update({
             where: { id: sessionId },
-            data: { status: 'failed', step: 'Failed', completedAt: new Date(), logs: JSON.stringify(logs) },
+            data: { status: 'failed', step: 'Failed', completedAt: new Date(), logs: serializeSyncLogs(logs) },
           }).catch(() => {});
         }
       }

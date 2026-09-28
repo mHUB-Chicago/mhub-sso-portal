@@ -10,6 +10,7 @@ import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
 import onboardingRoutes from "@/routes/onboarding";
 import publicOnboardingRoutes from "@/routes/publicOnboarding";
+import membershipAgreementRoutes from "@/routes/membershipAgreement";
 import serviceProviderRoutes from "@/routes/serviceProvider";
 import samlRoutes from "@/routes/saml";
 // import seedRoute from "@/database/seed";
@@ -19,6 +20,7 @@ import scheduledHandler from "./controllers/scheduledHandler";
 import { markPublic } from "./middleware/markPublic";
 import { Role } from "@prisma/client";
 import { fetchAllPvData, fetchPvPage, readAuditChunks, fetchAllMembershipCards } from "@/services/peopleVineService";
+import { readRecentSyncLogs, serializeSyncLogs } from "@/utils/syncLogs";
 
 
 type Bindings = {
@@ -45,6 +47,17 @@ export type AppType = {
 };
 export type JsonInput<T extends ZodType> = JsonInputSchema<T>;
 export type QueryInput<T extends ZodType> = QueryInputSchema<T>;
+const syncSessionSummarySelect = {
+  id: true,
+  type: true,
+  status: true,
+  step: true,
+  progress: true,
+  startedAt: true,
+  completedAt: true,
+  updatedAt: true,
+} as const;
+
 const app = new Hono<AppType>();
 app.onError(handleError);
 app.use("*", async (c, next) => {
@@ -67,6 +80,7 @@ app.route("/api/user", userRoutes);
 app.route("/api/company", companyRoutes);
 app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/public-onboarding", publicOnboardingRoutes);
+app.route("/api/membership-agreement", membershipAgreementRoutes);
 app.route("/api/provider", serviceProviderRoutes);
 
 app.use("/webhook/*", corsMiddleware, databaseMiddleware);
@@ -83,8 +97,10 @@ app.get("/api/sync/status", async (c) => {
   const user = c.get('user');
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
   const prisma = c.get('db');
-  const session = await prisma.syncSession.findFirst({ orderBy: { startedAt: 'desc' } });
-  return c.json({ success: true, data: session ? { ...session, logs: JSON.parse(session.logs) } : null });
+  const session = await prisma.syncSession.findFirst({ orderBy: { startedAt: 'desc' }, select: syncSessionSummarySelect });
+  if (!session) return c.json({ success: true, data: null });
+  const logs = await readRecentSyncLogs(c.env.DB, session.id);
+  return c.json({ success: true, data: { ...session, logs } });
 });
 
 app.post("/api/sync/start", async (c) => {
@@ -125,13 +141,14 @@ app.post("/api/sync/cancel", async (c) => {
   const session = await prisma.syncSession.findFirst({
     where: { status: { in: ['pending', 'running'] } },
     orderBy: { startedAt: 'desc' },
+    select: { id: true },
   });
   if (!session) return c.json({ success: false, error: 'No active sync to cancel' }, 404);
-  const existingLogs = JSON.parse(session.logs ?? '[]');
+  const existingLogs = await readRecentSyncLogs(c.env.DB, session.id);
   existingLogs.push({ time: new Date().toISOString(), level: 'warn', message: 'Sync forcefully cancelled by admin.' });
   await prisma.syncSession.update({
     where: { id: session.id },
-    data: { status: 'cancelled', step: 'Cancelled', completedAt: new Date(), logs: JSON.stringify(existingLogs) },
+    data: { status: 'cancelled', step: 'Cancelled', completedAt: new Date(), logs: serializeSyncLogs(existingLogs) },
   });
   return c.json({ success: true });
 });
@@ -224,18 +241,25 @@ app.get("/api/sync/history", async (c) => {
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
   const offset = Number(c.req.query('offset') ?? 0);
   const [sessions, total] = await Promise.all([
-    prisma.syncSession.findMany({ orderBy: { startedAt: 'desc' }, take: limit, skip: offset }),
+    prisma.syncSession.findMany({ orderBy: { startedAt: 'desc' }, take: limit, skip: offset, select: syncSessionSummarySelect }),
     prisma.syncSession.count(),
   ]);
   return c.json({
     success: true,
     data: {
-      sessions: sessions.map(s => ({ ...s, logs: JSON.parse(s.logs) })),
+      sessions,
       total,
       limit,
       offset,
     },
   });
+});
+
+app.get("/api/sync/sessions/:id/logs", async (c) => {
+  const user = c.get('user');
+  if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
+  const logs = await readRecentSyncLogs(c.env.DB, c.req.param('id'));
+  return c.json({ success: true, data: logs });
 });
 
 app.get("/api/sync/raw-export", async (c) => {
@@ -312,7 +336,7 @@ app.get("/api/sync/sessions/:id/audit", async (c) => {
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
   const sessionId = c.req.param('id');
   const prisma = c.get('db');
-  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { startedAt: true, completedAt: true } });
   if (!session) return c.json({ success: false, error: 'Session not found' }, 404);
 
   type AuditChange = { field: string; before: string; after: string };
@@ -453,7 +477,7 @@ app.get("/api/sync/sessions/:id/audit/summary", async (c) => {
   if (user?.role !== 'ADMIN') return c.json({ success: false }, 403);
   const sessionId = c.req.param('id');
   const prisma = c.get('db');
-  const session = await prisma.syncSession.findUnique({ where: { id: sessionId } });
+  const session = await prisma.syncSession.findUnique({ where: { id: sessionId }, select: { metadata: true } });
   if (!session) return c.json({ success: false, error: 'Session not found' }, 404);
   const meta = JSON.parse(session.metadata ?? '{}');
   const auditCounts = meta.auditCounts ?? {};

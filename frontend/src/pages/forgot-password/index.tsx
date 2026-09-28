@@ -74,6 +74,8 @@ export function ForgotPasswordPage() {
           role: user.role,
         },
         redirectUrl,
+        membershipAgreementSignedAt: user.membershipAgreementSignedAt,
+        isPendingMembership: user.accountStatus === 'pending_membership',
       }))
 
       // User is now logged in - redirect to change password

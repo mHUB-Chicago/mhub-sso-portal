@@ -65,6 +65,16 @@ export type OnboardingMode = "admin" | "link";
 
 export type OnboardingScenario = "new_company" | "existing_company";
 
+// Collected via AgreementStep (components/AgreementStep.tsx) — shared by both the
+// public onboarding-link form and the admin "Admin fills out" wizard, whoever is
+// actually filling the form out signs it there directly.
+export interface AgreementDetails {
+  agreed: boolean;
+  signatureType: "type" | "draw";
+  fullLegalName?: string;
+  signatureImageDataUrl?: string;
+}
+
 export interface OnboardingFormData {
   mode: OnboardingMode;
   scenario: OnboardingScenario;
@@ -75,4 +85,5 @@ export interface OnboardingFormData {
   addonMemberships: string[];
   skills: SkillsDetails;
   billing: BillingDetails;
+  agreement?: AgreementDetails;
 }

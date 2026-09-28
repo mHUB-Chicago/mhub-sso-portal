@@ -1,6 +1,6 @@
 import { AppType } from "..";
-import { PrismaD1 } from "@prisma/adapter-d1";
-import { PrismaClient, Role } from "@prisma/client";
+import { Role } from "@prisma/client";
+import { getPrisma } from "@/middleware/database";
 import { JobType } from "./queueConsumer";
 import { createMockContext } from "@/utils/createMockContext";
 import { runConcurrent, syncOne } from "@/services/peopleVineService";
@@ -19,6 +19,10 @@ const isChicago1amCron = (cron: string, now: Date): boolean => {
 
 const DIRECT_PERSONAL_RECHECK_CRON = '*/30 * * * *';
 
+// Keeps the D1 database warm so the first login after a quiet stretch doesn't pay its
+// wake-up latency — the same fix that stopped the idle-login failures in the AXS QA tool.
+const KEEP_DB_WARM_CRON = '*/5 * * * *';
+
 // "Direct Personal Subscription" (a paying member whose company record is still their own
 // personal placeholder) can only get resolved once *some* PeopleVine webhook fires for that
 // customer — and PV has no dedicated event for "a card got linked to a sponsor's parent card",
@@ -26,7 +30,7 @@ const DIRECT_PERSONAL_RECHECK_CRON = '*/30 * * * *';
 // list (each fixed member drops out of it), so re-checking it directly every 30 minutes is far
 // cheaper than waiting for the once-daily full "Sync All" to catch it.
 const recheckDirectPersonalSubscriptions = async (env: AppType["Bindings"], ctx: ExecutionContext): Promise<void> => {
-  const prisma = new PrismaClient({ adapter: new PrismaD1(env.DB) });
+  const prisma = getPrisma(env.DB);
   const flagged = await prisma.user.findMany({
     where: { role: Role.USER, memberSource: 'subscription', company: { isPersonal: true } },
     select: { peopleVineId: true },
@@ -49,6 +53,12 @@ const recheckDirectPersonalSubscriptions = async (env: AppType["Bindings"], ctx:
 };
 
 export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: ExecutionContext) => {
+  if (event.cron === KEEP_DB_WARM_CRON) {
+    // No log line — this fires every 5 minutes and would drown out the real jobs.
+    await env.DB.prepare('SELECT 1').first();
+    return;
+  }
+
   console.log(`Scheduled job triggered: ${event.cron}`);
 
   if (event.cron === DIRECT_PERSONAL_RECHECK_CRON) {
@@ -64,7 +74,7 @@ export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: Exec
   ctx.waitUntil(
     (async () => {
       try {
-        const prisma = new PrismaClient({ adapter: new PrismaD1(env.DB) });
+        const prisma = getPrisma(env.DB);
         const session = await prisma.syncSession.create({
           data: {
             type: 'ALL',

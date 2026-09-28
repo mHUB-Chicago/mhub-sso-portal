@@ -17,6 +17,7 @@ import {
   type OnboardingInProcessRecord,
   type OnboardingSubmission,
 } from "@/store/api/onboardingApi";
+import { useGetCompaniesQuery } from "@/store/api/companyApi";
 import { DuplicateMatchModal } from "./DuplicateMatchModal";
 import { OnboardingProgressModal } from "./OnboardingProgressModal";
 import { SyncStatusGate } from "@/components/sync-status-overlay";
@@ -104,6 +105,31 @@ export function AdminOnboardingHistoryPage() {
   const { data: packagesData } = useGetOnboardingMembershipPackagesQuery();
   const membershipPackageName = (id: string): string =>
     packagesData?.data?.packages.find((pkg) => pkg.id === id)?.name ?? id;
+  // existing_company submissions leave formData.company blank (only companyId is
+  // captured, via SelectCompanyStep) — resolve the real name for display here instead.
+  const hasExistingCompanySubmission = submissions.some((s) => s.formData.scenario === "existing_company");
+  const { data: companiesData } = useGetCompaniesQuery(
+    { limit: 500, active: "true" },
+    { skip: !hasExistingCompanySubmission }
+  );
+  const companyNameFor = (submission: OnboardingSubmission): string => {
+    if (submission.formData.scenario === "existing_company") {
+      return companiesData?.data?.companies.find((co) => co.id === submission.formData.companyId)?.name ?? "—";
+    }
+    return submission.formData.company.name || "—";
+  };
+  const membershipDisplayFor = (submission: OnboardingSubmission): string => {
+    if (submission.formData.scenario === "existing_company") {
+      // Shows the company's actual membership type(s) instead of a vague placeholder —
+      // lets admins spot up front when a company's membership won't support adding
+      // more members (see pvAddSubMember's "This membership does not allow adding
+      // additional members" rejection from PV).
+      const types = companiesData?.data?.companies.find((co) => co.id === submission.formData.companyId)
+        ?.membershipTypes;
+      return types && types.length > 0 ? `Inherited: ${types.join(", ")}` : "Inherited from company";
+    }
+    return (submission.formData.membershipPackage && membershipPackageName(submission.formData.membershipPackage)) || "—";
+  };
 
   const pendingReview = submissions.filter((s) => s.status === "pending_review");
   const needsAttention = submissions.filter((s) => s.status === "needs_attention");
@@ -370,7 +396,7 @@ export function AdminOnboardingHistoryPage() {
                     <td className="px-4 py-3 whitespace-nowrap text-gray-600">
                       {new Date(submission.createdAt).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-gray-700">{submission.formData.company.name || "—"}</td>
+                    <td className="px-4 py-3 text-gray-700">{companyNameFor(submission)}</td>
                     <td className="px-4 py-3 text-gray-700">{primaryContact(submission)}</td>
                     <td className="px-4 py-3 text-gray-700">
                       {activeTab === "needs_attention" ? (
@@ -387,9 +413,7 @@ export function AdminOnboardingHistoryPage() {
                           matchLabel(submission)
                         )
                       ) : (
-                        (submission.formData.membershipPackage &&
-                          membershipPackageName(submission.formData.membershipPackage)) ||
-                        "—"
+                        membershipDisplayFor(submission)
                       )}
                     </td>
                     <td className="px-4 py-3">

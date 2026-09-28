@@ -1,7 +1,7 @@
 import { useNavigate, Link } from 'react-router-dom'
-import { useStartLoginMutation, useVerifyLoginMutation } from '@/store/api/authApi'
+import { useStartLoginMutation, useVerifyLoginMutation, useGetMeQuery, useLogoutMutation } from '@/store/api/authApi'
 import { useAppDispatch } from '@/store'
-import { loginSuccess } from '@/store/slices/authSlice'
+import { loginSuccess, logout } from '@/store/slices/authSlice'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { completeSsoAndRedirect } from '@/lib/ssoRedirect'
+import { openRedirectTab, getRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
 
 type LoginStep = 'email' | 'password'
 
@@ -22,14 +22,11 @@ interface PasswordFormData {
 }
 
 export function LoginPage() {
-  // Captured once (lazy initializer) rather than re-read from window.location on every
-  // render, then stripped from the visible URL below — otherwise, navigating back to
-  // this history entry after logging in (e.g. via the browser back button) would replay
-  // a stale returnTo/tx against whichever account logs in next, regardless of who that is.
   const [txQueryParam] = useState(() => new URLSearchParams(window.location.search).get('tx'))
   const [returnToParam] = useState(() => new URLSearchParams(window.location.search).get('returnTo'))
+  const [passwordJustSetParam] = useState(() => new URLSearchParams(window.location.search).get('passwordJustSet'))
   useEffect(() => {
-    if (txQueryParam || returnToParam) {
+    if (txQueryParam || returnToParam || passwordJustSetParam) {
       window.history.replaceState(null, '', window.location.pathname)
     }
   }, [])
@@ -39,18 +36,44 @@ export function LoginPage() {
   const [step, setStep] = useState<LoginStep>('email')
   const [email, setEmail] = useState('')
   const [requestId, setRequestId] = useState('')
+  const [peopleVineLandingUrl, setPeopleVineLandingUrl] = useState<string | null>(null)
+  const [requiresOtp, setRequiresOtp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [openedNewTab, setOpenedNewTab] = useState(false)
+  const [isOnboardingPaymentFlow, setIsOnboardingPaymentFlow] = useState(false)
+  const [onboardingDone, setOnboardingDone] = useState(false)
+  const onboardingTeardownStartedRef = useRef(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
   const [verifyLogin, { isLoading: isVerifying }] = useVerifyLoginMutation()
+  const [logoutMutation] = useLogoutMutation()
+
+  const realTabRef = useRef<Window | null>(null)
+
+  const { data: meData } = useGetMeQuery(undefined, { pollingInterval: 3000, skip: !(isRedirecting && openedNewTab) || onboardingDone })
+  const meUser = meData?.data?.user
+  const isPendingMembership = meUser?.accountStatus === 'pending_membership'
+  const paymentCompleted = !!meUser?.onboardingPaymentAgreementAt
+
+  useEffect(() => {
+    if (!isOnboardingPaymentFlow || !paymentCompleted || onboardingTeardownStartedRef.current) return
+    onboardingTeardownStartedRef.current = true
+    ;(async () => {
+      try {
+        await logoutMutation().unwrap()
+      } catch {
+        // Best-effort — even if the server call fails, still clear local auth state.
+      }
+      dispatch(logout())
+      setOnboardingDone(true)
+      window.close()
+    })()
+  }, [isOnboardingPaymentFlow, paymentCompleted, dispatch, logoutMutation])
 
   const emailForm = useForm<EmailFormData>()
   const passwordForm = useForm<PasswordFormData>()
 
-  // `isVerifying`/`isStartingLogin` from RTK Query only flip true after the mutation is
-  // dispatched — a fast double-click or Enter+click landing in the same tick can slip a
-  // second submit in before React re-renders the disabled button. These refs are set
-  // synchronously, so the second call is blocked immediately regardless of render timing.
   const isSubmittingEmailRef = useRef(false)
   const isSubmittingPasswordRef = useRef(false)
 
@@ -58,12 +81,14 @@ export function LoginPage() {
     if (isSubmittingEmailRef.current) return
     isSubmittingEmailRef.current = true
     try {
-      const result = await startLogin({ email: data.email }).unwrap()
+      const result = await startLogin({ email: data.email, tx: txQueryParam ?? undefined }).unwrap()
       if (!result.data) {
         throw new Error('Invalid response from server')
       }
       setEmail(data.email)
       setRequestId(result.data.request_id)
+      setPeopleVineLandingUrl(result.data.peopleVineLandingUrl)
+      setRequiresOtp(result.data.requiresOtp)
       setStep('password')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string } }
@@ -73,14 +98,37 @@ export function LoginPage() {
     }
   }
 
+  const navigateTab = async (tab: Window | null, url: string) => {
+    if (tab && !tab.closed) {
+      await getRedirectTabLoadPromise()
+      tab.location.href = url
+      realTabRef.current = tab
+      setOpenedNewTab(true)
+    } else {
+      window.location.assign(url)
+    }
+    clearRedirectTab()
+    setIsRedirecting(true)
+  }
+
   const handlePasswordSubmit = async (data: PasswordFormData) => {
     if (isSubmittingPasswordRef.current) return
     isSubmittingPasswordRef.current = true
+    const redirectTab = getRedirectTab()
     try {
-      const result = await verifyLogin({
-        request_id: requestId,
-        password: data.password,
-      }).unwrap()
+      if (redirectTab) await getRedirectTabLoadPromise()
+      const verify = (id: string) => verifyLogin({ request_id: id, password: data.password }).unwrap()
+      let result
+      try {
+        result = await verify(requestId)
+      } catch (error: unknown) {
+        const code = (error as { code?: string }).code
+        if ((code !== 'LOGIN_EXPIRED' && code !== 'SERVER_ERROR') || requiresOtp) throw error
+        const restarted = await startLogin({ email, tx: txQueryParam ?? undefined }).unwrap()
+        if (!restarted.data) throw error
+        setRequestId(restarted.data.request_id)
+        result = await verify(restarted.data.request_id)
+      }
 
       if (!result.data) {
         throw new Error('Invalid response from server')
@@ -90,7 +138,6 @@ export function LoginPage() {
       const redirectUrl = result.data.redirectUrl
       const sessionId = result.data.sessionId
 
-      // Update Redux auth state
       dispatch(loginSuccess({
         user: {
           id: user.id,
@@ -100,34 +147,40 @@ export function LoginPage() {
         },
         redirectUrl,
         sessionId,
+        membershipAgreementSignedAt: user.membershipAgreementSignedAt,
+        isPendingMembership: user.accountStatus === 'pending_membership',
       }))
 
-      // Check if user needs to reset password
       if (user.mustResetPassword) {
-        // Preserve tx (SAML flow) and returnTo (plain post-login redirect, e.g. the
-        // onboarding payment form gate) so change-password can send them on afterward —
-        // dropping either here would strand a first-time login at /dashboard instead.
+        const stillNeedsOnboardingPayment = user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
         const changePwdParams = new URLSearchParams()
         if (txQueryParam) changePwdParams.set('tx', txQueryParam)
-        if (returnToParam) changePwdParams.set('returnTo', returnToParam)
+        if (returnToParam && stillNeedsOnboardingPayment) changePwdParams.set('returnTo', returnToParam)
         const changePwdQuery = changePwdParams.toString()
         navigate(changePwdQuery ? `/change-password?${changePwdQuery}` : '/change-password')
         return
       }
 
-      // Handle SAML flow or regular navigation
+      const stillNeedsOnboardingPayment = user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
       if (txQueryParam) {
-        window.location.assign(`${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
-      } else if (returnToParam) {
-        completeSsoAndRedirect(returnToParam)
+        await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
+      } else if (returnToParam && stillNeedsOnboardingPayment) {
+        setIsOnboardingPaymentFlow(true)
+        await navigateTab(redirectTab, returnToParam)
       } else if (redirectUrl) {
-        completeSsoAndRedirect(redirectUrl)
+        if (stillNeedsOnboardingPayment) setIsOnboardingPaymentFlow(true)
+        await navigateTab(redirectTab, redirectUrl)
       } else {
+        redirectTab?.close()
+        clearRedirectTab()
         navigate('/dashboard')
       }
     } catch (error: unknown) {
-      const err = error as { data?: { message?: string }; message?: string }
+      redirectTab?.close()
+      clearRedirectTab()
+      const err = error as { data?: { message?: string }; message?: string; code?: string }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
+      if (err.code === 'LOGIN_EXPIRED') handleBack()
     } finally {
       isSubmittingPasswordRef.current = false
     }
@@ -137,6 +190,40 @@ export function LoginPage() {
     setStep('email')
     setRequestId('')
     passwordForm.reset()
+  }
+
+  if (onboardingDone) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-md text-center">
+          <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />
+          <h2 className="text-2xl font-semibold mb-3">Thank you!</h2>
+          <p className="text-gray-600">
+            We've received your payment and agreement. The mHUB team will reach out with next steps once your membership is set up.
+          </p>
+          <p className="text-gray-500 text-sm mt-4">You can close this tab.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isRedirecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-brand" />
+          <p className="text-gray-600">
+            {isOnboardingPaymentFlow && paymentCompleted
+              ? 'Payment received, finishing up...'
+              : isPendingMembership && openedNewTab
+                ? "Complete the payment form in the new tab that just opened — we'll bring you back here automatically once it's done."
+                : openedNewTab
+                  ? 'Continue in the new tab that just opened.'
+                  : 'Redirecting you, please wait...'}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -165,6 +252,7 @@ export function LoginPage() {
                   id="email"
                   type="text"
                   placeholder="john.doe@example.com or username"
+                  autoComplete="username"
                   className="w-full pl-10 pr-3 py-4 border-gray-300 h-12"
                   disabled={isStartingLogin}
                   {...emailForm.register('email', {
@@ -202,7 +290,20 @@ export function LoginPage() {
           </form>
         ) : (
           // Step 2: Password/OTP Input
-          <form onSubmit={passwordForm.handleSubmit(handlePasswordSubmit)} className="space-y-6">
+          <form
+            onSubmit={(e) => {
+              if (!requiresOtp && peopleVineLandingUrl) {
+                const tab = openRedirectTab(peopleVineLandingUrl)
+                if (!tab) {
+                  e.preventDefault()
+                  toast.error('Please allow pop-ups for this site, then try signing in again.')
+                  return
+                }
+              }
+              return passwordForm.handleSubmit(handlePasswordSubmit)(e)
+            }}
+            className="space-y-6"
+          >
             {/* Back button with email display */}
             <button
               type="button"
@@ -212,6 +313,11 @@ export function LoginPage() {
               <ArrowLeft className="h-4 w-4" />
               <span className="text-sm">{email}</span>
             </button>
+
+            {/* Password managers pick which saved password to fill from the username in
+                the same form. This step had none, so browsers guessed — often filling an
+                old password or another environment's, which then tripped the lockout. */}
+            <input type="text" name="username" autoComplete="username" value={email} readOnly hidden />
 
             <div>
               <Label htmlFor="password" className="text-sm font-medium text-gray-700">
@@ -225,6 +331,7 @@ export function LoginPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
+                  autoComplete={requiresOtp ? 'one-time-code' : 'current-password'}
                   className="w-full pl-10 pr-10 py-4 border-gray-300 h-12"
                   disabled={isVerifying}
                   autoFocus
