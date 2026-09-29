@@ -55,6 +55,15 @@ export const enum JobType {
 
 export default async (batch: MessageBatch<Message>, env: any, ctx: ExecutionContext) => {
   const context = createMockContext(env, ctx);
+  try {
+    await processBatch(batch, env, context);
+  }
+  finally {
+    await (context.get('db') as PrismaClient).$disconnect().catch(() => {});
+  }
+};
+
+const processBatch = async (batch: MessageBatch<Message>, env: any, context: ReturnType<typeof createMockContext>) => {
   for (const msg of batch.messages) {
     const { jobId, jobType, payload } = msg.body;
     console.log(`Processing job ${jobId} of type ${jobType}`);

@@ -10,7 +10,6 @@ import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl, PEOPLEVINE_HOME_URL, PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 import { getSessionId } from "@/middleware/auth";
-import { isWasmCrash, resetPrisma } from "@/middleware/database";
 import { getSamlAuthRequestById } from "@/services/samlAuthRequestService";
 import { getServiceProviderById } from "@/services/serviceProviderService";
 import { User } from "@/database/models";
@@ -189,7 +188,6 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     }
     // Anything else is an infrastructure failure (D1, PV, etc.), not a bad password —
     // it never counts toward the lockout, so don't make it look like one.
-    if (isWasmCrash(error)) resetPrisma();
     const response = FailedResponseSchema.parse({
       success: false,
       message: "Something went wrong signing you in. Please try again.",

@@ -1,6 +1,6 @@
 import { AppType } from "..";
 import { Role } from "@prisma/client";
-import { getPrisma } from "@/middleware/database";
+import { createPrisma } from "@/middleware/database";
 import { JobType } from "./queueConsumer";
 import { createMockContext } from "@/utils/createMockContext";
 import { runConcurrent, syncOne } from "@/services/peopleVineService";
@@ -30,26 +30,31 @@ const KEEP_DB_WARM_CRON = '*/5 * * * *';
 // list (each fixed member drops out of it), so re-checking it directly every 30 minutes is far
 // cheaper than waiting for the once-daily full "Sync All" to catch it.
 const recheckDirectPersonalSubscriptions = async (env: AppType["Bindings"], ctx: ExecutionContext): Promise<void> => {
-  const prisma = getPrisma(env.DB);
-  const flagged = await prisma.user.findMany({
-    where: { role: Role.USER, memberSource: 'subscription', company: { isPersonal: true } },
-    select: { peopleVineId: true },
-  });
-  const pvIds = flagged.map(u => u.peopleVineId).filter((id): id is string => !!id);
-  if (pvIds.length === 0) {
-    console.log('[recheck] No Direct Personal Subscription users to re-check.');
-    return;
-  }
-  console.log(`[recheck] Re-checking ${pvIds.length} Direct Personal Subscription user(s).`);
   const context = createMockContext(env, ctx);
-  await runConcurrent(pvIds, 5, async (pvId) => {
-    try {
-      await syncOne(context, Number(pvId));
+  const prisma = context.get('db');
+  try {
+    const flagged = await prisma.user.findMany({
+      where: { role: Role.USER, memberSource: 'subscription', company: { isPersonal: true } },
+      select: { peopleVineId: true },
+    });
+    const pvIds = flagged.map(u => u.peopleVineId).filter((id): id is string => !!id);
+    if (pvIds.length === 0) {
+      console.log('[recheck] No Direct Personal Subscription users to re-check.');
+      return;
     }
-    catch (err) {
-      console.error(`[recheck] Failed to re-sync customer ${pvId}:`, err);
-    }
-  });
+    console.log(`[recheck] Re-checking ${pvIds.length} Direct Personal Subscription user(s).`);
+    await runConcurrent(pvIds, 5, async (pvId) => {
+      try {
+        await syncOne(context, Number(pvId));
+      }
+      catch (err) {
+        console.error(`[recheck] Failed to re-sync customer ${pvId}:`, err);
+      }
+    });
+  }
+  finally {
+    await prisma.$disconnect().catch(() => {});
+  }
 };
 
 export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: ExecutionContext) => {
@@ -73,8 +78,8 @@ export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: Exec
   console.log(`Queuing PeopleVine sync directly`);
   ctx.waitUntil(
     (async () => {
+      const prisma = createPrisma(env.DB);
       try {
-        const prisma = getPrisma(env.DB);
         const session = await prisma.syncSession.create({
           data: {
             type: 'ALL',
@@ -93,6 +98,9 @@ export default async (event: ScheduledEvent, env: AppType["Bindings"], ctx: Exec
       }
       catch (err) {
         console.error('Scheduled sync failed:', err);
+      }
+      finally {
+        await prisma.$disconnect().catch(() => {});
       }
     })()
   );

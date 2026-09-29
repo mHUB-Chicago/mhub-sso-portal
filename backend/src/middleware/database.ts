@@ -2,40 +2,46 @@ import { PrismaD1 } from "@prisma/adapter-d1";
 import { PrismaClient } from "@prisma/client";
 import { Context } from "hono";
 
-// One PrismaClient per isolate, not per request. Prisma's WASM query engine doesn't
-// release its memory between clients, so building a new one on every request slowly
-// exhausted a long-lived isolate until queries died with "memory access out of bounds"
-// (prisma/prisma#25714) — logins then failed until Cloudflare recycled the isolate.
-let cached: { db: D1Database; prisma: PrismaClient } | null = null;
-
-export const getPrisma = (db: D1Database): PrismaClient => {
-  if (!cached || cached.db !== db) {
-    cached = { db, prisma: new PrismaClient({ adapter: new PrismaD1(db) }) };
-  }
-  return cached.prisma;
-};
-
-// Drop the cached client after a WASM crash so the next request builds a fresh one
-// instead of reusing a possibly corrupted instance.
-export const resetPrisma = (): void => {
-  cached = null;
-};
-
-export const isWasmCrash = (error: unknown): boolean =>
-  error instanceof Error && /memory access out of bounds|Invalid typed array length|Invalid array buffer length/i.test(error.message);
+// One PrismaClient per request (or per queue batch / cron run), always $disconnect()ed
+// when that work is done. Two ways this has gone wrong before:
+// - A client per request that was never disconnected leaked Prisma's WASM query-compiler
+//   memory until queries died with "memory access out of bounds" (prisma/prisma#25714).
+//   $disconnect() calls queryCompiler.free(), which is what releases it.
+// - One client shared across the isolate made concurrent requests await promises created
+//   by another request, which Workers forbids — the waiting request hung until the runtime
+//   canceled it ("Worker's code had hung and would never generate a response").
+export const createPrisma = (db: D1Database): PrismaClient =>
+  new PrismaClient({ adapter: new PrismaD1(db) });
 
 export const databaseMiddleware = async (c: Context, next: () => Promise<any>) => {
   const db = c.env.DB as D1Database;
   if (!db) {
     throw new Error("D1 database not found");
   }
-  if (!c.get("db")) {
-    c.set("db", getPrisma(db));
-  }
+  const prisma = createPrisma(db);
+  c.set("db", prisma);
+
+  // Controllers hand DB work to waitUntil that keeps running after the response is sent
+  // (webhook logs, onboarding emails), so only disconnect once all of it has settled.
+  const ctx = c.executionCtx;
+  const background: Promise<unknown>[] = [];
+  const waitUntil = ctx.waitUntil.bind(ctx);
+  ctx.waitUntil = (promise: Promise<unknown>) => {
+    background.push(promise);
+    waitUntil(promise);
+  };
+
   try {
     return await next();
-  } catch (error) {
-    if (isWasmCrash(error)) resetPrisma();
-    throw error;
+  } finally {
+    waitUntil((async () => {
+      // Background work can itself call waitUntil, so keep draining until nothing new appears.
+      let settled = 0;
+      while (settled < background.length) {
+        settled = background.length;
+        await Promise.allSettled(background);
+      }
+      await prisma.$disconnect().catch(() => {});
+    })());
   }
 };
