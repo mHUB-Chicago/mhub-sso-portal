@@ -340,7 +340,7 @@ export function AdminOnboardingHistoryPage() {
                           </span>
                           {record.scenario && (
                             <span className="text-xs text-gray-500 whitespace-nowrap">
-                              {record.scenario === "existing_company" ? "Existing company" : "New company"}
+                              {record.scenario === "existing_company" ? "Existing company" : "New user/company"}
                             </span>
                           )}
                         </div>
