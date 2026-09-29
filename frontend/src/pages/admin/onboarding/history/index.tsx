@@ -63,8 +63,8 @@ const primaryContact = (submission: OnboardingSubmission) => {
 };
 
 const matchLabel = (submission: OnboardingSubmission) => {
-  if (submission.duplicateMatchType === "company_email") return "Matches an existing company";
-  if (submission.duplicateMatchType === "user_email") return "Matches an existing user";
+  if (submission.duplicateMatchType === "company_email") return "Existing company";
+  if (submission.duplicateMatchType === "user_email") return "Duplicate email";
   return "—";
 };
 
@@ -330,13 +330,20 @@ export function AdminOnboardingHistoryPage() {
                       <td className="px-4 py-3 text-gray-700">{record.email || "—"}</td>
                       <td className="px-4 py-3 text-gray-700">{record.peopleVineId || "—"}</td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`text-[11px] font-bold rounded-full px-2.5 py-0.5 whitespace-nowrap ${
-                            record.via === "invite" ? "bg-indigo-50 text-indigo-600" : "bg-gray-100 text-gray-600"
-                          }`}
-                        >
-                          {record.via === "invite" ? "Invite Link" : "Admin Created"}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`text-[11px] font-bold rounded-full px-2.5 py-0.5 whitespace-nowrap ${
+                              record.via === "invite" ? "bg-indigo-50 text-indigo-600" : "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {record.via === "invite" ? "Invite Link" : "Admin Created"}
+                          </span>
+                          {record.scenario && (
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {record.scenario === "existing_company" ? "Existing company" : "New company"}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1.5">
@@ -375,7 +382,7 @@ export function AdminOnboardingHistoryPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Company</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Primary Contact</th>
                 {activeTab === "needs_attention" ? (
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Duplicate Match</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Reason</th>
                 ) : (
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Membership Package</th>
                 )}

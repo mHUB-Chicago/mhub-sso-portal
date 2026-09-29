@@ -124,6 +124,7 @@ export interface OnboardingInProcessRecord {
   peopleVineId: string | null
   createdAt: string
   via: 'invite' | 'admin'
+  scenario: 'new_company' | 'existing_company' | null
   steps: OnboardingProgressSteps
   // True when the "payment" step was set via the admin Skip action instead of a real
   // PV-confirmed payment.

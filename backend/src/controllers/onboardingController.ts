@@ -271,6 +271,7 @@ const finalizeSubmissionPushToPeopleVine = async (
       reviewedAt: new Date(),
       pvCustomerId: result.userPvCustomerId,
       matchedCompanyId: targetCompanyId,
+      matchedUserId: newUser.id,
       ...(resolutionNote ? { resolutionNote } : {}),
     },
   });
@@ -421,6 +422,31 @@ export const handleGetOnboardingSubmissions = async (
 // mode: "admin" submissions, which never had an invite link at all — mirrors the
 // mockup's `stepsFor`. Only "payment" and "subscription" are real, independently tracked
 // state (see onboardingPaymentAgreementAt / onboardingSubscriptionAppliedAt).
+const SCENARIO_LOOKUP_CHUNK = 90;
+
+const readSubmissionScenarios = async (db: D1Database, ids: string[]): Promise<Map<string, string | null>> => {
+  const scenarios = new Map<string, string | null>();
+  for (let i = 0; i < ids.length; i += SCENARIO_LOOKUP_CHUNK) {
+    const chunk = ids.slice(i, i + SCENARIO_LOOKUP_CHUNK);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const { results } = await db
+      .prepare(`SELECT id, json_extract(formData, '$.scenario') AS scenario FROM OnboardingSubmission WHERE id IN (${placeholders})`)
+      .bind(...chunk)
+      .all<{ id: string; scenario: string | null }>();
+    for (const row of results) scenarios.set(row.id, row.scenario);
+  }
+  return scenarios;
+};
+
+const scenarioOf = (formData: string): string | null => {
+  try {
+    const parsed = JSON.parse(formData) as { scenario?: unknown };
+    return typeof parsed.scenario === "string" ? parsed.scenario : null;
+  } catch {
+    return null;
+  }
+};
+
 const buildOnboardingProgress = (
   row: {
     createdAt: Date;
@@ -428,9 +454,12 @@ const buildOnboardingProgress = (
     onboardingPaymentAgreementSkippedBy: string | null;
     onboardingSubscriptionAppliedAt: Date | null;
   },
-  submission: { mode: string; createdAt: Date } | undefined
+  submission: { mode: string; createdAt: Date; scenario: string | null } | undefined
 ) => ({
   via: (submission?.mode === "link" ? "invite" : "admin") as "invite" | "admin",
+  scenario: submission
+    ? ((submission.scenario === "existing_company" ? "existing_company" : "new_company") as "new_company" | "existing_company")
+    : null,
   steps: {
     invite: submission?.mode === "link" ? submission.createdAt : null,
     account: row.createdAt,
@@ -468,9 +497,11 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
       : [];
   // Most recent submission per target wins (findMany above is already ordered desc, so
   // the first match seen for a given id is kept).
-  const submissionByCompanyId = new Map<string, { id: string; mode: string; createdAt: Date }>();
-  const submissionByUserId = new Map<string, { id: string; mode: string; createdAt: Date }>();
-  for (const s of submissions) {
+  const scenarios = await readSubmissionScenarios(c.env.DB, submissions.map((s) => s.id));
+  const submissionByCompanyId = new Map<string, { id: string; mode: string; createdAt: Date; scenario: string | null }>();
+  const submissionByUserId = new Map<string, { id: string; mode: string; createdAt: Date; scenario: string | null }>();
+  for (const found of submissions) {
+    const s = { ...found, scenario: scenarios.get(found.id) ?? null };
     if (s.matchedCompanyId && !submissionByCompanyId.has(s.matchedCompanyId)) {
       submissionByCompanyId.set(s.matchedCompanyId, s);
     }
@@ -560,7 +591,7 @@ export const handleApplyOnboardingSubscription = async (c: Context<AppType>) => 
         peopleVineId: updated.peopleVineId,
         createdAt: updated.createdAt,
         submissionId: submission?.id ?? null,
-        ...buildOnboardingProgress(updated, submission ?? undefined),
+        ...buildOnboardingProgress(updated, submission ? { ...submission, scenario: scenarioOf(submission.formData) } : undefined),
       },
     },
   });
@@ -613,7 +644,7 @@ export const handleSkipOnboardingPayment = async (c: Context<AppType>) => {
         peopleVineId: updated.peopleVineId,
         createdAt: updated.createdAt,
         submissionId: submission?.id ?? null,
-        ...buildOnboardingProgress(updated, submission ?? undefined),
+        ...buildOnboardingProgress(updated, submission ? { ...submission, scenario: scenarioOf(submission.formData) } : undefined),
       },
     },
   });
