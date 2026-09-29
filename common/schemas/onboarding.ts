@@ -233,6 +233,7 @@ export const OnboardingInProcessRecordSchema = z.object({
   peopleVineId: z.string().nullable(),
   createdAt: z.coerce.date().transform((d) => d.toISOString()),
   via: z.enum(["invite", "admin"]),
+  scenario: z.enum(["new_company", "existing_company"]).nullable(),
   steps: OnboardingProgressStepsSchema,
   // True when the "payment" step's timestamp was set by handleSkipOnboardingPayment
   // (admin override) rather than the real PV webhook — see the field's schema.prisma doc.
