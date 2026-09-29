@@ -1,13 +1,14 @@
 import type { Context, Env } from "hono";
 import { AppType } from "..";
-import { getPrisma } from "@/middleware/database";
+import { createPrisma } from "@/middleware/database";
 
+// Builds its own PrismaClient — the caller must $disconnect() context.get("db") when done.
 export const createMockContext = (env: any, ctx: ExecutionContext): Context<AppType> => {
   let dbBinding = env.DB as D1Database;
   if (!dbBinding) {
     throw new Error("D1 database not found");
   }
-  const db = getPrisma(dbBinding);
+  const db = createPrisma(dbBinding);
   return {
     env: env as AppType["Bindings"],
     executionCtx: ctx,
