@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info } from 'lucide-react'
+import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info, AlertCircle } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { openRedirectTab, getRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
 
@@ -43,6 +43,9 @@ export function LoginPage() {
   const [openedNewTab, setOpenedNewTab] = useState(false)
   const [isOnboardingPaymentFlow, setIsOnboardingPaymentFlow] = useState(false)
   const [onboardingDone, setOnboardingDone] = useState(false)
+  // Shown inline rather than as a toast: retrying won't fix it, and a toast vanishes
+  // before people read it.
+  const [inactiveMessage, setInactiveMessage] = useState<string | null>(null)
   const onboardingTeardownStartedRef = useRef(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
@@ -179,6 +182,10 @@ export function LoginPage() {
       redirectTab?.close()
       clearRedirectTab()
       const err = error as { data?: { message?: string }; message?: string; code?: string }
+      if (err.code === 'ACCOUNT_INACTIVE') {
+        setInactiveMessage(err.message || 'Your account is inactive. Please contact an admin.')
+        return
+      }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
       if (err.code === 'LOGIN_EXPIRED') handleBack()
     } finally {
@@ -189,6 +196,7 @@ export function LoginPage() {
   const handleBack = () => {
     setStep('email')
     setRequestId('')
+    setInactiveMessage(null)
     passwordForm.reset()
   }
 
@@ -358,13 +366,21 @@ export function LoginPage() {
               )}
             </div>
 
-            {/* OTP Info Message */}
-            <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-              <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-blue-700">
-                If this is your first time logging in, check your email for a one-time password.
-              </p>
-            </div>
+            {inactiveMessage ? (
+              <div role="alert" className="flex items-start gap-2 p-3 bg-red-50 border-2 border-red-500 rounded-md">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-base font-bold text-red-700">{inactiveMessage}</p>
+              </div>
+            ) : (
+              // OTP Info Message — red/bold because people kept missing it. Hidden once
+              // the account is known to be inactive, where it'd only compete with that.
+              <div className="flex items-start gap-2 p-3 bg-red-50 border-2 border-red-500 rounded-md">
+                <Info className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-base font-bold text-red-700">
+                  If this is your first time logging in, check your email for a one-time password.
+                </p>
+              </div>
+            )}
 
             <Button
               type="submit"

@@ -32,6 +32,16 @@ const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendin
   return entityId === PEOPLEVINE_SP_ENTITY_ID ? PEOPLEVINE_HOME_URL : null;
 };
 
+// Members without an active, portal-granting membership. pending_membership users are
+// exempt: they haven't completed their subscription yet, so they never pass this — but
+// they still need to log in to reach the onboarding payment form (the whole point of the
+// returnTo gate in sendOnboardingPaymentFormEmail). `active` is what the session check
+// (getActiveSessionById) enforces, so it's checked too — otherwise login would succeed
+// and the very next request would bounce them out.
+const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean> =>
+  user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' &&
+  (!user.active || !(await hasPortalAccess(c, user.primaryMembership, user.addOns)));
+
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
     const { email, tx } = c.req.valid("json");
@@ -39,12 +49,11 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     if (!user) {
       throw new Error("User not found");
     }
-    // pending_membership users haven't completed their subscription yet, so they never
-    // pass hasPortalAccess — but they still need to log in to reach the onboarding
-    // payment form (the whole point of the returnTo gate in sendOnboardingPaymentFormEmail).
-    if (user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
-      throw new Error("No portal access");
-    }
+    // Inactive users still get a real login request: rejecting them here handed back the
+    // fake request_id, so their correct password failed as "Incorrect email or password".
+    // handleVerifyLogin tells them their account is inactive once the password/OTP checks
+    // out, which keeps account status hidden from anyone who only knows the email.
+    const isInactive = await isInactiveUser(c, user);
     if (user.email.endsWith('@noemail.mhub')) {
       return c.json({ success: false, message: "Your account is not fully set up. Please contact mHUB to complete your registration." }, 400);
     }
@@ -63,7 +72,8 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
         request_id: loginRequest.id,
         isPendingMembership,
         requiresOtp: user.passwordHashed === null || !user.emailVerified || user.mustResetPassword,
-        peopleVineLandingUrl: await getPeopleVineLandingUrl(c, user, isPendingMembership, tx),
+        // No PV tab for inactive users — their login stops at the inactive message.
+        peopleVineLandingUrl: isInactive ? null : await getPeopleVineLandingUrl(c, user, isPendingMembership, tx),
       },
     });
     return c.json(response);
@@ -130,7 +140,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     if (!user) {
       throw new Error("User not found");
     }
-    if (user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' && !(await hasPortalAccess(c, user.primaryMembership, user.addOns))) {
+    if (await isInactiveUser(c, user)) {
       throw new Error("No portal access");
     }
     // Paid but not yet active: Payment & Agreement is done, but mHUB staff still have to
@@ -181,8 +191,8 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       // Only reachable after the password/OTP passed, so this reveals nothing to a guesser.
       const response = FailedResponseSchema.parse({
         success: false,
-        message: "Your account doesn't currently have portal access. Please contact mHUB.",
-        code: "NO_ACCESS",
+        message: "Your account is inactive. Please contact an admin.",
+        code: "ACCOUNT_INACTIVE",
       });
       return c.json(response, 403);
     }
