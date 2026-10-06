@@ -20,9 +20,9 @@ export const StartLoginResponseSchema = SuccessResponseSchema(z.object({
   // SSO) from a real password login before submitting, so the fake PV tab only opens
   // for the latter.
   requiresOtp: z.boolean(),
-  // Set when this login will end in an SSO into PV. PV ignores RelayState and lands on
-  // the last PV page viewed in the browser, so the login page loads this URL in the
-  // pre-opened tab first: the payment form while it's pending, PV home otherwise.
+  // Set only while the onboarding payment form is pending. PV ignores RelayState and
+  // lands on the last PV page viewed in the browser, so the login page loads this URL
+  // in a pre-opened tab first. Every other login SSOs into PV in the same tab.
   peopleVineLandingUrl: z.string().nullable(),
 }));
 

@@ -44,6 +44,42 @@ test('first-time login message is red and bold', async ({ page }) => {
   await shot(page, '02-login-password-step-first-time-message')
 })
 
+test('regular member SSOs into PV in the same tab — no extra tab, no "Please login" flash', async ({ page, context }) => {
+  const pvSsoStart = 'https://member.mhubchicago.com/login/sso/start?route=https://auth.portal.mhub.org/saml'
+  await mockStartLogin(page, false)
+  await page.route(`${E2E_API_URL}/api/login/verify`, (route) =>
+    route.fulfill(json(200, {
+      success: true,
+      message: 'Success',
+      data: {
+        user: {
+          id: 'u1', companyId: 'c1', email: 'member@example.com', name: 'Member', peopleVineId: null, role: 'USER',
+          active: true, emailVerified: true, mustResetPassword: false, primaryMembership: 'Garage - Small',
+          primaryMembershipStatus: 'Active', addOns: '[]', profilePhoto: null, phone: null, address: null, city: null,
+          state: null, zipCode: null, cardStatus: null, memberSource: 'subscription', memberSourceCompany: null,
+          accountStatus: 'active', onboardingPaymentAgreementAt: null, membershipAgreementSignedAt: null,
+          membershipAgreementSignedName: null, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
+        },
+        redirectUrl: pvSsoStart,
+        sessionId: 's1',
+      },
+    })),
+  )
+  // Stand-in for PV so the test never leaves the sandbox.
+  await page.route('https://member.mhubchicago.com/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PV SSO start (stub)</h1>' }),
+  )
+  const popups: unknown[] = []
+  context.on('page', (p) => popups.push(p))
+
+  await enterEmail(page, 'member@example.com')
+  await page.getByLabel('Password').fill('Example123!')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+
+  await expect(page).toHaveURL(pvSsoStart)
+  expect(popups).toHaveLength(0)
+})
+
 test('inactive account sees an inline "contact an admin" message', async ({ page }) => {
   await mockStartLogin(page, true)
   await page.route(`${E2E_API_URL}/api/login/verify`, (route) =>
