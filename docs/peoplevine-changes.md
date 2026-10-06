@@ -8,7 +8,7 @@ The code below is what was live on `member.mhubchicago.com` on 2026-10-06.
 
 | # | Where in PV admin | What it does | Our code that depends on it |
 |---|---|---|---|
-| 1 | Page style **1960** → head code | Skips PV's login screen and starts mHUB SSO when the portal sends someone with `#mhub-sso` | `frontend/src/utils/peopleVine.ts` (login page, dashboard PV tile) |
+| 1 | Page styles **1960** and **1560** → head code | Skips PV's login screen and starts mHUB SSO when the portal sends someone with `#mhub-sso` | `frontend/src/utils/peopleVine.ts` (login page, dashboard PV tile) |
 | 2 | Page **22283** "Portal Homepage" (`/home`) → page CSS | Fixes the member homepage not scrolling | None |
 | 3 | Page **22283** "Portal Homepage" (`/home`) → page JS | Reloads `/home` once if it renders in the public (logged-out) style | None. It's a backup since the portal lands members on `/` |
 
@@ -19,9 +19,14 @@ The code below is what was live on `member.mhubchicago.com` on 2026-10-06.
 - **PV's SSO start link** is `https://member.mhubchicago.com/login/sso/start?route=<our IdP>/saml`. The IdP is `https://auth.portal.mhub.org/saml` in prod and `https://auth.mhubsso.com/saml` in staging.
 - **PV's cookies have no `SameSite=None`.** Chrome only sends them on our cross-site SAML POST for about 2 minutes after they're set. After that, `POST /login/sso` returns **502**. Only PeopleVine can fix this, by setting `SameSite=None; Secure` on its cookies. Nothing below changes that.
 
-## 1. Page style 1960: skip PV's login screen for portal SSO
+## 1. Page styles 1960 and 1560: skip PV's login screen for portal SSO
 
-**Where:** PV admin → page layout editor for style **1960** (`admin page layout create`, `flag=edit`, `page style no=1960`) → the head code box (the one with Google Tag Manager, HubSpot and the Meta pixel). It sits **at the very top** of that box, so it runs before the page draws.
+**Where:** the same snippet is in two page layouts' head code boxes (PV admin → `admin page layout create`, `flag=edit`, `page style no=…`):
+
+- **1960**, the logged-out style that PV's login page uses: at the very top of the box (the one with Google Tag Manager, HubSpot and the Meta pixel). This is the copy that does the SSO.
+- **1560**, "Sidebar Layout for Member Portal", the logged-in style: just after the `<meta name="viewport">` line, so it stays after `<meta charset>`. A member who is already logged in goes `/` → `/home` in this style, and this copy only removes the marker from the address bar.
+
+Both copies run before the page draws, and **both must stay identical**.
 
 **Why:** the portal used to open PV in a pre-opened second tab, so that PV landed on home rather than a stale page. That showed PV's login screen, needed pop-up permission, and left the original login tab behind on a spinner. With this script, the portal sends the member to PV's root in the **same tab** with a marker. PV's login page hides itself and starts mHUB SSO straight away. Because the last PV page visited is `/`, PV lands on home in the member style.
 
@@ -58,10 +63,10 @@ The code below is what was live on `member.mhubchicago.com` on 2026-10-06.
 **Our side:** `frontend/src/utils/peopleVine.ts` maps the portal's API URL to the marker. The login page (`frontend/src/pages/login/index.tsx`) and the dashboard PV tile (`frontend/src/pages/dashboard/index.tsx`) use it. Onboarding (the payment form) still uses the pre-opened tab and doesn't rely on this script.
 
 **If you change it:**
-- Adding a new environment means a new entry in `routes` here **and** in `SSO_MARKERS` in `peopleVine.ts`.
+- Adding a new environment means a new entry in `routes` in **both** style copies **and** in `SSO_MARKERS` in `peopleVine.ts`.
 - If the script is removed, members sent with the marker stop on PV's login page. Restore the script, or remove the marker from `peopleVine.ts` so the portal falls back to the pre-opened tab.
 
-**Known cosmetic gap:** a member who is already logged into PV goes `/` → `/home`, which uses style 1560, not 1960. The hash stays in the address bar (`/home#mhub-sso`). It's harmless. Adding the same snippet to style 1560's head code would tidy it.
+If the 1560 copy is ever lost, nothing breaks. Logged-in members just see `/home#mhub-sso` in the address bar.
 
 **Check it's live:** load `https://member.mhubchicago.com/login`, view the source, and search for `mhub-sso-staging`.
 
