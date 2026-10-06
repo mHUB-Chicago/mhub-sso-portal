@@ -95,7 +95,7 @@ export function AdminUsersPage() {
     return [
       { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
       { columnId: "primaryMembership", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
-      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription" }, { value: "membership", label: "Member" }], width: "w-36" },
+      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription holder" }, { value: "membership", label: "Inherited" }], width: "w-44" },
       // This filter matches the membership name only (not the account's active flag), so
       // it's labelled as such — the "Login" column shows whether they can actually log in.
       { columnId: "portalAccess",   placeholder: "Portal membership", options: [{ value: "true", label: "Has portal membership" }, { value: "false", label: "No portal membership" }], width: "w-48" },
