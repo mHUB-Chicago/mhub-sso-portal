@@ -17,9 +17,12 @@ let loadedPromise: Promise<void> = Promise.resolve()
 // proceed with the SSO flow unless the fake page is confirmed loaded first.
 const MAX_TAB_LOAD_WAIT_MS = 20000
 const LOAD_POLL_INTERVAL_MS = 100
-// Extra time after the cross-origin navigation commits, so the fake page gets to
-// render (and its subresources/cookies settle) before anything else happens.
-const POST_COMMIT_SETTLE_MS = 1500
+// Extra time after the cross-origin navigation commits before anything else happens.
+// None needed: PV records the landing page from the response headers, which have arrived
+// by the time the page commits — verified against production PV 2026-10-06 (moved on the
+// instant /login committed, still landed on home). The old 1.5 s only kept PV's logged-out
+// login screen on show longer.
+const POST_COMMIT_SETTLE_MS = 0
 
 // A `load` listener can't be used here: window.open() returns the initial about:blank
 // Window, and once the popup navigates cross-origin that Window object is replaced, so

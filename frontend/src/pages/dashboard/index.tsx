@@ -13,7 +13,8 @@ interface App {
 }
 
 const PEOPLEVINE_ORIGIN = 'https://member.mhubchicago.com'
-const PEOPLEVINE_HOME_URL = `${PEOPLEVINE_ORIGIN}/home`
+// The root, not /home — see PEOPLEVINE_HOME_URL in the backend's onboardingController.ts.
+const PEOPLEVINE_HOME_URL = `${PEOPLEVINE_ORIGIN}/`
 
 // PV ignores RelayState and lands on the last PV page viewed in this browser (e.g. the
 // onboarding payment form), so load PV home in the new tab first, then run the SSO there.
