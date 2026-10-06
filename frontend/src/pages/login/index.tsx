@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info, AlertCircle } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { openRedirectTab, getRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
+import { getPeopleVineSsoUrl, PEOPLEVINE_ROOT_URL } from '@/utils/peopleVine'
 
 type LoginStep = 'email' | 'password'
 
@@ -37,6 +38,9 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [requestId, setRequestId] = useState('')
   const [peopleVineLandingUrl, setPeopleVineLandingUrl] = useState<string | null>(null)
+  // A regular member's login that ends in PV (landing on PV's root, not the onboarding
+  // payment form): go there in this tab via PV's SSO script instead of a pre-opened tab.
+  const peopleVineSsoUrl = peopleVineLandingUrl === PEOPLEVINE_ROOT_URL ? getPeopleVineSsoUrl() : null
   const [requiresOtp, setRequiresOtp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
@@ -165,7 +169,11 @@ export function LoginPage() {
       }
 
       const stillNeedsOnboardingPayment = user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
-      if (txQueryParam) {
+      if (peopleVineSsoUrl && !stillNeedsOnboardingPayment) {
+        // Replaces a PV-initiated tx too: PV's script starts a fresh SSO from its login page.
+        setIsRedirecting(true)
+        window.location.assign(peopleVineSsoUrl)
+      } else if (txQueryParam) {
         await navigateTab(redirectTab, `${import.meta.env.VITE_API_URL}/saml/continue?tx=${txQueryParam}`)
       } else if (returnToParam && stillNeedsOnboardingPayment) {
         setIsOnboardingPaymentFlow(true)
@@ -300,7 +308,7 @@ export function LoginPage() {
           // Step 2: Password/OTP Input
           <form
             onSubmit={(e) => {
-              if (!requiresOtp && peopleVineLandingUrl) {
+              if (!requiresOtp && peopleVineLandingUrl && !peopleVineSsoUrl) {
                 const tab = openRedirectTab(peopleVineLandingUrl)
                 if (!tab) {
                   e.preventDefault()

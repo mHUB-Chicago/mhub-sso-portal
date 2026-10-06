@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import type { MouseEvent } from 'react'
 import { toast } from 'sonner'
 import { openRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
+import { getPeopleVineSsoUrl, PEOPLEVINE_ORIGIN, PEOPLEVINE_ROOT_URL } from '@/utils/peopleVine'
 
 interface App {
   name: string
@@ -12,15 +13,18 @@ interface App {
   url: string
 }
 
-const PEOPLEVINE_ORIGIN = 'https://member.mhubchicago.com'
-// The root, not /home — see PEOPLEVINE_HOME_URL in the backend's onboardingController.ts.
-const PEOPLEVINE_HOME_URL = `${PEOPLEVINE_ORIGIN}/`
-
 // PV ignores RelayState and lands on the last PV page viewed in this browser (e.g. the
-// onboarding payment form), so load PV home in the new tab first, then run the SSO there.
+// onboarding payment form). Where PV's SSO script knows this IdP, opening PV's root with the
+// marker logs in and lands on home in one go (see getPeopleVineSsoUrl). Otherwise load PV's
+// root in the new tab first, then run the SSO there.
 const openPeopleVine = async (e: MouseEvent<HTMLAnchorElement>, url: string) => {
   e.preventDefault()
-  const tab = openRedirectTab(PEOPLEVINE_HOME_URL)
+  const ssoUrl = getPeopleVineSsoUrl()
+  if (ssoUrl) {
+    window.open(ssoUrl, '_blank', 'noopener')
+    return
+  }
+  const tab = openRedirectTab(PEOPLEVINE_ROOT_URL)
   if (!tab) {
     window.open(url, '_blank', 'noopener,noreferrer')
     return

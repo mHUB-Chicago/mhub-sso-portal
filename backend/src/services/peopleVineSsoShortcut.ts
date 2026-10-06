@@ -22,7 +22,13 @@ const LAST_SKIP_COOKIE = "pv_sso_skip";
 // If a shortcut didn't get the user in (PV's own session had already ended) they come
 // straight back; within this window we do the real SSO instead of bouncing them again.
 const SKIP_RETRY_MS = 60 * 1000;
-const DEFAULT_WINDOW_MINUTES = 15;
+// Off by default since 2026-10-06. The repeat SSOs this skipped came from the portal's
+// pre-opened PV tab, which always ran a fresh SSO even while PV was still logged in. The
+// portal now sends members to PV's root with an SSO marker (frontend utils/peopleVine.ts), and
+// PV's own script only starts an SSO from its login page — i.e. only when PV's session has
+// ended, which is exactly when skipping would strand them on that login page. Set
+// PV_SSO_SHORTCUT_MINUTES (e.g. 15) to turn it back on.
+const DEFAULT_WINDOW_MINUTES = 0;
 
 const PEOPLEVINE_ROOT_URL = PEOPLEVINE_SP_ENTITY_ID; // "https://member.mhubchicago.com/"
 
