@@ -24,6 +24,8 @@ export interface User {
   memberSource: string
   memberSourceCompany: string | null
   membershipStatus?: string
+  // "pending_membership" | "membership-removed" | "active" — always sent (UserSchema).
+  accountStatus: string
   // Membership Agreement e-signature — additive, see membershipAgreementService.ts
   // (backend). membershipAgreementPdf itself is left off this shared User type — see
   // GetUserResponse below, it's only present on the single-user detail fetch.

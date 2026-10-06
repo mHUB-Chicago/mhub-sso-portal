@@ -7,6 +7,7 @@ import { hasPortalAccess } from "@/services/peopleVineService";
 import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, LoginError, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
+import { canLogIn } from "@common/access";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl, PEOPLEVINE_HOME_URL, PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 import { getSessionId } from "@/middleware/auth";
@@ -32,15 +33,17 @@ const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendin
   return entityId === PEOPLEVINE_SP_ENTITY_ID ? PEOPLEVINE_HOME_URL : null;
 };
 
-// Members without an active, portal-granting membership. pending_membership users are
+// Members without an active, portal-granting membership — the rule lives in @common/access
+// so the admin screens show exactly what login enforces. pending_membership users are
 // exempt: they haven't completed their subscription yet, so they never pass this — but
 // they still need to log in to reach the onboarding payment form (the whole point of the
 // returnTo gate in sendOnboardingPaymentFormEmail). `active` is what the session check
 // (getActiveSessionById) enforces, so it's checked too — otherwise login would succeed
 // and the very next request would bounce them out.
-const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean> =>
-  user.role !== 'ADMIN' && user.accountStatus !== 'pending_membership' &&
-  (!user.active || !(await hasPortalAccess(c, user.primaryMembership, user.addOns)));
+const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean> => {
+  if (canLogIn(user, false)) return false; // admins/onboarding get in without a membership lookup
+  return !canLogIn(user, await hasPortalAccess(c, user.primaryMembership, user.addOns));
+};
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
