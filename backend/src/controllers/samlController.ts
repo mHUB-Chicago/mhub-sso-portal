@@ -9,6 +9,7 @@ import { getSessionId, verifySession } from "@/middleware/auth";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 import { peopleVineShortcut, recordPeopleVineSso } from "@/services/peopleVineSsoShortcut";
+import { getPeopleVineHandoffUrl } from "@/services/peopleVineHandoff";
 
 // A pending_membership user's own PV customer (new_company: a standalone registration;
 // existing_company fallback: best-effort customer_reference only) never has a real
@@ -94,6 +95,7 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
       sessionId,
       relayState,
       identityEmail: await resolveSamlIdentityEmail(c, currentUser, serviceProvider),
+    handoffUrl: getPeopleVineHandoffUrl(c, serviceProvider.entityId),
       idp: {
         entityId: c.env.SAML_ENTITY_ID as string,
         certPem: c.env.SAML_PUBLIC_CERT as string,
@@ -146,6 +148,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
     relayState: samlAuthRequest.relayState || undefined,
     sessionId,
     identityEmail: await resolveSamlIdentityEmail(c, currentUser, serviceProvider),
+    handoffUrl: getPeopleVineHandoffUrl(c, serviceProvider.entityId),
     idp: {
       entityId: c.env.SAML_ENTITY_ID as string,
       certPem: c.env.SAML_PUBLIC_CERT as string,
@@ -208,6 +211,7 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
     sessionId,
     relayState,
     identityEmail: await resolveSamlIdentityEmail(c, currentUser, serviceProvider),
+    handoffUrl: getPeopleVineHandoffUrl(c, serviceProvider.entityId),
     idp: {
       entityId: c.env.SAML_ENTITY_ID as string,
       certPem: c.env.SAML_PUBLIC_CERT as string,
