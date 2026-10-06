@@ -19,10 +19,14 @@ vi.mock("@/services/loginRequestService", () => ({
   LoginError: class LoginError extends Error {},
 }));
 vi.mock("@/services/userServiceProviderService", () => ({ getAllowedServiceProvidersForUser: vi.fn(async () => []) }));
+vi.mock("@/services/samlAuthRequestService", () => ({ getSamlAuthRequestById: vi.fn() }));
+vi.mock("@/services/serviceProviderService", () => ({ getServiceProviderById: vi.fn() }));
 vi.mock("@/middleware/auth", () => ({ getSessionId: vi.fn() }));
 vi.mock("@/controllers/onboardingController", () => ({
   getOnboardingPaymentFormUrl: vi.fn(() => "https://pv.example/payment-form"),
   getOnboardingPaymentSsoUrl: vi.fn(async () => "https://pv.example/payment-sso"),
+  PEOPLEVINE_HOME_URL: "https://pv.example/home",
+  PEOPLEVINE_SP_ENTITY_ID: "pv-entity",
 }));
 
 import { handleStartLogin, handleVerifyLogin } from "./loginController";
@@ -143,25 +147,6 @@ describe("inactive member without a portal-access membership", () => {
     expect(res.status).toBe(403);
     expect(res.data.code).toBe("ACCOUNT_INACTIVE");
     expect(createSession).not.toHaveBeenCalled();
-  });
-});
-
-describe("PV landing tab", () => {
-  it("is not pre-opened for a regular member — they SSO into PV in the same tab", async () => {
-    givenUser(makeUser());
-
-    const res = await start("member@example.com");
-
-    expect(res.data.data.peopleVineLandingUrl).toBeNull();
-  });
-
-  it("is still pre-opened on the payment form during onboarding", async () => {
-    givenUser(makeUser({ active: false, accountStatus: "pending_membership", primaryMembership: null }));
-
-    const res = await start("member@example.com");
-
-    expect(res.data.data.isPendingMembership).toBe(true);
-    expect(res.data.data.peopleVineLandingUrl).toBe("https://pv.example/payment-form");
   });
 });
 

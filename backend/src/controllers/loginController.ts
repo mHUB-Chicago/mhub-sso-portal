@@ -8,18 +8,29 @@ import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, LoginError, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
-import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl } from "@/controllers/onboardingController";
+import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl, PEOPLEVINE_HOME_URL, PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 import { getSessionId } from "@/middleware/auth";
+import { getSamlAuthRequestById } from "@/services/samlAuthRequestService";
+import { getServiceProviderById } from "@/services/serviceProviderService";
 import { User } from "@/database/models";
 
-// Only the onboarding payment flow pre-opens a PV tab (PV ignores RelayState, so it has
-// to view the payment form first to land there after SSO). Regular member logins used to
-// pre-open PV home too, but that tab hit PV logged-out first and flashed PV's "Please
-// login to view this page" banner, then left the login tab stranded on "Continue in the
-// new tab". Tested on prod 2026-10-06: a same-tab SSO from a fresh browser lands on
-// /home anyway (/account/menu → /account/customer → /home), so they no longer need it.
-const getPeopleVineLandingUrl = (c: Context<AppType>, isPendingMembership: boolean): string | null =>
-  isPendingMembership ? getOnboardingPaymentFormUrl(c) : null;
+// Where PV should land after this login's SSO, or null if the login won't end in PV.
+// Mirrors handleVerifyLogin's redirect choice: the onboarding payment form while it's
+// pending, otherwise PV only if the SAML transaction (tx) came from PV, or — with no tx —
+// if PV is the user's auto-redirect SP.
+const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendingMembership: boolean, tx?: string): Promise<string | null> => {
+  if (isPendingMembership) return getOnboardingPaymentFormUrl(c);
+  let entityId: string | undefined;
+  if (tx) {
+    const samlAuthRequest = await getSamlAuthRequestById(c, tx);
+    if (!samlAuthRequest) return null;
+    entityId = (await getServiceProviderById(c, samlAuthRequest.serviceProviderId))?.entityId;
+  } else {
+    const availableServiceProviders = await getAllowedServiceProvidersForUser(c, user.id);
+    entityId = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]?.entityId;
+  }
+  return entityId === PEOPLEVINE_SP_ENTITY_ID ? PEOPLEVINE_HOME_URL : null;
+};
 
 // Members without an active, portal-granting membership. pending_membership users are
 // exempt: they haven't completed their subscription yet, so they never pass this — but
@@ -33,7 +44,7 @@ const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean>
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
-    const { email } = c.req.valid("json");
+    const { email, tx } = c.req.valid("json");
     const user = await getUserByEmail(c, email);
     if (!user) {
       throw new Error("User not found");
@@ -62,7 +73,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
         isPendingMembership,
         requiresOtp: user.passwordHashed === null || !user.emailVerified || user.mustResetPassword,
         // No PV tab for inactive users — their login stops at the inactive message.
-        peopleVineLandingUrl: isInactive ? null : getPeopleVineLandingUrl(c, isPendingMembership),
+        peopleVineLandingUrl: isInactive ? null : await getPeopleVineLandingUrl(c, user, isPendingMembership, tx),
       },
     });
     return c.json(response);
