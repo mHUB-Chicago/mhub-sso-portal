@@ -6,7 +6,8 @@
     "dev": "wrangler dev --persist-to=.wrangler/state",
     "build": "wrangler build",
     "deploy:staging": "wrangler deploy --env staging",
-    "deploy:production": "wrangler deploy --env production"
+    "deploy:production": "wrangler deploy --env production",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hono/standard-validator": "^0.2.1",
@@ -30,6 +31,7 @@
     "@types/node": "^25.0.3",
     "@types/pako": "^2.0.4",
     "prisma": "7.10.0",
+    "vitest": "^3.2.7",
     "wrangler": "^4.132.0"
   }
 }

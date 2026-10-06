@@ -95,8 +95,10 @@ export function AdminUsersPage() {
     return [
       { columnId: "companyName",    placeholder: "Company",       options: companyOptions,    width: "w-48", type: 'combobox' },
       { columnId: "primaryMembership", placeholder: "Membership",    options: membershipOptions, width: "w-48", type: 'combobox' },
-      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription" }, { value: "membership", label: "Member" }], width: "w-36" },
-      { columnId: "portalAccess",   placeholder: "Portal Access", options: [{ value: "true", label: "Has Access" }, { value: "false", label: "No Access" }], width: "w-40" },
+      { columnId: "memberSource",    placeholder: "Member Type",   options: [{ value: "subscription", label: "Subscription holder" }, { value: "membership", label: "Inherited" }], width: "w-44" },
+      // This filter matches the membership name only (not the account's active flag), so
+      // it's labelled as such — the "Login" column shows whether they can actually log in.
+      { columnId: "portalAccess",   placeholder: "Portal membership", options: [{ value: "true", label: "Has portal membership" }, { value: "false", label: "No portal membership" }], width: "w-48" },
       { columnId: "active",         placeholder: "Active",        options: [{ value: "true", label: "Active" },     { value: "false", label: "Inactive" }],  width: "w-36" },
       { columnId: "emailVerified",  placeholder: "Verified",      options: [{ value: "true", label: "Verified" },   { value: "false", label: "Pending" }],   width: "w-36" },
       { columnId: "noPrimary",      placeholder: "Primary Membership", options: [{ value: "true", label: "No Primary Membership" }, { value: "false", label: "Has Primary Membership" }], width: "w-52" },

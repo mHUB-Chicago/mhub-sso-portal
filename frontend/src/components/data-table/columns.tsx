@@ -10,6 +10,8 @@ import type { User, Company } from "@/store/api/userApi"
 import type { ServiceProvider } from "@/store/api/serviceProviderApi"
 import { UserViewModal } from "@/components/UserViewModal"
 import { CompanyViewModal } from "@/components/CompanyViewModal"
+import { LoginAccessBadge } from "@/components/LoginAccessBadge"
+import { hasPortalMembership, loginAccess } from "../../../../common/access"
 
 export type UserWithCompany = User & {
   companyName?: string
@@ -153,32 +155,25 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     header: "Member Type",
     size: 120,
     cell: ({ row }) => {
-      const isFree = row.original.memberSource === 'membership'
+      // "membership" members get their membership through a company (shown in the
+      // Company column); "subscription" users hold the subscription themselves.
+      const isInherited = row.original.memberSource === 'membership'
       return (
-        <Badge variant={isFree ? "outline" : "default"} className={isFree ? "text-blue-600 border-blue-300 bg-blue-50" : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100"}>
-          {isFree ? "Member" : "Subscription"}
+        <Badge variant={isInherited ? "outline" : "default"} className={isInherited ? "text-blue-600 border-blue-300 bg-blue-50" : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100"}>
+          {isInherited ? "Inherited" : "Subscription holder"}
         </Badge>
       )
     },
   },
   {
     id: "portalAccess",
-    header: "Portal Access",
+    header: "Login",
     size: 120,
     cell: ({ row }) => {
-      const primaryMembership = row.original.primaryMembership
-      const active = row.original.active
-      let addOns: string[] = []
-      try { addOns = JSON.parse(row.original.addOns) } catch {}
-      const hasAccess = !!active && (
-        (!!primaryMembership && portalAccessTypes.has(primaryMembership)) ||
-        addOns.some(a => portalAccessTypes.has(a))
-      )
-      return (
-        <Badge variant={hasAccess ? "default" : "outline"} className={hasAccess ? "bg-green-100 text-green-700 border-green-200 hover:bg-green-100" : "text-gray-400"}>
-          {hasAccess ? "Yes" : "No"}
-        </Badge>
-      )
+      // Same rule login enforces (@common/access), so this can't say "Yes" for someone
+      // login would turn away.
+      const access = loginAccess(row.original, hasPortalMembership(portalAccessTypes, row.original.primaryMembership, row.original.addOns))
+      return <LoginAccessBadge access={access} />
     },
   },
   {

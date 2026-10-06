@@ -8,6 +8,7 @@ import { getServiceProviderByEntityId, getServiceProviderById } from "@/services
 import { getSessionId, verifySession } from "@/middleware/auth";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
+import { peopleVineShortcut, recordPeopleVineSso } from "@/services/peopleVineSsoShortcut";
 
 // A pending_membership user's own PV customer (new_company: a standalone registration;
 // existing_company fallback: best-effort customer_reference only) never has a real
@@ -83,6 +84,8 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
     if (!isAllowed) {
       return c.json({ message: "Access to Service Provider not authorized" }, 403);
     }
+    const shortcut = peopleVineShortcut(c, serviceProvider.entityId, currentUser);
+    if (shortcut) return shortcut;
     // Issue SAML response
     const { html } = await issueSamlResponse({
       serviceProvider,
@@ -98,6 +101,7 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
       }
     });
     await updateSamlAuthRequest(c, { id: samlAuthRequest.id, completedAt: new Date() });
+    recordPeopleVineSso(c, serviceProvider.entityId, currentUser);
     return c.html(html);
   } else {
     // Redirect to frontend login with SAML Auth Request ID
@@ -132,6 +136,8 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
   if (!isAllowed) {
     return c.json({ message: "Access to Service Provider not authorized" }, 403);
   }
+  const shortcut = peopleVineShortcut(c, serviceProvider.entityId, currentUser);
+  if (shortcut) return shortcut;
   // Issue SAML response
   const { html } = await issueSamlResponse({
     serviceProvider,
@@ -147,6 +153,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
     }
   });
   await updateSamlAuthRequest(c, { id: samlAuthRequest.id, completedAt: new Date() });
+  recordPeopleVineSso(c, serviceProvider.entityId, currentUser);
   return c.html(html);
 }
 
@@ -192,6 +199,8 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
     return c.json({ message: "Access to Service Provider not authorized" }, 403);
   }
 
+  const shortcut = peopleVineShortcut(c, serviceProvider.entityId, currentUser);
+  if (shortcut) return shortcut;
   const { html } = await issueSamlResponse({
     serviceProvider,
     samlRequest: null,
@@ -205,5 +214,6 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
       privateKeyPkcs8Pem: c.env.SAML_PRIVATE_KEY as string,
     },
   });
+  recordPeopleVineSso(c, serviceProvider.entityId, currentUser);
   return c.html(html);
 };

@@ -13,14 +13,18 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from 'sonner'
-import { Loader2, ExternalLink, FileText, Download } from 'lucide-react'
+import { Loader2, ExternalLink, FileText, Download, AlertTriangle } from 'lucide-react'
 import { useGetUserByIdQuery, useUpdateUserMutation } from '@/store/api/userApi'
+import { useGetPortalAccessTypesQuery } from '@/store/api/syncApi'
+import { LoginAccessBadge } from '@/components/LoginAccessBadge'
+import { hasPortalMembership, loginAccess } from '../../../../../../common/access'
 
 export function AdminEditUserPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
   const { data: userData, isLoading, error } = useGetUserByIdQuery(id!, { skip: !id, refetchOnMountOrArgChange: true })
+  const { data: portalAccessTypesData } = useGetPortalAccessTypesQuery()
   const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation()
 
   // Track user changes separately from server data
@@ -94,6 +98,12 @@ export function AdminEditUserPage() {
 
   const { user, company, allowedServiceProviders, membershipAgreementPdf } = userData.data
   const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase()
+  // Same rule login enforces (@common/access). Null until the Portal Access Types load,
+  // so it never flashes a wrong "Blocked".
+  const access = portalAccessTypesData
+    ? loginAccess(user, hasPortalMembership(new Set(portalAccessTypesData.data), user.primaryMembership, user.addOns))
+    : null
+  const isInherited = user.memberSource === 'membership'
 
   return (
     <div className="space-y-6">
@@ -178,6 +188,42 @@ export function AdminEditUserPage() {
           </div>
         </div>
 
+        {/* Access — whether login lets this user in, plus the synced facts behind it. No
+            "reason" on purpose: the portal doesn't record why the sync marked someone
+            inactive, so admins get the facts rather than a guess. */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-medium">Access</h2>
+            {access && <LoginAccessBadge access={access} />}
+          </div>
+          <div className="grid grid-cols-2 gap-6 border rounded-lg p-4 bg-gray-50">
+            <div className="space-y-1">
+              <Label className="text-gray-500">Primary membership</Label>
+              <p className="font-medium">
+                {user.primaryMembership ?? <span className="text-gray-400">—</span>}
+                {user.primaryMembershipStatus && <span className="text-gray-500 font-normal"> ({user.primaryMembershipStatus})</span>}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-500">Membership source</Label>
+              <p className="font-medium">
+                {isInherited ? `Inherited from ${user.memberSourceCompany ?? company.name}` : 'Subscription holder'}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-500">Company status</Label>
+              <p className="font-medium">{company.name} ({company.active ? 'Active' : 'Inactive'})</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-gray-500">Account (from sync)</Label>
+              <p className="font-medium">
+                {user.active ? 'Active' : 'Inactive'}
+                <span className="text-gray-500 font-normal"> — {user.accountStatus.replace(/[-_]/g, ' ')}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Membership Agreement — additive, unrelated to the PV payment/agreement
             tracking shown elsewhere; see membershipAgreementService.ts (backend). */}
         <div className="space-y-2">
@@ -235,6 +281,16 @@ export function AdminEditUserPage() {
               Select which applications this user can access. Only service providers enabled for their company are shown.
             </p>
           </div>
+
+          {access === 'blocked' && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-300 rounded-md">
+              <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">
+                This user is currently <span className="font-semibold">blocked from logging in</span> (see Access above),
+                so these settings have no effect until their access is restored.
+              </p>
+            </div>
+          )}
 
           {allowedServiceProviders.length === 0 ? (
             <p className="text-sm text-gray-500 italic">No service providers available for this company.</p>
