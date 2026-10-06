@@ -63,7 +63,7 @@ function DiffSection({ label, before, after }: { label: string; before: Record<s
         <div className="border rounded-md divide-y">
           {keys.map(k => (
             <div key={k} className="flex items-start gap-4 px-3 py-2">
-              <span className="text-muted-foreground w-36 shrink-0">{DIFF_LABELS[k] ?? k}</span>
+              <span className="text-muted-foreground w-36 shrink-0 break-all">{DIFF_LABELS[k] ?? k}</span>
               <span className="text-green-600 font-medium break-all">{String(after![k] ?? "—")}</span>
             </div>
           ))}
@@ -79,7 +79,7 @@ function DiffSection({ label, before, after }: { label: string; before: Record<s
         <div className="border rounded-md divide-y">
           {keys.map(k => (
             <div key={k} className="flex items-start gap-4 px-3 py-2">
-              <span className="text-muted-foreground w-36 shrink-0">{DIFF_LABELS[k] ?? k}</span>
+              <span className="text-muted-foreground w-36 shrink-0 break-all">{DIFF_LABELS[k] ?? k}</span>
               <span className="text-muted-foreground break-all">{String((after ?? before)![k] ?? "—")}</span>
             </div>
           ))}
@@ -94,7 +94,7 @@ function DiffSection({ label, before, after }: { label: string; before: Record<s
       <div className="border rounded-md divide-y">
         {changed.map(k => (
           <div key={k} className="flex items-start gap-4 px-3 py-2">
-            <span className="text-muted-foreground w-36 shrink-0">{DIFF_LABELS[k] ?? k}</span>
+            <span className="text-muted-foreground w-36 shrink-0 break-all">{DIFF_LABELS[k] ?? k}</span>
             <div className="flex flex-col gap-0.5 min-w-0">
               <span className="text-red-500 line-through break-all text-xs">{String((before ?? {})[k] ?? "—")}</span>
               <span className="text-green-600 font-medium break-all">{String((after ?? {})[k] ?? "—")}</span>
@@ -184,6 +184,9 @@ function PayloadModal({ log, onClose }: { log: WebhookLog; onClose: () => void }
               )}
               {diff.user && (
                 <DiffSection label="User" before={diff.user.before} after={diff.user.after} />
+              )}
+              {diff.members && (
+                <DiffSection label="Company members (membership status)" before={diff.members.before} after={diff.members.after} />
               )}
             </div>
           )}

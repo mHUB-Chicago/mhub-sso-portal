@@ -2161,6 +2161,114 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
     await finish();
     return { hasMore: false, nextBatch };
 };
+type CardDataByCustomer = ReturnType<typeof buildMembershipCardData>;
+
+// The title of each customer's first primary card in the any-status scan — a one-pass index
+// for what syncOne gets with `anyStatusCardResult.cards.find(...)`. Keeps find's rule exactly:
+// the FIRST primary card counts even when its title is blank (→ null).
+export const firstPrimaryCardTitles = (cards: any[]): Map<string, string | null> => {
+    const titles = new Map<string, string | null>();
+    for (const card of cards) {
+        const customerId = card.customer_id?.toString();
+        if (card.primary === true && customerId && !titles.has(customerId))
+            titles.set(customerId, (card.title ?? '').trim() || null);
+    }
+    return titles;
+};
+
+// An inherited member's primary membership and its status, read from the card scans alone —
+// the same rule syncOne applies to the member's own record: their primary card's title,
+// "Active" if it's in the active scan, "Cancelled" if only in the any-status scan. Null when
+// they have no primary card: their primary then comes from their own subscriptions or the
+// company fallback, which the company's job doesn't have, so they're left to their own sync.
+export const memberStatusFromCards = (
+    memberPvId: string,
+    cardDataByCustomer: CardDataByCustomer,
+    anyStatusPrimaryTitles: Map<string, string | null>,
+): { primaryMembership: string; primaryMembershipStatus: 'Active' | 'Cancelled' } | null => {
+    const activePrimaryTitle = cardDataByCustomer[memberPvId]?.primaryCardTitle ?? null;
+    const primaryMembership = activePrimaryTitle ?? anyStatusPrimaryTitles.get(memberPvId) ?? null;
+    if (primaryMembership === null) return null;
+    return { primaryMembership, primaryMembershipStatus: activePrimaryTitle !== null ? 'Active' : 'Cancelled' };
+};
+
+export type CompanyMember = {
+    id: string;
+    email: string;
+    peopleVineId: string | null;
+    active: boolean;
+    primaryMembership: string | null;
+    primaryMembershipStatus: string | null;
+};
+
+// A company's inherited members (memberSource "membership"), minus the company's own record.
+// Onboarding users, admins and system accounts are left alone.
+export const loadCompanyMembers = async (c: Context, companyId: string, companyPvId: string): Promise<CompanyMember[]> => {
+    const prisma: PrismaClient = c.get('db');
+    const members = await prisma.user.findMany({
+        where: {
+            companyId,
+            memberSource: 'membership',
+            role: Role.USER,
+            isSystemAccount: false,
+            accountStatus: { not: 'pending_membership' },
+            peopleVineId: { not: null },
+        },
+        select: { id: true, email: true, peopleVineId: true, active: true, primaryMembership: true, primaryMembershipStatus: true },
+    });
+    return members.filter(m => m.peopleVineId !== companyPvId);
+};
+
+// D1 allows at most 100 bound parameters per query.
+const D1_IN_CHUNK = 90;
+
+// A company webhook only re-reads the company, so when a company was reactivated in PV its
+// members kept showing "Cancelled" until the nightly sync (PV#9423173, 2026-10-05). This
+// brings their membership name and status in line with the card scans the company's job
+// already downloaded: no extra PV calls and no nested syncs — just batched writes for the
+// members that differ, so it's safe to run on every company webhook (duplicates and retries
+// find nothing left to do). It never touches `active`/`accountStatus`: inherited members
+// keep access across company changes everywhere else in the sync, and access stays the
+// member's own sync's call.
+//
+// `membersBefore` is read before the type cascade, so the log shows each member's real
+// previous value; `cascadedPrimaryMembership` is what that cascade then wrote for all of them.
+export const refreshCompanyMemberStatuses = async (
+    c: Context,
+    membersBefore: CompanyMember[],
+    statusOf: (memberPvId: string) => ReturnType<typeof memberStatusFromCards>,
+    cascadedPrimaryMembership?: { value: string | null },
+): Promise<{ checked: number; changes: { email: string; before: string; after: string }[] }> => {
+    const prisma: PrismaClient = c.get('db');
+    const label = (primary: string | null, status: string | null) => `${primary ?? '—'} (${status ?? '—'})`;
+    const writes = new Map<string, { data: { primaryMembership: string; primaryMembershipStatus: string }; ids: string[] }>();
+    const changes: { email: string; before: string; after: string }[] = [];
+    for (const member of membersBefore) {
+        const currentPrimary = cascadedPrimaryMembership ? cascadedPrimaryMembership.value : member.primaryMembership;
+        const next = member.peopleVineId ? statusOf(member.peopleVineId) : null;
+        if (next && (next.primaryMembership !== currentPrimary || next.primaryMembershipStatus !== member.primaryMembershipStatus)) {
+            const key = JSON.stringify(next);
+            if (!writes.has(key)) writes.set(key, { data: next, ids: [] });
+            writes.get(key)!.ids.push(member.id);
+        }
+        const finalPrimary = next?.primaryMembership ?? currentPrimary;
+        const finalStatus = next?.primaryMembershipStatus ?? member.primaryMembershipStatus;
+        if (finalPrimary !== member.primaryMembership || finalStatus !== member.primaryMembershipStatus) {
+            // Status follows the cards, but access doesn't — flag anyone shown "Active" who
+            // still can't log in until their own sync turns access back on.
+            const accessNote = !member.active && finalStatus === 'Active' ? ' — access still off until their own sync' : '';
+            changes.push({ email: member.email, before: label(member.primaryMembership, member.primaryMembershipStatus), after: label(finalPrimary, finalStatus) + accessNote });
+        }
+    }
+    for (const { data, ids } of writes.values()) {
+        for (let i = 0; i < ids.length; i += D1_IN_CHUNK) {
+            await prisma.user.updateMany({ where: { id: { in: ids.slice(i, i + D1_IN_CHUNK) } }, data });
+        }
+    }
+    console.log(`[memberStatusRefresh] Checked ${membersBefore.length} member(s), ${changes.length} changed.`);
+    return { checked: membersBefore.length, changes };
+};
+
 export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: string): Promise<void> => {
     const prisma: PrismaClient = c.get('db');
     console.log(`Syncing customer with PeopleVine ID ${peopleVineId}`);
@@ -2212,7 +2320,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const primaryTypeSetSync = new Set(dbPrimaryTypesSync.map(t => t.name));
     const addonTypeSetSync = new Set(dbAddonTypesSync.map(t => t.name));
     const freeMemberExclusionSetSync = new Set(dbFreeMemberExclusionsSync.map(t => t.name));
-    const cardDataSync = buildMembershipCardData(cardResult.cards)[pvId]
+    const cardDataByCustomer = buildMembershipCardData(cardResult.cards);
+    const cardDataSync = cardDataByCustomer[pvId]
         ?? { ownTypes: [], primaryCardTitle: null, primaryCardSourceCompanyName: null, allCardTypes: [], secondaryProviders: [] };
     const anyStatusPrimaryCard = anyStatusCardResult.cards.find(card => card.customer_id?.toString() === pvId && card.primary === true);
     const anyStatusPrimaryTitle = (anyStatusPrimaryCard?.title ?? '').trim() || null;
@@ -2286,9 +2395,34 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 await prisma.user.updateMany({ where: { companyId: companyForRepOps.id, memberSource: 'subscription' }, data: { active: true } });
             }
             const typesChanged = JSON.stringify([...newMembershipTypes].sort()) !== JSON.stringify([...existingTypes].sort());
-            if (hasSubInfo && typesChanged) {
+            const cascadeTypes = hasSubInfo && typesChanged;
+            // Skipped when a card page failed to download: one partial scan would otherwise
+            // be applied to every member at once. Read before the cascade below so the log
+            // shows each member's real previous value.
+            const cardScanComplete = cardResult.skippedPages.length === 0 && anyStatusCardResult.skippedPages.length === 0;
+            const membersBefore = cardScanComplete ? await loadCompanyMembers(c, companyForRepOps.id, pvId) : null;
+            if (cascadeTypes) {
                 console.log(`Cascading membership type change to non-subscriber members of company ${companyForRepOps.name}.`);
                 await prisma.user.updateMany({ where: { companyId: companyForRepOps.id, memberSource: 'membership' }, data: { primaryMembership: pickBest(newMembershipTypes), addOns: JSON.stringify(pickAddons(newMembershipTypes)) } });
+            }
+            if (membersBefore) {
+                const anyStatusPrimaryTitles = firstPrimaryCardTitles(anyStatusCardResult.cards);
+                const { changes } = await refreshCompanyMemberStatuses(
+                    c,
+                    membersBefore,
+                    (memberPvId) => memberStatusFromCards(memberPvId, cardDataByCustomer, anyStatusPrimaryTitles),
+                    cascadeTypes ? { value: pickBest(newMembershipTypes) } : undefined,
+                );
+                if (changes.length > 0) {
+                    diffRecord.members = {
+                        before: Object.fromEntries(changes.map(m => [m.email, m.before])),
+                        after: Object.fromEntries(changes.map(m => [m.email, m.after])),
+                    };
+                }
+            }
+            else if ((wasInactive && pvActive) || cascadeTypes) {
+                console.warn(`[memberStatusRefresh] Skipped for company ${companyForRepOps.name}: membership card scan incomplete — left to the nightly sync.`);
+                diffRecord.members = { before: { note: 'Not refreshed' }, after: { note: 'Card scan incomplete — left to the nightly sync' } };
             }
         }
     }
