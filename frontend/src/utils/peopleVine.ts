@@ -8,6 +8,7 @@ export const PEOPLEVINE_ROOT_URL = `${PEOPLEVINE_ORIGIN}/`
 // PV's root with the hash logs them in within the same tab — no PV login screen, no pre-opened
 // tab — and PV lands on its root (→ /home, member style), never a stale page like the
 // onboarding payment form. Already logged into PV, the root goes straight to /home.
+// The PV-side script and every other change made inside PV: docs/peoplevine-changes.md.
 const SSO_MARKERS: Record<string, string> = {
   'https://auth.portal.mhub.org': '#mhub-sso',
   'https://auth.mhubsso.com': '#mhub-sso-staging',
