@@ -8,6 +8,7 @@ import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, LoginError, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
 import { canLogIn } from "@common/access";
+import { clearPeopleVineSso } from "@/services/peopleVineSsoShortcut";
 import { getAllowedServiceProvidersForUser } from "@/services/userServiceProviderService";
 import { getOnboardingPaymentFormUrl, getOnboardingPaymentSsoUrl, PEOPLEVINE_HOME_URL, PEOPLEVINE_SP_ENTITY_ID } from "@/controllers/onboardingController";
 import { getSessionId } from "@/middleware/auth";
@@ -224,6 +225,7 @@ export const handleLogout = async (c: Context<AppType>) => {
       path: "/",
       domain: c.env.DOMAIN as string,
     });
+    clearPeopleVineSso(c);
     const response = LogoutResponseSchema.parse({
       success: true,
       message: "Logged out successfully",
