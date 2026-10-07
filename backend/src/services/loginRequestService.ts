@@ -48,6 +48,7 @@ export const getActiveLoginRequestByUserId = (c: Context, userId: string): Promi
       expiresAt: {
         gt: now,
       },
+      otpHashed: null,
       otpVerifiedAt: null,
       passwordVerifiedAt: null,
     },
