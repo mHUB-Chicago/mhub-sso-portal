@@ -11,7 +11,7 @@ import type { ServiceProvider } from "@/store/api/serviceProviderApi"
 import { UserViewModal } from "@/components/UserViewModal"
 import { CompanyViewModal } from "@/components/CompanyViewModal"
 import { LoginAccessBadge } from "@/components/LoginAccessBadge"
-import { hasPortalMembership, loginAccess } from "../../../../common/access"
+import { hasCompanyPortalMembership, hasPortalMembership, loginAccess, type AccessCompany } from "../../../../common/access"
 
 export type UserWithCompany = User & {
   companyName?: string
@@ -47,7 +47,10 @@ function CompanyActionsCell({ company }: { company: Company }) {
   )
 }
 
-export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<UserWithCompany>[] => [
+export const createUserColumns = (
+  portalAccessTypes: Set<string>,
+  companiesById: ReadonlyMap<string, AccessCompany> = new Map(),
+): ColumnDef<UserWithCompany>[] => [
   {
     id: "actions",
     header: "Actions",
@@ -172,7 +175,11 @@ export const createUserColumns = (portalAccessTypes: Set<string>): ColumnDef<Use
     cell: ({ row }) => {
       // Same rule login enforces (@common/access), so this can't say "Yes" for someone
       // login would turn away.
-      const access = loginAccess(row.original, hasPortalMembership(portalAccessTypes, row.original.primaryMembership, row.original.addOns))
+      const access = loginAccess(
+        row.original,
+        hasPortalMembership(portalAccessTypes, row.original.primaryMembership, row.original.addOns)
+          || hasCompanyPortalMembership(portalAccessTypes, companiesById.get(row.original.companyId)),
+      )
       return <LoginAccessBadge access={access} />
     },
   },

@@ -169,6 +169,18 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   // XML-escaped — interpolated into element text below.
   const nameIdValue = escapeHtmlAttr(input.identityEmail ?? user.email);
   const email = nameIdValue;
+  const isOwnIdentity = !input.identityEmail || input.identityEmail.toLowerCase() === user.email.toLowerCase();
+  const fullName = isOwnIdentity ? user.name.trim() : '';
+  const [firstName = '', ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
+  const nameAttributes = fullName
+    ? [['display_name', fullName], ['first_name', firstName], ['last_name', lastNameParts.join(' ')]]
+        .filter(([, value]) => value)
+        .map(([name, value]) => `
+      <saml:Attribute Name="${name}" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${escapeHtmlAttr(value)}</saml:AttributeValue>
+      </saml:Attribute>`)
+        .join('')
+    : '';
 
   const responseInResponseToAttr = samlRequest
     ? `InResponseTo="${escapeHtmlAttr(samlRequest.inResponseTo)}"`
@@ -234,6 +246,9 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
       <saml:Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
         <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
       </saml:Attribute>
+      <saml:Attribute Name="uid" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
+      </saml:Attribute>${nameAttributes}
     </saml:AttributeStatement>
   </saml:Assertion>
 </samlp:Response>`;

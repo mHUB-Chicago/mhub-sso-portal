@@ -17,7 +17,7 @@ import { Loader2, ExternalLink, FileText, Download, AlertTriangle } from 'lucide
 import { useGetUserByIdQuery, useUpdateUserMutation } from '@/store/api/userApi'
 import { useGetPortalAccessTypesQuery } from '@/store/api/syncApi'
 import { LoginAccessBadge } from '@/components/LoginAccessBadge'
-import { hasPortalMembership, loginAccess } from '../../../../../../common/access'
+import { hasCompanyPortalMembership, hasPortalMembership, loginAccess } from '../../../../../../common/access'
 
 export function AdminEditUserPage() {
   const { id } = useParams<{ id: string }>()
@@ -101,7 +101,11 @@ export function AdminEditUserPage() {
   // Same rule login enforces (@common/access). Null until the Portal Access Types load,
   // so it never flashes a wrong "Blocked".
   const access = portalAccessTypesData
-    ? loginAccess(user, hasPortalMembership(new Set(portalAccessTypesData.data), user.primaryMembership, user.addOns))
+    ? loginAccess(
+        user,
+        hasPortalMembership(new Set(portalAccessTypesData.data), user.primaryMembership, user.addOns)
+          || hasCompanyPortalMembership(new Set(portalAccessTypesData.data), company),
+      )
     : null
   const isInherited = user.memberSource === 'membership'
 

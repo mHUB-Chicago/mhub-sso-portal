@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canLogIn, hasPortalMembership, loginAccess } from "@common/access";
+import { canLogIn, hasCompanyPortalMembership, hasPortalMembership, loginAccess } from "@common/access";
 
 // The shared login rule (@common/access) drives both login and the admin screens. These
 // pin it to the rule login used before it was shared, so the refactor changed nothing.
@@ -40,6 +40,18 @@ describe("hasPortalMembership — same matching as the backend's hasPortalAccess
     expect(hasPortalMembership(PORTAL, "Parking, paid for by member", "[]")).toBe(false);
     expect(hasPortalMembership(PORTAL, null, null)).toBe(false);
     expect(hasPortalMembership(PORTAL, null, "not json")).toBe(false);
+  });
+});
+
+describe("hasCompanyPortalMembership", () => {
+  it("is true for an active company with a portal-type membership, trimmed", () => {
+    expect(hasCompanyPortalMembership(PORTAL, { active: true, membershipTypes: ["Garage - Small "] })).toBe(true);
+  });
+  it("is false for an inactive company, a non-portal membership, or no company", () => {
+    expect(hasCompanyPortalMembership(PORTAL, { active: false, membershipTypes: ["Garage - Small"] })).toBe(false);
+    expect(hasCompanyPortalMembership(PORTAL, { active: true, membershipTypes: ["mHUB Community"] })).toBe(false);
+    expect(hasCompanyPortalMembership(PORTAL, { active: true, membershipTypes: [] })).toBe(false);
+    expect(hasCompanyPortalMembership(PORTAL, null)).toBe(false);
   });
 });
 

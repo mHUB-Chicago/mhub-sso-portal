@@ -1,0 +1,53 @@
+
+ </div>
+<!-- <div class="portal-footer">-->
+<!--    <p class="footer-text">Powered By <a href="http://peoplevine.com" target="_blank">PeopleVine</a></p>-->
+<!--</div><!-- // .nav-footer -->
+    </div>
+    
+    
+    <!-- ==================== Load Portal V2 JS ==================== -->
+ 
+       <script type="text/javascript">
+        $(document).ready(function () {
+            $('#sidebarCollapse').on('click', function () {
+                $('#sidebar').toggleClass('active');
+            });
+        });
+    </script>
+<script>
+      $("#booking-button-cancel").on("click", function(e) {
+          e.preventDefault();
+      
+          // the rest of your code ...
+      });
+      $("#booking-button-reschedule").on("click", function(e) {
+          e.preventDefault();
+      
+          // the rest of your code ...
+      });
+    </script>
+    <!--Added for SLS Printer-->
+    <script>
+      if (curPath == 'directory_profile.aspx' && curObj.business_no == 5312) {
+        var script = document.createElement('script');
+        script.src = 'https://mhub.makeros.com/js/projectwidget.js';
+        document.head.appendChild(script);
+      }
+    </script>
+    <script type="text/javascript" src="https://peoplevine.blob.core.windows.net/media/397/scripts/register_business.js"></script>
+    <script>
+       if(curObj.survey_no == "3928") {
+         $("#label_field_17369_36894").append("<a href='https://peoplevine.blob.core.windows.net/media/192/js/ViewerJS/index.html#https://peoplevine.blob.core.windows.net/media/397/agreement2018Membership_Agreement_12_1_2018_FINAL_with_code_of_conduct_vf.pdf' target='_blank'>Membership Agreement Here</a>")
+       }
+    </script>
+    
+    <!--Mentor Filter-->
+    <script src="https://peoplevine.blob.core.windows.net/media/361/portal/v2/assets/pv-portal.min.js"></script>
+    <script src="https://peoplevine.blob.core.windows.net/media/361/portal/v2/assets/scripts.min.js"></script>
+    <script src="https://peoplevine.blob.core.windows.net/media/397/js/punch-card.js"></script>
+    <script src="https://peoplevine.blob.core.windows.net/media/397/js/isotope.pkgd.js"></script>
+    <script src="https://peoplevine.blob.core.windows.net/media/397/js/mentor-directory-filtering.js"></script>
+    <script src="https://peoplevine.blob.core.windows.net/media/397/js/add-ons.js"></script>
+    <!--Slick-->
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/slick-carousel/1.8.1/slick.min.js"></script>

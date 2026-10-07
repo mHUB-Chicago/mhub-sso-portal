@@ -39,6 +39,29 @@ const openPeopleVine = async (e: MouseEvent<HTMLAnchorElement>, url: string) => 
   }
 }
 
+const DIGIFABSTER_UPLOAD_URL = 'https://app.digifabster.com/mHUB/widget/upload'
+const DIGIFABSTER_LOGIN_WAIT_MS = 8000
+
+const isDigiFabster = (app: App) => app.name.trim().toLowerCase() === 'digifabster'
+
+const openDigiFabster = (e: MouseEvent<HTMLAnchorElement>, url: string) => {
+  e.preventDefault()
+  const tab = window.open(url, '_blank')
+  if (!tab) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  setTimeout(() => {
+    if (!tab.closed) tab.location.href = DIGIFABSTER_UPLOAD_URL
+  }, DIGIFABSTER_LOGIN_WAIT_MS)
+}
+
+const getAppClickHandler = (app: App) => {
+  if (app.url.startsWith(PEOPLEVINE_ORIGIN)) return (e: MouseEvent<HTMLAnchorElement>) => openPeopleVine(e, app.url)
+  if (isDigiFabster(app)) return (e: MouseEvent<HTMLAnchorElement>) => openDigiFabster(e, app.url)
+  return undefined
+}
+
 export function DashboardPage() {
   const { data, isLoading } = useGetMeQuery()
 
@@ -63,7 +86,7 @@ export function DashboardPage() {
             href={app.url}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={app.url.startsWith(PEOPLEVINE_ORIGIN) ? (e) => openPeopleVine(e, app.url) : undefined}
+            onClick={getAppClickHandler(app)}
             className="block"
           >
             <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-brand/30">
