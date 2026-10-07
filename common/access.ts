@@ -18,6 +18,14 @@ export const hasPortalMembership = (
   return candidates.some(name => portalAccessTypes.has(name));
 };
 
+export type AccessCompany = { active: boolean; membershipTypes: readonly string[] };
+
+export const hasCompanyPortalMembership = (
+  portalAccessTypes: ReadonlySet<string>,
+  company: AccessCompany | null | undefined,
+): boolean =>
+  !!company && company.active && company.membershipTypes.some(name => portalAccessTypes.has(name.trim()));
+
 type AccessUser = { role: string; accountStatus: string; active: boolean };
 
 // Admins always get in. Onboarding (pending_membership) users get in to reach the payment

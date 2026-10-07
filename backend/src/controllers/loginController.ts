@@ -3,7 +3,7 @@ import { deleteCookie } from "hono/cookie";
 import { AppType, JsonInput } from "..";
 import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, LogoutResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
 import { getUserByEmail, getUserById, updateUser } from "@/services/userService";
-import { hasPortalAccess } from "@/services/peopleVineService";
+import { hasCompanyPortalAccess, hasPortalAccess } from "@/services/peopleVineService";
 import { createSession, revokeSession } from "@/services/sessionService";
 import { createLoginRequest, LoginError, verifyLoginRequest } from "@/services/loginRequestService";
 import { FailedResponseSchema } from "@common/schemas/response";
@@ -43,7 +43,9 @@ const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendin
 // and the very next request would bounce them out.
 const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean> => {
   if (canLogIn(user, false)) return false; // admins/onboarding get in without a membership lookup
-  return !canLogIn(user, await hasPortalAccess(c, user.primaryMembership, user.addOns));
+  if (!canLogIn(user, true)) return true;
+  if (await hasPortalAccess(c, user.primaryMembership, user.addOns)) return false;
+  return !(await hasCompanyPortalAccess(c, user.companyId));
 };
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
@@ -145,6 +147,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       throw new Error("User not found");
     }
     if (await isInactiveUser(c, user)) {
+      console.error(`handleVerifyLogin: no portal access for user ${user.id}`);
       throw new Error("No portal access");
     }
     // Paid but not yet active: Payment & Agreement is done, but mHUB staff still have to

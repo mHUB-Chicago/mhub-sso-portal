@@ -62,8 +62,12 @@ const attachSubscriptionStatus = async (prisma: PrismaClient, companies: Company
   const companyNameById = new Map(companies.map(co => [co.id, co.name]));
   const matchedStatusByCompanyId = new Map<string, string>();
   const fallbackStatusByCompanyId = new Map<string, string>();
+  const activeStatusByCompanyId = new Map<string, string>();
   for (const sub of subs) {
     if (!sub.companyId) continue;
+    if (sub.status.trim().toLowerCase() === 'active' && !activeStatusByCompanyId.has(sub.companyId)) {
+      activeStatusByCompanyId.set(sub.companyId, sub.status);
+    }
     if (!fallbackStatusByCompanyId.has(sub.companyId)) {
       fallbackStatusByCompanyId.set(sub.companyId, sub.status);
     }
@@ -74,7 +78,7 @@ const attachSubscriptionStatus = async (prisma: PrismaClient, companies: Company
   }
   return companies.map(co => ({
     ...co,
-    subscriptionStatus: matchedStatusByCompanyId.get(co.id) ?? fallbackStatusByCompanyId.get(co.id) ?? null,
+    subscriptionStatus: activeStatusByCompanyId.get(co.id) ?? matchedStatusByCompanyId.get(co.id) ?? fallbackStatusByCompanyId.get(co.id) ?? null,
   }));
 };
 

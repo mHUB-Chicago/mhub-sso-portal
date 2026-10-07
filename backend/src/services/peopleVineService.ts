@@ -3,6 +3,7 @@ import { serializeSyncLogs } from '@/utils/syncLogs';
 import { Company, PeopleVineToken, PeopleVineTokenType, PrismaClient, Role, User } from '@prisma/client';
 import { createCompany, deactivateCompany, updateCompany } from './companyService';
 import { createUser, deactivateUser, updateUser } from './userService';
+import { hasCompanyPortalMembership } from '@common/access';
 export const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) => Promise<void>, afterBatch?: () => Promise<void>): Promise<void> => {
     for (let i = 0; i < items.length; i += limit) {
         await Promise.all(items.slice(i, i + limit).map(fn));
@@ -67,6 +68,21 @@ export const hasPortalAccess = async (c: Context, primaryMembership: string | nu
         return false;
     const count = await prisma.portalAccessType.count({ where: { name: { in: candidates } } });
     return count > 0;
+};
+export const hasCompanyPortalAccess = async (c: Context, companyId: string): Promise<boolean> => {
+    const prisma: PrismaClient = c.get('db');
+    const [company, portalTypes] = await Promise.all([
+        prisma.company.findUnique({ where: { id: companyId }, select: { active: true, membershipTypes: true } }),
+        prisma.portalAccessType.findMany({ select: { name: true } }),
+    ]);
+    if (!company)
+        return false;
+    let membershipTypes: string[] = [];
+    try {
+        membershipTypes = JSON.parse(company.membershipTypes || '[]') as string[];
+    }
+    catch { }
+    return hasCompanyPortalMembership(new Set(portalTypes.map(t => t.name)), { active: company.active, membershipTypes });
 };
 export interface RequestOptions {
     tokenType: PeopleVineTokenType;

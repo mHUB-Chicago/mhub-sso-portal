@@ -97,6 +97,9 @@ export type IssueSamlResponseInput = {
   // their parent Company's PV identity instead of their own (see
   // samlController.ts's resolveSamlIdentityEmail). Defaults to user.email.
   identityEmail?: string;
+  // Deliver the response through this page on the SP's own site (in the URL fragment) instead
+  // of a cross-site POST — see services/peopleVineHandoff.ts. Such responses expire sooner.
+  handoffUrl?: string | null;
   idp: {
     entityId: string;
     certPem: string;
@@ -146,7 +149,7 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   const { user, serviceProvider, samlRequest } = input;
   const now = new Date();
   const isIdpInitiated = samlRequest === null;
-  const notOnOrAfter = addMinutes(now, isIdpInitiated ? 5 : 60).toISOString();
+  const notOnOrAfter = addMinutes(now, isIdpInitiated || input.handoffUrl ? 5 : 60).toISOString();
   // Backdated to tolerate clock skew — the form auto-submits within milliseconds, so an
   // SP whose clock is even slightly behind ours would otherwise see the assertion as
   // "not yet valid". Expiry (notOnOrAfter) is still measured from `now`.
@@ -166,6 +169,18 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
   // XML-escaped — interpolated into element text below.
   const nameIdValue = escapeHtmlAttr(input.identityEmail ?? user.email);
   const email = nameIdValue;
+  const isOwnIdentity = !input.identityEmail || input.identityEmail.toLowerCase() === user.email.toLowerCase();
+  const fullName = isOwnIdentity ? user.name.trim() : '';
+  const [firstName = '', ...lastNameParts] = fullName.split(/\s+/).filter(Boolean);
+  const nameAttributes = fullName
+    ? [['display_name', fullName], ['first_name', firstName], ['last_name', lastNameParts.join(' ')]]
+        .filter(([, value]) => value)
+        .map(([name, value]) => `
+      <saml:Attribute Name="${name}" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${escapeHtmlAttr(value)}</saml:AttributeValue>
+      </saml:Attribute>`)
+        .join('')
+    : '';
 
   const responseInResponseToAttr = samlRequest
     ? `InResponseTo="${escapeHtmlAttr(samlRequest.inResponseTo)}"`
@@ -231,6 +246,9 @@ function buildUnsignedSamlResponseXml(input: IssueSamlResponseInput) {
       <saml:Attribute Name="http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
         <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
       </saml:Attribute>
+      <saml:Attribute Name="uid" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml:AttributeValue xsi:type="xs:string">${email}</saml:AttributeValue>
+      </saml:Attribute>${nameAttributes}
     </saml:AttributeStatement>
   </saml:Assertion>
 </samlp:Response>`;
@@ -305,6 +323,8 @@ async function signXmlByReference(opts: {
   return new xmldom.XMLSerializer().serializeToString(signedDoc);
 }
 
+const LOADER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="margin: auto; background: transparent; display: block; shape-rendering: auto;" width="200px" height="200px" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid"><circle cx="84" cy="50" r="10" fill="#0a0a0a"><animate attributeName="r" repeatCount="indefinite" dur="0.25s" calcMode="spline" keyTimes="0;1" values="10;0" keySplines="0 0.5 0.5 1" begin="0s"></animate><animate attributeName="fill" repeatCount="indefinite" dur="1s" calcMode="discrete" keyTimes="0;0.25;0.5;0.75;1" values="#0a0a0a;#929292;#545454;#292929;#0a0a0a" begin="0s"></animate></circle><circle cx="16" cy="50" r="10" fill="#0a0a0a"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="0s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="0s"></animate></circle><circle cx="50" cy="50" r="10" fill="#292929"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.25s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.25s"></animate></circle><circle cx="84" cy="50" r="10" fill="#545454"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.5s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.5s"></animate></circle><circle cx="16" cy="50" r="10" fill="#929292"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.75s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.75s"></animate></circle></svg>`;
+
 function buildHttpPostFormHtml(acsUrl: string, samlResponseXmlSigned: string, relayState?: string | null) {
   const samlResponseB64 = base64EncodeUtf8(samlResponseXmlSigned);
 
@@ -320,7 +340,7 @@ function buildHttpPostFormHtml(acsUrl: string, samlResponseXmlSigned: string, re
     <title>SSO Redirect</title>
   </head>
   <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#ffffff;">
-    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="margin: auto; background: transparent; display: block; shape-rendering: auto;" width="200px" height="200px" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid"><circle cx="84" cy="50" r="10" fill="#0a0a0a"><animate attributeName="r" repeatCount="indefinite" dur="0.25s" calcMode="spline" keyTimes="0;1" values="10;0" keySplines="0 0.5 0.5 1" begin="0s"></animate><animate attributeName="fill" repeatCount="indefinite" dur="1s" calcMode="discrete" keyTimes="0;0.25;0.5;0.75;1" values="#0a0a0a;#929292;#545454;#292929;#0a0a0a" begin="0s"></animate></circle><circle cx="16" cy="50" r="10" fill="#0a0a0a"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="0s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="0s"></animate></circle><circle cx="50" cy="50" r="10" fill="#292929"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.25s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.25s"></animate></circle><circle cx="84" cy="50" r="10" fill="#545454"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.5s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.5s"></animate></circle><circle cx="16" cy="50" r="10" fill="#929292"><animate attributeName="r" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="0;0;10;10;10" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.75s"></animate><animate attributeName="cx" repeatCount="indefinite" dur="1s" calcMode="spline" keyTimes="0;0.25;0.5;0.75;1" values="16;16;16;50;84" keySplines="0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1;0 0.5 0.5 1" begin="-0.75s"></animate></circle></svg>
+    ${LOADER_SVG}
     <form method="post" action="${escapeHtmlAttr(acsUrl)}">
       <input type="hidden" name="SAMLResponse" value="${escapeHtmlAttr(samlResponseB64)}" />
       ${relayStateInput}
@@ -333,6 +353,42 @@ function buildHttpPostFormHtml(acsUrl: string, samlResponseXmlSigned: string, re
         form.submit();
       });
     </script>
+  </body>
+</html>`;
+}
+
+// The SAML Response goes in the URL fragment of the SP's own page, which is never sent to a
+// server; a script there POSTs it to the ACS from the SP's origin. Without JS it falls back
+// to the plain POST.
+export function buildFragmentHandoffHtml(handoffUrl: string, acsUrl: string, samlResponseXmlSigned: string, relayState?: string | null) {
+  const samlResponseB64 = base64EncodeUtf8(samlResponseXmlSigned);
+  const target = `${handoffUrl}#mhub-saml=${encodeURIComponent(samlResponseB64)}`
+    + (relayState != null ? `&mhub-rs=${encodeURIComponent(relayState)}` : "");
+  // JSON-encoded, with "<" escaped so nothing in it can close the <script> (the encoded parts
+  // can't contain one; this also covers handoffUrl).
+  const targetJs = JSON.stringify(target).replace(/</g, "\\u003c");
+  const relayStateInput = relayState != null
+    ? `<input type="hidden" name="RelayState" value="${escapeHtmlAttr(relayState)}" />`
+    : "";
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>SSO Redirect</title>
+  </head>
+  <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#ffffff;">
+    ${LOADER_SVG}
+    <noscript>
+      <form method="post" action="${escapeHtmlAttr(acsUrl)}">
+        <input type="hidden" name="SAMLResponse" value="${escapeHtmlAttr(samlResponseB64)}" />
+        ${relayStateInput}
+        <button type="submit">Continue</button>
+      </form>
+    </noscript>
+    <script>location.replace(${targetJs});</script>
   </body>
 </html>`;
 }
@@ -373,7 +429,9 @@ export async function issueSamlResponse(input: IssueSamlResponseInput) {
     });
   }
 
-  const html = buildHttpPostFormHtml(destination, signedXml, input.relayState);
+  const html = input.handoffUrl
+    ? buildFragmentHandoffHtml(input.handoffUrl, destination, signedXml, input.relayState)
+    : buildHttpPostFormHtml(destination, signedXml, input.relayState);
 
   return {
     acsUrl: destination,

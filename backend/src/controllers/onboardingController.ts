@@ -79,8 +79,12 @@ const ONBOARDING_PAYMENT_FORM_URL_DEFAULT = "https://member.mhubchicago.com/form
 export const PEOPLEVINE_SP_ENTITY_ID = "https://member.mhubchicago.com/";
 // Where a regular (non-onboarding) member should land in PV after SSO. PV ignores
 // RelayState and instead lands on the last PV page viewed in that browser, so the login
-// page loads this page first (see peopleVineLandingUrl, handleStartLogin).
-export const PEOPLEVINE_HOME_URL = "https://member.mhubchicago.com/home";
+// page loads this page first (see peopleVineLandingUrl, handleStartLogin). The site root,
+// not /home: landing on "/" makes PV re-pick the member page style (→ /home), while landing
+// straight on /home keeps the public style picked during the logged-out visit, so members
+// briefly saw a broken-CSS page until the Portal Homepage script reloaded it (verified
+// against production PV 2026-10-06).
+export const PEOPLEVINE_HOME_URL = "https://member.mhubchicago.com/";
 
 export const getOnboardingPaymentFormUrl = (c: Context<AppType>): string =>
   (c.env.ONBOARDING_PAYMENT_FORM_URL as string | undefined) ?? ONBOARDING_PAYMENT_FORM_URL_DEFAULT;

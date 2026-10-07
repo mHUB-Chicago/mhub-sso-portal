@@ -52,7 +52,12 @@ export function AdminUsersPage() {
     [portalAccessTypesData]
   )
 
-  const userColumns = useMemo(() => createUserColumns(portalAccessTypeSet), [portalAccessTypeSet])
+  const companyAccessById = useMemo(
+    () => new Map((companiesData?.data?.companies ?? []).map(c => [c.id, { active: c.active, membershipTypes: c.membershipTypes }])),
+    [companiesData]
+  )
+
+  const userColumns = useMemo(() => createUserColumns(portalAccessTypeSet, companyAccessById), [portalAccessTypeSet, companyAccessById])
 
   const companyMap = useMemo(() => {
     if (!companiesData?.data?.companies) return new Map<string, string>()

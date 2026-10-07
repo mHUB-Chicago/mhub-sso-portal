@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import type { MouseEvent } from 'react'
 import { toast } from 'sonner'
 import { openRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
+import { getPeopleVineSsoUrl, PEOPLEVINE_ORIGIN, PEOPLEVINE_ROOT_URL } from '@/utils/peopleVine'
 
 interface App {
   name: string
@@ -12,14 +13,18 @@ interface App {
   url: string
 }
 
-const PEOPLEVINE_ORIGIN = 'https://member.mhubchicago.com'
-const PEOPLEVINE_HOME_URL = `${PEOPLEVINE_ORIGIN}/home`
-
 // PV ignores RelayState and lands on the last PV page viewed in this browser (e.g. the
-// onboarding payment form), so load PV home in the new tab first, then run the SSO there.
+// onboarding payment form). Where PV's SSO script knows this IdP, opening PV's root with the
+// marker logs in and lands on home in one go (see getPeopleVineSsoUrl). Otherwise load PV's
+// root in the new tab first, then run the SSO there.
 const openPeopleVine = async (e: MouseEvent<HTMLAnchorElement>, url: string) => {
   e.preventDefault()
-  const tab = openRedirectTab(PEOPLEVINE_HOME_URL)
+  const ssoUrl = getPeopleVineSsoUrl()
+  if (ssoUrl) {
+    window.open(ssoUrl, '_blank', 'noopener')
+    return
+  }
+  const tab = openRedirectTab(PEOPLEVINE_ROOT_URL)
   if (!tab) {
     window.open(url, '_blank', 'noopener,noreferrer')
     return
@@ -32,6 +37,29 @@ const openPeopleVine = async (e: MouseEvent<HTMLAnchorElement>, url: string) => 
   } finally {
     clearRedirectTab()
   }
+}
+
+const DIGIFABSTER_UPLOAD_URL = 'https://app.digifabster.com/mHUB/widget/upload'
+const DIGIFABSTER_LOGIN_WAIT_MS = 8000
+
+const isDigiFabster = (app: App) => app.name.trim().toLowerCase() === 'digifabster'
+
+const openDigiFabster = (e: MouseEvent<HTMLAnchorElement>, url: string) => {
+  e.preventDefault()
+  const tab = window.open(url, '_blank')
+  if (!tab) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  setTimeout(() => {
+    if (!tab.closed) tab.location.href = DIGIFABSTER_UPLOAD_URL
+  }, DIGIFABSTER_LOGIN_WAIT_MS)
+}
+
+const getAppClickHandler = (app: App) => {
+  if (app.url.startsWith(PEOPLEVINE_ORIGIN)) return (e: MouseEvent<HTMLAnchorElement>) => openPeopleVine(e, app.url)
+  if (isDigiFabster(app)) return (e: MouseEvent<HTMLAnchorElement>) => openDigiFabster(e, app.url)
+  return undefined
 }
 
 export function DashboardPage() {
@@ -58,7 +86,7 @@ export function DashboardPage() {
             href={app.url}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={app.url.startsWith(PEOPLEVINE_ORIGIN) ? (e) => openPeopleVine(e, app.url) : undefined}
+            onClick={getAppClickHandler(app)}
             className="block"
           >
             <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-gray-200 hover:border-brand/30">

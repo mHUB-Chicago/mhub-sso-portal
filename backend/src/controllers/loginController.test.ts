@@ -8,7 +8,7 @@ vi.mock("@/services/userService", () => ({
   getUserById: vi.fn(),
   updateUser: vi.fn(),
 }));
-vi.mock("@/services/peopleVineService", () => ({ hasPortalAccess: vi.fn() }));
+vi.mock("@/services/peopleVineService", () => ({ hasPortalAccess: vi.fn(), hasCompanyPortalAccess: vi.fn() }));
 vi.mock("@/services/sessionService", async (importActual) => ({
   ...(await importActual<typeof import("@/services/sessionService")>()),
   createSession: vi.fn(async () => "session-id"),
@@ -32,7 +32,7 @@ vi.mock("@/controllers/onboardingController", () => ({
 import { handleStartLogin, handleVerifyLogin } from "./loginController";
 import { getActiveSessionById, createSession } from "@/services/sessionService";
 import { getUserByEmail, getUserById } from "@/services/userService";
-import { hasPortalAccess } from "@/services/peopleVineService";
+import { hasCompanyPortalAccess, hasPortalAccess } from "@/services/peopleVineService";
 import { createLoginRequest, verifyLoginRequest } from "@/services/loginRequestService";
 
 const PORTAL_MEMBERSHIP = "Member Plus";
@@ -108,6 +108,52 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.mocked(hasPortalAccess).mockImplementation(async (_c, primaryMembership) => primaryMembership === PORTAL_MEMBERSHIP);
+  vi.mocked(hasCompanyPortalAccess).mockResolvedValue(false);
+});
+
+describe("member whose own card isn't a portal type, under a company that is", () => {
+  const KYLE_LIKE = makeUser({ email: "kyle@example.com", primaryMembership: "mHUB Community" });
+
+  it("gets in through the company's membership", async () => {
+    givenUser(KYLE_LIKE);
+    vi.mocked(hasCompanyPortalAccess).mockResolvedValue(true);
+
+    const res = await verify();
+
+    expect(res.status).toBe(200);
+    expect(hasCompanyPortalAccess).toHaveBeenCalledWith(expect.anything(), KYLE_LIKE.companyId);
+    expect(createSession).toHaveBeenCalled();
+  });
+
+  it("is still blocked when the company doesn't qualify", async () => {
+    givenUser(KYLE_LIKE);
+
+    const res = await verify();
+
+    expect(res.status).toBe(403);
+    expect(res.data.code).toBe("ACCOUNT_INACTIVE");
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it("is still blocked when the user is inactive, without checking the company", async () => {
+    const inactive = makeUser({ primaryMembership: "mHUB Community", active: false, accountStatus: "membership-removed" });
+    givenUser(inactive);
+    vi.mocked(hasCompanyPortalAccess).mockResolvedValue(true);
+
+    const res = await verify();
+
+    expect(res.status).toBe(403);
+    expect(hasCompanyPortalAccess).not.toHaveBeenCalled();
+  });
+
+  it("isn't looked up when the user's own membership already qualifies", async () => {
+    givenUser(makeUser());
+
+    const res = await verify();
+
+    expect(res.status).toBe(200);
+    expect(hasCompanyPortalAccess).not.toHaveBeenCalled();
+  });
 });
 
 describe("Xavier's case: active=false but holding a portal-access membership", () => {
