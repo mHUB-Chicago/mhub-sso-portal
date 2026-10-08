@@ -572,6 +572,18 @@ export const holdsCompanySubMemberCard = (cards: SubMemberCard[], company: SubMe
         return sameCustomer || sameName;
     });
 };
+export type EmailHolder = {
+    peopleVineId: string | null;
+    active: boolean;
+    accountStatus: string;
+};
+export const canAttachByEmail = (holder: EmailHolder, incomingPvId: string, incomingActive: boolean): boolean => {
+    if (!holder.peopleVineId || holder.peopleVineId === incomingPvId)
+        return true;
+    if (holder.accountStatus === 'pending_membership')
+        return true;
+    return incomingActive && !holder.active;
+};
 const buildSubscriptionData = async (c: Context, subscriptions: any[], customerNo?: string): Promise<{
     customers: PeopleVineCustomer[];
     subscriptionInfoMap: Map<string, {
@@ -1963,6 +1975,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         addOns: string[];
         candidateTypes: string[];
     }[] = [];
+    const relinkedUserIds = new Set<string>();
     await runConcurrent(customers, 20, async (customer) => {
         const pvId = customer.id.toString();
         const isSubscriber = correctionActivePVSubscriberIds.has(pvId);
@@ -2002,6 +2015,17 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             if (!pvUserActive && [company, resolvedCompany].some(co => holdsCompanySubMemberCard(cardData.secondaryProviders, co))) {
                 pvUserActive = true;
             }
+        }
+        const linkedToOtherRecord = !!existingUser.peopleVineId && existingUser.peopleVineId !== pvId;
+        if (linkedToOtherRecord && (relinkedUserIds.has(existingUser.id) || !canAttachByEmail(existingUser, pvId, pvUserActive))) {
+            log('warn', `[sync] Skipped PV#${pvId} (${customer.full_name}): email ${customer.email.toLowerCase()} already belongs to ${existingUser.name} (PV#${existingUser.peopleVineId}).`);
+            return;
+        }
+        if (linkedToOtherRecord) {
+            log('warn', `[sync] Relinking ${existingUser.name} (PV#${existingUser.peopleVineId}, inactive) to PV#${pvId} (${customer.full_name}): same email, active membership.`);
+            relinkedUserIds.add(existingUser.id);
+            byPvId.delete(existingUser.peopleVineId!);
+            existingUser.peopleVineId = pvId;
         }
         const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
         const cardBasedPrimary = cardData.primaryCardTitle ?? correctionAnyStatusPrimaryTitle[pvId] ?? null;
@@ -2112,7 +2136,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
             existingUser.cardStatus !== (customer.cardStatus ?? null) ||
             existingUser.memberSource !== memberSource ||
             existingUser.memberSourceCompany !== newMemberSourceCompany;
-        if (!needsUpdate)
+        if (!needsUpdate && !linkedToOtherRecord)
             return;
         const uChanges: {
             field: string;
@@ -2588,7 +2612,8 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     const userMemberSourceCompany = cardDataSync.primaryCardSourceCompanyName ?? associatedCompany.name;
     const userByPvId = await prisma.user.findFirst({ where: { peopleVineId: customer.id.toString() } });
     const userByEmail = await prisma.user.findFirst({ where: { email: customer.email.toLowerCase() } });
-    const associatedUser = userByPvId ?? userByEmail;
+    const emailHeldByOtherRecord = !userByPvId && !!userByEmail && !canAttachByEmail(userByEmail, pvId, userPvActive);
+    const associatedUser = emailHeldByOtherRecord ? null : (userByPvId ?? userByEmail);
     // An onboarding-tagged company record (new_company's PV placeholder for the company
     // itself, see peopleVinePortalService.ts) is a Company only — the person behind it
     // has their own separately tagged PV record and User. Creating a User here too would
@@ -2599,6 +2624,11 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
     }
     else if (associatedUser && associatedUser.role === 'ADMIN') {
         diffRecord.user = { before: null, after: null };
+    }
+    else if (emailHeldByOtherRecord && userByEmail) {
+        const reason = `Email ${userByEmail.email} already belongs to ${userByEmail.name} (PV#${userByEmail.peopleVineId})`;
+        console.warn(`[syncOne] Skipped user for PV#${pvId} (${customer.full_name}): ${reason}.`);
+        diffRecord.user = { before: null, after: { skipped: reason } };
     }
     else if (associatedUser) {
         const needsUpdate = associatedUser.name !== customer.full_name ||
