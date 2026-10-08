@@ -9,7 +9,7 @@ export function NotFoundPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="max-w-md w-full space-y-8 text-center">
         <div>
-          <img src="/logo.png" alt="MHUB Logo" className="h-12 mx-auto mb-8" />
+          <img src="/logo.png" alt="mHUB Logo" className="h-12 mx-auto mb-8" />
         </div>
 
         <div className="space-y-4">

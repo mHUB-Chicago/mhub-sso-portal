@@ -212,7 +212,7 @@ export function LoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="w-full max-w-md text-center">
-          <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />
+          <img src="/logo.png" alt="mHUB Logo" className="h-10 mx-auto mb-8" />
           <h2 className="text-2xl font-semibold mb-3">Thank you!</h2>
           <p className="text-gray-600">
             We've received your payment and agreement. The mHUB team will reach out with next steps once your membership is set up.
@@ -246,7 +246,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />
+          <img src="/logo.png" alt="mHUB Logo" className="h-10 mx-auto mb-8" />
           <h2 className="text-3xl font-bold mb-2">Welcome Back!</h2>
           <p className="text-gray-600 text-base">
             Log in to access your personalized<br />customer portal

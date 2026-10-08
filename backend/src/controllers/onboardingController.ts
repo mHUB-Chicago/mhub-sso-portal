@@ -736,7 +736,7 @@ export const handleApproveOnboardingSubmission = async (c: Context<AppType>) => 
   const response = ApproveOnboardingSubmissionResponseSchema.parse({
     success: true,
     message:
-      "Onboarding submission pushed to PeopleVine — mHub staff still need to assign the requested membership package manually in the PV Control Panel.",
+      "Onboarding submission pushed to PeopleVine — mHUB staff still need to assign the requested membership package manually in the PV Control Panel.",
     data: { submission: toSubmissionDTO(updated) },
   });
   return c.json(response);

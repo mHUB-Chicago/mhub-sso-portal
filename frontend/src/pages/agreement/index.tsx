@@ -143,7 +143,7 @@ export function AgreementPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-10">
       <div className="w-full max-w-xl">
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="MHUB Logo" className="h-10 mx-auto mb-8" />
+          <img src="/logo.png" alt="mHUB Logo" className="h-10 mx-auto mb-8" />
           <div className="flex justify-center mb-4">
             <div className="p-3 bg-brand/10 rounded-full">
               <ShieldCheck className="h-8 w-8 text-brand" />

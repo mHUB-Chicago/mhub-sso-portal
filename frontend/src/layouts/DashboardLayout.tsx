@@ -29,7 +29,7 @@ export function DashboardLayout() {
       <header className="border-b border-gray-100">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center">
-            <img src="/logo.png" alt="MHUB Logo" className="h-8" />
+            <img src="/logo.png" alt="mHUB Logo" className="h-8" />
           </Link>
           <button
             onClick={() => setShowLogoutDialog(true)}

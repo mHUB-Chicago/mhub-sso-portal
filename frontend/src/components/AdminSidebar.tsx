@@ -43,7 +43,7 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
     >
       <div className="p-6 flex-1">
         <div className="mb-12 flex items-center justify-between">
-          <img src="/logo.png" alt="MHUB Logo" className="h-8" />
+          <img src="/logo.png" alt="mHUB Logo" className="h-8" />
           {/* Close button - mobile only */}
           <Button
             variant="ghost"

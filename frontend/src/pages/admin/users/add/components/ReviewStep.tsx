@@ -84,7 +84,7 @@ export const ReviewStep = ({ formData, handleEditStep }: ReviewStepProps) => {
             {formData.mhubShop && (
               <div className="flex items-center space-x-2">
                 <Check className="w-4 h-4 text-green-600" />
-                <span>Mhub Shop (Wordpress)</span>
+                <span>mHUB Shop (WordPress)</span>
               </div>
             )}
             {formData.peoplevine && (

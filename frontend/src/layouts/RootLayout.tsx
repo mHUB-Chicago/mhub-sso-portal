@@ -51,7 +51,7 @@ export function RootLayout() {
       <header className="border-b">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center">
-            <img src="/logo.png" alt="MHUB Logo" className="h-8" />
+            <img src="/logo.png" alt="mHUB Logo" className="h-8" />
           </Link>
           <nav className="flex items-center space-x-4">
             <Link to="/" className="text-sm font-medium hover:text-primary">

@@ -67,10 +67,10 @@ export const AccessLevelStep = ({ formData, handleInputChange }: AccessLevelStep
             />
             <div className="flex-1">
               <Label htmlFor="mhubShop" className="text-base font-medium cursor-pointer">
-                Mhub Shop (Wordpress)
+                mHUB Shop (WordPress)
               </Label>
               <p className="text-sm text-gray-600 mt-1">
-                Permission to manage products, orders, and customer data on the Mhub e-commerce platform.
+                Permission to manage products, orders, and customer data on the mHUB e-commerce platform.
               </p>
             </div>
           </div>

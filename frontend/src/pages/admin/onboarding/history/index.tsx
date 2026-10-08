@@ -509,7 +509,7 @@ export function AdminOnboardingHistoryPage() {
                 </p>
                 <p className="text-sm text-gray-500 mt-1">
                   {confirm.type === "approve" &&
-                    "This registers the member in PeopleVine with their company info attached. PeopleVine has no API to assign a membership — mHub staff still need to do that manually afterward."}
+                    "This registers the member in PeopleVine with their company info attached. PeopleVine has no API to assign a membership — mHUB staff still need to do that manually afterward."}
                   {confirm.type === "disapprove" &&
                     "Marks this submission as disapproved and removes it from Pending Review. Nothing is sent to PeopleVine."}
                   {confirm.type === "reactivate" &&
