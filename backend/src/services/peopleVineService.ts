@@ -486,12 +486,16 @@ export const buildMembershipCardData = (cards: any[]): Record<string, {
     secondaryProviders: {
         title: string;
         providingCompanyName: string | null;
+        providingCustomerId: string | null;
     }[];
 }> => {
     const cardCompanyNameById = new Map<number, string | null>();
+    const cardCustomerIdById = new Map<number, string | null>();
     for (const card of cards) {
-        if (card.id != null)
+        if (card.id != null) {
             cardCompanyNameById.set(card.id, (card.customer_company_name ?? '').trim() || null);
+            cardCustomerIdById.set(card.id, card.customer_id?.toString() ?? null);
+        }
     }
     const map: Record<string, {
         ownTypes: string[];
@@ -501,6 +505,7 @@ export const buildMembershipCardData = (cards: any[]): Record<string, {
         secondaryProviders: {
             title: string;
             providingCompanyName: string | null;
+            providingCustomerId: string | null;
         }[];
     }> = {};
     for (const card of cards) {
@@ -519,7 +524,11 @@ export const buildMembershipCardData = (cards: any[]): Record<string, {
                 entry.ownTypes.push(title);
         }
         else {
-            entry.secondaryProviders.push({ title, providingCompanyName: cardCompanyNameById.get(parentCardId) ?? null });
+            entry.secondaryProviders.push({
+                title,
+                providingCompanyName: cardCompanyNameById.get(parentCardId) ?? null,
+                providingCustomerId: cardCustomerIdById.get(parentCardId) ?? null,
+            });
         }
         if (card.primary === true) {
             entry.primaryCardTitle = title;
@@ -534,6 +543,34 @@ export const buildMembershipCardData = (cards: any[]): Record<string, {
         }
     }
     return map;
+};
+export type SubMemberCard = {
+    title: string;
+    providingCompanyName: string | null;
+    providingCustomerId?: string | null;
+};
+export type SubMemberCompany = {
+    name: string;
+    peopleVineId: string | null;
+    active: boolean;
+    membershipTypes: string;
+};
+export const holdsCompanySubMemberCard = (cards: SubMemberCard[], company: SubMemberCompany): boolean => {
+    if (company.active === false)
+        return false;
+    let companyTypes: string[] = [];
+    try {
+        companyTypes = (JSON.parse(company.membershipTypes || '[]') as string[]).map(t => t.trim());
+    }
+    catch { }
+    const companyKey = normCompanyKey(company.name);
+    return cards.some(card => {
+        if (!companyTypes.includes(card.title.trim()))
+            return false;
+        const sameCustomer = !!card.providingCustomerId && card.providingCustomerId === company.peopleVineId;
+        const sameName = !!card.providingCompanyName && normCompanyKey(card.providingCompanyName) === companyKey;
+        return sameCustomer || sameName;
+    });
 };
 const buildSubscriptionData = async (c: Context, subscriptions: any[], customerNo?: string): Promise<{
     customers: PeopleVineCustomer[];
@@ -1117,6 +1154,12 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         const types = JSON.parse(co.membershipTypes || '[]') as string[];
         return types.some(t => (portalTypeSet.has(t) || primaryTypeSet.has(t)) && !freeMemberExclusionSet.has(t));
     };
+    const companyBlockedByExclusionOnly = (co: {
+        membershipTypes: string;
+    }): boolean => {
+        const types = JSON.parse(co.membershipTypes || '[]') as string[];
+        return !companyQualifiesForFreeMember(co) && types.some(t => (portalTypeSet.has(t) || primaryTypeSet.has(t)) && freeMemberExclusionSet.has(t));
+    };
     await flush(70, 'Syncing users');
     log('info', 'Syncing users');
     const auditUsersCreated: {
@@ -1195,9 +1238,16 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
                 companiesByNameMap.set(companyKey, company);
             }
         }
-        const pvUserActive = (customer.pvActive ?? true) && (isMember
+        const subscriptionBasedActive = (customer.pvActive ?? true) && (isMember
             ? companyQualifiesForFreeMember(company)
             : isSubscriber);
+        const keepsActiveUntilCardCheck = !subscriptionBasedActive &&
+            isMember &&
+            (customer.pvActive ?? true) &&
+            company.active &&
+            existingUser?.active === true &&
+            companyBlockedByExclusionOnly(company);
+        const pvUserActive = subscriptionBasedActive || keepsActiveUntilCardCheck;
         const memberSource = (isSubscriber || attemptedPVSubscriberIds.has(pvId)) ? 'subscription' : 'membership';
         const ownMembershipTypesJson = JSON.stringify(individualMembershipTypes[pvId] ?? []);
         const newPrimary = getPrimaryType({ membershipTypes: ownMembershipTypesJson });
@@ -1949,6 +1999,9 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
                     break;
                 }
             }
+            if (!pvUserActive && [company, resolvedCompany].some(co => holdsCompanySubMemberCard(cardData.secondaryProviders, co))) {
+                pvUserActive = true;
+            }
         }
         const ownMembershipTypesJson = JSON.stringify(correctionIndividualMembershipTypes[pvId] ?? []);
         const cardBasedPrimary = cardData.primaryCardTitle ?? correctionAnyStatusPrimaryTitle[pvId] ?? null;
@@ -2509,6 +2562,9 @@ export const syncOne = async (c: Context, peopleVineId: number, webhookLogId?: s
                 userPvActive = true;
                 break;
             }
+        }
+        if (!userPvActive && holdsCompanySubMemberCard(cardDataSync.secondaryProviders, associatedCompany)) {
+            userPvActive = true;
         }
     }
     // A free/non-rep member's own PV record has no subscription of their own, so `membershipType`
