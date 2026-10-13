@@ -16,11 +16,30 @@ export const runConcurrent = async <T>(items: T[], limit: number, fn: (item: T) 
 // ends up getting matched inconsistently (or re-created as a duplicate). Always key/look up
 // company-name maps through this.
 export const normCompanyKey = (name: string): string => name.trim().toLowerCase();
+export type NamedCompany = {
+    active: boolean;
+    peopleVineId: string | null;
+};
+export const replacesCompanyWithSameName = (existing: NamedCompany, candidate: NamedCompany): boolean => {
+    if (existing.active !== candidate.active)
+        return candidate.active;
+    return !existing.peopleVineId && !!candidate.peopleVineId;
+};
+export type MembershipStanding = {
+    isSubscriber: boolean;
+    isMember: boolean;
+    companyQualifiesForFreeMember: boolean;
+};
+export const hasActiveMembershipStanding = (standing: MembershipStanding): boolean => {
+    if (standing.isSubscriber)
+        return true;
+    return standing.isMember && standing.companyQualifiesForFreeMember;
+};
 // syncOne looks companies up one at a time via direct DB queries (no in-memory map like the bulk
 // sync phases), so it needs its own case-insensitive lookup. Non-personal companies are preferred
 // when a name collides with both a personal and a non-personal row.
 const findCompanyByNameCI = async (prisma: PrismaClient, name: string): Promise<Company | null> => {
-    const rows = await prisma.$queryRaw<any[]>`SELECT * FROM "Company" WHERE LOWER(TRIM(name)) = LOWER(TRIM(${name})) ORDER BY isPersonal ASC LIMIT 1`;
+    const rows = await prisma.$queryRaw<any[]>`SELECT * FROM "Company" WHERE LOWER(TRIM(name)) = LOWER(TRIM(${name})) ORDER BY isPersonal ASC, active DESC LIMIT 1`;
     if (rows.length === 0) return null;
     const row = rows[0];
     return { ...row, active: Boolean(row.active), isPersonal: Boolean(row.isPersonal) } as Company;
@@ -1102,7 +1121,7 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
         const existing = companiesByNameMap.get(key);
         if (existing) {
             log('warn', `[sync] Duplicate company name: "${co.name}" — IDs ${existing.id} and ${co.id}.`);
-            if (!existing.peopleVineId && co.peopleVineId) {
+            if (replacesCompanyWithSameName(existing, co)) {
                 companiesByNameMap.set(key, co);
             }
         }
@@ -1250,9 +1269,11 @@ export const syncPhaseUsers = async (c: Context, sessionId?: string, startPage =
                 companiesByNameMap.set(companyKey, company);
             }
         }
-        const subscriptionBasedActive = (customer.pvActive ?? true) && (isMember
-            ? companyQualifiesForFreeMember(company)
-            : isSubscriber);
+        const subscriptionBasedActive = (customer.pvActive ?? true) && hasActiveMembershipStanding({
+            isSubscriber,
+            isMember,
+            companyQualifiesForFreeMember: companyQualifiesForFreeMember(company),
+        });
         const keepsActiveUntilCardCheck = !subscriptionBasedActive &&
             isMember &&
             (customer.pvActive ?? true) &&
@@ -1882,7 +1903,7 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         const key = normCompanyKey(co.name);
         const existing = companiesByNameMap.get(key);
         if (existing) {
-            if (!existing.peopleVineId && co.peopleVineId)
+            if (replacesCompanyWithSameName(existing, co))
                 companiesByNameMap.set(key, co);
         }
         else {
@@ -2001,9 +2022,11 @@ export const syncPhaseCorrectionUsers = async (c: Context, sessionId?: string, s
         const resolvedCompany = (sponsorCompany && !sponsorCompany.isPersonal) ? sponsorCompany : company;
         const ownCompanyNameLower = company.name.trim().toLowerCase();
         const externalProviders = cardData.secondaryProviders.filter(sp => sp.providingCompanyName && sp.providingCompanyName.trim().toLowerCase() !== ownCompanyNameLower);
-        let pvUserActive = (customer.pvActive ?? true) && (isMember
-            ? companyQualifiesForFreeMember(company)
-            : isSubscriber);
+        let pvUserActive = (customer.pvActive ?? true) && hasActiveMembershipStanding({
+            isSubscriber,
+            isMember,
+            companyQualifiesForFreeMember: companyQualifiesForFreeMember(company),
+        });
         if (!pvUserActive && (customer.pvActive ?? true)) {
             for (const sp of externalProviders) {
                 const sponsor = companiesByNameMap.get(normCompanyKey(sp.providingCompanyName!));
