@@ -19,10 +19,21 @@ export const normCompanyKey = (name: string): string => name.trim().toLowerCase(
 export type NamedCompany = {
     active: boolean;
     peopleVineId: string | null;
+    membershipTypes: string;
+};
+const hasMembershipTypes = (company: NamedCompany): boolean => {
+    try {
+        return (JSON.parse(company.membershipTypes || '[]') as string[]).length > 0;
+    }
+    catch {
+        return false;
+    }
 };
 export const replacesCompanyWithSameName = (existing: NamedCompany, candidate: NamedCompany): boolean => {
     if (existing.active !== candidate.active)
         return candidate.active;
+    if (hasMembershipTypes(existing) !== hasMembershipTypes(candidate))
+        return hasMembershipTypes(candidate);
     return !existing.peopleVineId && !!candidate.peopleVineId;
 };
 export type MembershipStanding = {
@@ -39,7 +50,7 @@ export const hasActiveMembershipStanding = (standing: MembershipStanding): boole
 // sync phases), so it needs its own case-insensitive lookup. Non-personal companies are preferred
 // when a name collides with both a personal and a non-personal row.
 const findCompanyByNameCI = async (prisma: PrismaClient, name: string): Promise<Company | null> => {
-    const rows = await prisma.$queryRaw<any[]>`SELECT * FROM "Company" WHERE LOWER(TRIM(name)) = LOWER(TRIM(${name})) ORDER BY isPersonal ASC, active DESC LIMIT 1`;
+    const rows = await prisma.$queryRaw<any[]>`SELECT * FROM "Company" WHERE LOWER(TRIM(name)) = LOWER(TRIM(${name})) ORDER BY isPersonal ASC, active DESC, (COALESCE(membershipTypes, '[]') <> '[]') DESC LIMIT 1`;
     if (rows.length === 0) return null;
     const row = rows[0];
     return { ...row, active: Boolean(row.active), isPersonal: Boolean(row.isPersonal) } as Company;
