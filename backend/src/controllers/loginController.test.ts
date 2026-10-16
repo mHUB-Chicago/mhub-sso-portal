@@ -196,14 +196,15 @@ describe("inactive member without a portal-access membership", () => {
   });
 });
 
-it("an unknown email still gets a fake request_id, so account status isn't revealed", async () => {
+it("an unknown email is told it isn't recognized, with who to contact", async () => {
   vi.mocked(getUserByEmail).mockResolvedValue(null);
 
   const res = await start("nobody@example.com");
 
   expect(createLoginRequest).not.toHaveBeenCalled();
-  expect(res.data.success).toBe(true);
-  expect(res.data.data.request_id).not.toBe("real-request-id");
+  expect(res.status).toBe(404);
+  expect(res.data).toMatchObject({ success: false, code: "EMAIL_NOT_RECOGNIZED" });
+  expect(res.data.message).toContain("Joe@mhub.org");
 });
 
 // The invariant the bug broke: anyone login hands a session to must be accepted by the

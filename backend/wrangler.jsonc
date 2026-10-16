@@ -34,6 +34,13 @@
           }
         ]
       },
+      "ratelimits": [
+        {
+          "name": "LOGIN_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": { "limit": 20, "period": 60 }
+        }
+      ],
       "triggers": {
         "crons": [
           "0 6 * * *",
@@ -91,6 +98,13 @@
           }
         ]
       },
+      "ratelimits": [
+        {
+          "name": "LOGIN_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 20, "period": 60 }
+        }
+      ],
       "triggers": {
         "crons": ["0 5 * * *", "0 6 * * *", "*/5 * * * *"]
       },

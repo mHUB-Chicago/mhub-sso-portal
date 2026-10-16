@@ -48,12 +48,19 @@ const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean>
   return !(await hasCompanyPortalAccess(c, user.companyId));
 };
 
+const EMAIL_NOT_RECOGNIZED_MESSAGE = "We don't recognize your email. If you're not a member and are interested in becoming a member, please contact Joe@mhub.org.";
+
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
     const { email, tx } = c.req.valid("json");
     const user = await getUserByEmail(c, email);
     if (!user) {
-      throw new Error("User not found");
+      const response = FailedResponseSchema.parse({
+        success: false,
+        message: EMAIL_NOT_RECOGNIZED_MESSAGE,
+        code: "EMAIL_NOT_RECOGNIZED",
+      });
+      return c.json(response, 404);
     }
     // Inactive users still get a real login request: rejecting them here handed back the
     // fake request_id, so their correct password failed as "Incorrect email or password".

@@ -26,7 +26,8 @@ import { readRecentSyncLogs, serializeSyncLogs } from "@/utils/syncLogs";
 type Bindings = {
   DB: D1Database;
   QUEUE: Queue<{ jobId: string; jobType: JobType; payload: unknown }>;
-  [key: string]: string | D1Database | Queue<any>;
+  LOGIN_RATE_LIMITER?: RateLimit;
+  [key: string]: string | D1Database | Queue<any> | RateLimit | undefined;
 };
 type Variables = {
   user: User;

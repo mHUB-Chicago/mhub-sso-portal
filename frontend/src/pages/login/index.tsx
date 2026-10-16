@@ -50,6 +50,7 @@ export function LoginPage() {
   // Shown inline rather than as a toast: retrying won't fix it, and a toast vanishes
   // before people read it.
   const [inactiveMessage, setInactiveMessage] = useState<string | null>(null)
+  const [emailNotRecognized, setEmailNotRecognized] = useState(false)
   const onboardingTeardownStartedRef = useRef(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
@@ -98,8 +99,12 @@ export function LoginPage() {
       setRequiresOtp(result.data.requiresOtp)
       setStep('password')
     } catch (error: unknown) {
-      const err = error as { data?: { message?: string } }
-      toast.error(err.data?.message || 'Something went wrong. Please try again.')
+      const err = error as { data?: { message?: string }; message?: string; code?: string }
+      if (err.code === 'EMAIL_NOT_RECOGNIZED') {
+        setEmailNotRecognized(true)
+        return
+      }
+      toast.error(err.data?.message || err.message || 'Something went wrong. Please try again.')
     } finally {
       isSubmittingEmailRef.current = false
     }
@@ -269,10 +274,12 @@ export function LoginPage() {
                   type="text"
                   placeholder="john.doe@example.com or username"
                   autoComplete="username"
-                  className="w-full pl-10 pr-3 py-4 border-gray-300 h-12"
+                  className={`w-full pl-10 pr-3 py-4 h-12 ${emailNotRecognized ? 'border-red-500' : 'border-gray-300'}`}
                   disabled={isStartingLogin}
+                  aria-invalid={emailNotRecognized}
                   {...emailForm.register('email', {
                     required: 'Email or username is required',
+                    onChange: () => setEmailNotRecognized(false),
                   })}
                 />
               </div>
@@ -282,6 +289,17 @@ export function LoginPage() {
                 </p>
               )}
             </div>
+
+            {emailNotRecognized && (
+              <div role="alert" className="flex items-start gap-2 p-3 bg-red-50 border border-red-500 rounded-md">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700">
+                  <span className="font-bold">We don't recognize your email.</span>{' '}
+                  If you're not a member and are interested in becoming a member, please contact{' '}
+                  <a href="mailto:Joe@mhub.org" className="font-bold underline">Joe@mhub.org</a>.
+                </p>
+              </div>
+            )}
 
             <Button
               type="submit"

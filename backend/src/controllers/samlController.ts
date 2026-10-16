@@ -1,7 +1,7 @@
 import { Context } from "hono";
 import { AppType, QueryInput } from "..";
 import { SamlContinueRequestSchema, SamlRequestSchema } from "@common/schemas/saml";
-import { createSamlAuthRequest, getSamlAuthRequestById, updateSamlAuthRequest } from "@/services/samlAuthRequestService";
+import { createSamlAuthRequest, getSamlAuthRequestById, recordIdpInitiatedLaunch, updateSamlAuthRequest } from "@/services/samlAuthRequestService";
 import { PrismaClient, SamlBinding, ServiceProvider, User } from "@/database/models";
 import { buildIdpMetadataXml, decodeSamlRequestParam, issueSamlResponse, parseSamlRequestXml } from "@/utils/saml";
 import { getServiceProviderByEntityId, getServiceProviderById } from "@/services/serviceProviderService";
@@ -219,5 +219,15 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
     },
   });
   recordPeopleVineSso(c, serviceProvider.entityId, currentUser);
+  try {
+    await recordIdpInitiatedLaunch(c, {
+      serviceProviderId: serviceProvider.id,
+      userId: currentUser.id,
+      acsUrl: serviceProvider.acsUrl,
+      relayState,
+    });
+  } catch (error) {
+    console.error("handleIdpInitiatedSso: failed to record launch", error);
+  }
   return c.html(html);
 };

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { AppType } from "@/index";
 import { validate } from "@/middleware/validate";
+import { loginRateLimit } from "@/middleware/rateLimit";
 import { describeRoute } from "@/utils/describeRoute";
 import { ChangePasswordRequestSchema, ChangePasswordResponseSchema, ForgotPasswordRequestSchema, ForgotPasswordResponseSchema, LogoutResponseSchema, StartLoginRequestSchema, StartLoginResponseSchema, VerifyLoginRequestSchema, VerifyLoginResponseSchema } from "@common/schemas/login";
 import { handleChangePassword, handleForgotPassword, handleLogout, handleStartLogin, handleVerifyLogin } from "@/controllers/loginController";
@@ -14,6 +15,7 @@ app.post(
     successMessage: "Login flow started successfully",
     responseSchema: StartLoginResponseSchema
   }),
+  loginRateLimit,
   validate(StartLoginRequestSchema),
   handleStartLogin
 );

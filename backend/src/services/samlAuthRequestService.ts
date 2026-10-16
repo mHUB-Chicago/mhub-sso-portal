@@ -44,7 +44,32 @@ export const createSamlAuthRequest = (c: Context, input: CreateSamlAuthRequestIn
   });
 }
 
-export const updateSamlAuthRequest = (c: Context, input: UpdateSamlAuthRequestInput): Promise<SamlAuthRequest> => {
+export interface RecordIdpInitiatedLaunchInput {
+  serviceProviderId: string;
+  userId: string;
+  acsUrl: string;
+  relayState?: string;
+}
+
+export const recordIdpInitiatedLaunch = (c: Context, input: RecordIdpInitiatedLaunchInput): Promise<SamlAuthRequest> => {
+  const prisma: PrismaClient = c.get("db");
+  const now = new Date();
+  return prisma.samlAuthRequest.create({
+    data: {
+      serviceProviderId: input.serviceProviderId,
+      userId: input.userId,
+      inResponseTo: `idp-initiated:${crypto.randomUUID()}`,
+      relayState: input.relayState,
+      acsUrl: input.acsUrl,
+      requestBinding: SamlBinding.HTTP_REDIRECT,
+      responseBinding: SamlBinding.HTTP_POST,
+      expiresAt: now,
+      completedAt: now,
+    },
+  });
+}
+
+export const updateSamlAuthRequest =(c: Context, input: UpdateSamlAuthRequestInput): Promise<SamlAuthRequest> => {
   const prisma: PrismaClient = c.get("db");
   return prisma.samlAuthRequest.update({
     where: { id: input.id },
