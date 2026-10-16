@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Mail, Lock, Loader2, ArrowLeft, Info, AlertCircle, BookOpen } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { openRedirectTab, getRedirectTab, getRedirectTabLoadPromise, clearRedirectTab } from '@/utils/redirectTab'
 import { getPeopleVineSsoUrl, PEOPLEVINE_ROOT_URL } from '@/utils/peopleVine'
@@ -321,9 +321,16 @@ export function LoginPage() {
               )}
             </Button>
 
-            <div className="text-center">
+            <div className="flex flex-col items-center gap-3">
               <Link to="/forgot-password" className="text-sm text-brand hover:underline">
                 Forgot Password?
+              </Link>
+              <Link
+                to="/login-guide"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-brand bg-orange-50 border border-orange-200 rounded-full hover:underline"
+              >
+                <BookOpen className="h-4 w-4" />
+                First time logging in? Read the guide
               </Link>
             </div>
           </form>
