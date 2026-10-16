@@ -14,6 +14,21 @@ import { getPeopleVineSsoUrl, PEOPLEVINE_ROOT_URL } from '@/utils/peopleVine'
 
 type LoginStep = 'email' | 'password'
 
+const NO_ACCESS_CODES = ['EMAIL_NOT_RECOGNIZED', 'ACCOUNT_NOT_SET_UP', 'ACCOUNT_INACTIVE', 'SERVER_ERROR']
+
+function NoAccessAlert() {
+  return (
+    <div role="alert" className="flex items-start gap-2 p-3 bg-red-50 border border-red-500 rounded-md">
+      <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+      <p className="text-sm text-red-700">
+        <span className="font-bold">We don't recognize your email.</span>{' '}
+        If you're not a member and are interested in becoming a member, please contact{' '}
+        <a href="mailto:Joe@mhub.org" className="font-bold underline">Joe@mhub.org</a>.
+      </p>
+    </div>
+  )
+}
+
 interface EmailFormData {
   email: string
 }
@@ -49,8 +64,7 @@ export function LoginPage() {
   const [onboardingDone, setOnboardingDone] = useState(false)
   // Shown inline rather than as a toast: retrying won't fix it, and a toast vanishes
   // before people read it.
-  const [inactiveMessage, setInactiveMessage] = useState<string | null>(null)
-  const [emailNotRecognized, setEmailNotRecognized] = useState(false)
+  const [showNoAccess, setShowNoAccess] = useState(false)
   const onboardingTeardownStartedRef = useRef(false)
 
   const [startLogin, { isLoading: isStartingLogin }] = useStartLoginMutation()
@@ -100,8 +114,8 @@ export function LoginPage() {
       setStep('password')
     } catch (error: unknown) {
       const err = error as { data?: { message?: string }; message?: string; code?: string }
-      if (err.code === 'EMAIL_NOT_RECOGNIZED') {
-        setEmailNotRecognized(true)
+      if (err.code && NO_ACCESS_CODES.includes(err.code)) {
+        setShowNoAccess(true)
         return
       }
       toast.error(err.data?.message || err.message || 'Something went wrong. Please try again.')
@@ -195,8 +209,8 @@ export function LoginPage() {
       redirectTab?.close()
       clearRedirectTab()
       const err = error as { data?: { message?: string }; message?: string; code?: string }
-      if (err.code === 'ACCOUNT_INACTIVE') {
-        setInactiveMessage(err.message || 'Your account is inactive. Please contact an admin.')
+      if (err.code && NO_ACCESS_CODES.includes(err.code)) {
+        setShowNoAccess(true)
         return
       }
       toast.error(err.data?.message || err.message || 'Invalid credentials. Please try again.')
@@ -209,7 +223,7 @@ export function LoginPage() {
   const handleBack = () => {
     setStep('email')
     setRequestId('')
-    setInactiveMessage(null)
+    setShowNoAccess(false)
     passwordForm.reset()
   }
 
@@ -274,12 +288,12 @@ export function LoginPage() {
                   type="text"
                   placeholder="john.doe@example.com or username"
                   autoComplete="username"
-                  className={`w-full pl-10 pr-3 py-4 h-12 ${emailNotRecognized ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`w-full pl-10 pr-3 py-4 h-12 ${showNoAccess ? 'border-red-500' : 'border-gray-300'}`}
                   disabled={isStartingLogin}
-                  aria-invalid={emailNotRecognized}
+                  aria-invalid={showNoAccess}
                   {...emailForm.register('email', {
                     required: 'Email or username is required',
-                    onChange: () => setEmailNotRecognized(false),
+                    onChange: () => setShowNoAccess(false),
                   })}
                 />
               </div>
@@ -290,16 +304,7 @@ export function LoginPage() {
               )}
             </div>
 
-            {emailNotRecognized && (
-              <div role="alert" className="flex items-start gap-2 p-3 bg-red-50 border border-red-500 rounded-md">
-                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">
-                  <span className="font-bold">We don't recognize your email.</span>{' '}
-                  If you're not a member and are interested in becoming a member, please contact{' '}
-                  <a href="mailto:Joe@mhub.org" className="font-bold underline">Joe@mhub.org</a>.
-                </p>
-              </div>
-            )}
+            {showNoAccess && <NoAccessAlert />}
 
             <Button
               type="submit"
@@ -392,11 +397,8 @@ export function LoginPage() {
               )}
             </div>
 
-            {inactiveMessage ? (
-              <div role="alert" className="flex items-start gap-2 p-3 bg-red-50 border-2 border-red-500 rounded-md">
-                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-base font-bold text-red-700">{inactiveMessage}</p>
-              </div>
+            {showNoAccess ? (
+              <NoAccessAlert />
             ) : (
               // OTP Info Message — red/bold because people kept missing it. Hidden once
               // the account is known to be inactive, where it'd only compete with that.

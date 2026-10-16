@@ -44,7 +44,7 @@ test('first-time login message is red and bold', async ({ page }) => {
   await shot(page, '02-login-password-step-first-time-message')
 })
 
-test('inactive account sees an inline "contact an admin" message', async ({ page }) => {
+test('inactive account sees an inline "contact Joe@mhub.org" message', async ({ page }) => {
   await mockStartLogin(page, true)
   await page.route(`${E2E_API_URL}/api/login/verify`, (route) =>
     route.fulfill(json(403, { success: false, message: 'Your account is inactive. Please contact an admin.', code: 'ACCOUNT_INACTIVE' })),
@@ -54,7 +54,7 @@ test('inactive account sees an inline "contact an admin" message', async ({ page
   await page.getByLabel('Password').fill('ABCD1234')
   await page.getByRole('button', { name: 'Sign in' }).click()
 
-  const alert = page.getByRole('alert').filter({ hasText: 'Your account is inactive. Please contact an admin.' })
+  const alert = page.getByRole('alert').filter({ hasText: 'please contact Joe@mhub.org' })
   await expect(alert).toBeVisible()
   await expect(page.getByText('If this is your first time logging in')).toHaveCount(0)
   // Still on the login page — no session, no redirect to change-password.

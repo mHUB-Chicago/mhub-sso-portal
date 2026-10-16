@@ -167,7 +167,7 @@ describe("Xavier's case: active=false but holding a portal-access membership", (
     const res = await verify();
 
     expect(res.status).toBe(403);
-    expect(res.data).toMatchObject({ success: false, code: "ACCOUNT_INACTIVE", message: "Your account is inactive. Please contact an admin." });
+    expect(res.data).toMatchObject({ success: false, code: "ACCOUNT_INACTIVE", message: expect.stringContaining("Joe@mhub.org") });
     expect(createSession).not.toHaveBeenCalled();
   });
 });
@@ -205,6 +205,16 @@ it("an unknown email is told it isn't recognized, with who to contact", async ()
   expect(res.status).toBe(404);
   expect(res.data).toMatchObject({ success: false, code: "EMAIL_NOT_RECOGNIZED" });
   expect(res.data.message).toContain("Joe@mhub.org");
+});
+
+it("a server failure at the email step says so instead of moving on to the password step", async () => {
+  vi.mocked(getUserByEmail).mockRejectedValue(new Error("D1 unavailable"));
+
+  const res = await start("member@example.com");
+
+  expect(createLoginRequest).not.toHaveBeenCalled();
+  expect(res.status).toBe(500);
+  expect(res.data).toMatchObject({ success: false, code: "SERVER_ERROR" });
 });
 
 // The invariant the bug broke: anyone login hands a session to must be accepted by the

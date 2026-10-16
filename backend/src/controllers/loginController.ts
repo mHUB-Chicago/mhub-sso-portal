@@ -48,7 +48,7 @@ const isInactiveUser = async (c: Context<AppType>, user: User): Promise<boolean>
   return !(await hasCompanyPortalAccess(c, user.companyId));
 };
 
-const EMAIL_NOT_RECOGNIZED_MESSAGE = "We don't recognize your email. If you're not a member and are interested in becoming a member, please contact Joe@mhub.org.";
+const NO_ACCESS_MESSAGE = "We don't recognize your email. If you're not a member and are interested in becoming a member, please contact Joe@mhub.org.";
 
 export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typeof StartLoginRequestSchema>>) => {
   try {
@@ -57,7 +57,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     if (!user) {
       const response = FailedResponseSchema.parse({
         success: false,
-        message: EMAIL_NOT_RECOGNIZED_MESSAGE,
+        message: NO_ACCESS_MESSAGE,
         code: "EMAIL_NOT_RECOGNIZED",
       });
       return c.json(response, 404);
@@ -68,7 +68,7 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     // out, which keeps account status hidden from anyone who only knows the email.
     const isInactive = await isInactiveUser(c, user);
     if (user.email.endsWith('@noemail.mhub')) {
-      return c.json({ success: false, message: "Your account is not fully set up. Please contact mHUB to complete your registration." }, 400);
+      return c.json(FailedResponseSchema.parse({ success: false, message: NO_ACCESS_MESSAGE, code: "ACCOUNT_NOT_SET_UP" }), 400);
     }
     const loginRequest = await createLoginRequest(c, { email: user.email });
     // Also excludes anyone who already completed payment — accountStatus can lag
@@ -92,22 +92,12 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
     return c.json(response);
   } catch (error) {
     console.error("handleStartLogin error:", error);
-
-    // Still return a response with a fake request_id to avoid user enumeration —
-    // isPendingMembership/requiresOtp default to false here for the same reason, so the fields
-    // presence/values never reveal whether the email actually exists.
-    const randomUUID = crypto.randomUUID();
-    const response = StartLoginResponseSchema.parse({
-      success: true,
-      message: "Success",
-      data: {
-        request_id: randomUUID,
-        isPendingMembership: false,
-        requiresOtp: false,
-        peopleVineLandingUrl: null,
-      },
+    const response = FailedResponseSchema.parse({
+      success: false,
+      message: NO_ACCESS_MESSAGE,
+      code: "SERVER_ERROR",
     });
-    return c.json(response);
+    return c.json(response, 500);
   }
 };
 
@@ -205,7 +195,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
       // Only reachable after the password/OTP passed, so this reveals nothing to a guesser.
       const response = FailedResponseSchema.parse({
         success: false,
-        message: "Your account is inactive. Please contact an admin.",
+        message: NO_ACCESS_MESSAGE,
         code: "ACCOUNT_INACTIVE",
       });
       return c.json(response, 403);
@@ -214,7 +204,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     // it never counts toward the lockout, so don't make it look like one.
     const response = FailedResponseSchema.parse({
       success: false,
-      message: "Something went wrong signing you in. Please try again.",
+      message: NO_ACCESS_MESSAGE,
       code: "SERVER_ERROR",
     });
     return c.json(response, 500);
