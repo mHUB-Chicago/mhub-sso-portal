@@ -55,6 +55,12 @@ model Company {
   onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
+  onboardingLearnWorldsStatus     String?
+  onboardingLearnWorldsAt         DateTime?
+  onboardingDigiFabsterStatus     String?
+  onboardingDigiFabsterAt         DateTime?
+  onboardingServiceProvidersSkippedAt DateTime?
+  onboardingServiceProvidersSkippedBy String?
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
   subscriptions           Subscription[]
@@ -101,6 +107,12 @@ model User {
   onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
+  onboardingLearnWorldsStatus     String?
+  onboardingLearnWorldsAt         DateTime?
+  onboardingDigiFabsterStatus     String?
+  onboardingDigiFabsterAt         DateTime?
+  onboardingServiceProvidersSkippedAt DateTime?
+  onboardingServiceProvidersSkippedBy String?
   // Membership Agreement e-signature — set-once, same convention as the onboarding
   // markers above. Purely additive to the existing PV-driven payment/agreement
   // tracking; does not affect onboardingPaymentAgreementAt or the webhook cascade.
