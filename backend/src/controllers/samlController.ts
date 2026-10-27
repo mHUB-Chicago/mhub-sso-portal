@@ -41,6 +41,12 @@ const resolveSamlIdentityEmail = async (
   return company?.peopleVineId ? company.email : user.email;
 };
 
+const redirectToNoAccess = (c: Context<AppType>, serviceProvider: ServiceProvider) => {
+  const noAccessUrl = new URL(`${c.env.FRONTEND_URL}/no-access`);
+  noAccessUrl.searchParams.set("app", serviceProvider.name);
+  return c.redirect(noAccessUrl.toString());
+};
+
 export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<typeof SamlRequestSchema>>) => {
   const { SAMLRequest: samlRequest, RelayState: relayState } = c.req.valid("query");
   const xml = decodeSamlRequestParam(samlRequest);
@@ -83,7 +89,7 @@ export const handleSamlRequest = async (c: Context<AppType, string, QueryInput<t
     const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
     const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
     if (!isAllowed) {
-      return c.json({ message: "Access to Service Provider not authorized" }, 403);
+      return redirectToNoAccess(c, serviceProvider);
     }
     const shortcut = peopleVineShortcut(c, serviceProvider.entityId, currentUser);
     if (shortcut) return shortcut;
@@ -136,7 +142,7 @@ export const handleSamlContinueRequest = async (c: Context<AppType, string, Quer
   const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
   const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
   if (!isAllowed) {
-    return c.json({ message: "Access to Service Provider not authorized" }, 403);
+    return redirectToNoAccess(c, serviceProvider);
   }
   const shortcut = peopleVineShortcut(c, serviceProvider.entityId, currentUser);
   if (shortcut) return shortcut;
@@ -199,7 +205,7 @@ export const handleIdpInitiatedSso = async (c: Context<AppType>) => {
   const allowedServiceProviders = await getAllowedServiceProvidersForUser(c, currentUser.id);
   const isAllowed = allowedServiceProviders.find(sp => sp.id === serviceProvider.id);
   if (!isAllowed) {
-    return c.json({ message: "Access to Service Provider not authorized" }, 403);
+    return redirectToNoAccess(c, serviceProvider);
   }
 
   const shortcut = peopleVineShortcut(c, serviceProvider.entityId, currentUser);

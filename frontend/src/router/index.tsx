@@ -9,6 +9,7 @@ import { UnauthorizedPage } from '@/pages/unauthorized'
 import { NotFoundPage } from '@/pages/not-found'
 import { ForgotPasswordPage } from '@/pages/forgot-password'
 import { LoginGuidePage } from '@/pages/login-guide'
+import { NoAccessPage } from '@/pages/no-access'
 import { ChangePasswordPage } from '@/pages/change-password'
 import { AgreementPage } from '@/pages/agreement'
 import { AdminDashboardPage } from '@/pages/admin/dashboard'
@@ -76,6 +77,10 @@ export const router = createBrowserRouter([
   {
     path: '/login-guide',
     element: <LoginGuidePage />
+  },
+  {
+    path: '/no-access',
+    element: <NoAccessPage />
   },
   {
     path: '/change-password',

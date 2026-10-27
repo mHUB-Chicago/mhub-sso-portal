@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import { read, utils } from 'xlsx'
 import { toCsv, downloadCsv } from '@/utils/csv'
-import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSyncSessionLogsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, type SyncSession, type SyncSessionSummary, type SyncLogEntry } from '@/store/api/syncApi'
+import { useGetSyncStatusQuery, useStartSyncMutation, useCancelSyncMutation, useFreshSyncMutation, useLazyGetFreshStatsQuery, useImportFilteredMutation, useGetMembershipTypesQuery, useAddMembershipTypeMutation, useRemoveMembershipTypeMutation, useGetSyncHistoryQuery, useGetSyncSessionLogsQuery, useGetPrimarySubscriptionTypesQuery, useAddPrimarySubscriptionTypeMutation, useRemovePrimarySubscriptionTypeMutation, useGetAddonSubscriptionTypesQuery, useAddAddonSubscriptionTypeMutation, useRemoveAddonSubscriptionTypeMutation, useGetPortalAccessTypesQuery, useAddPortalAccessTypeMutation, useRemovePortalAccessTypeMutation, type SyncSession, type SyncSessionSummary, type SyncLogEntry } from '@/store/api/syncApi'
 import { useGetUsersQuery } from '@/store/api/userApi'
 import { useGetCompaniesQuery } from '@/store/api/companyApi'
 
@@ -350,6 +350,36 @@ function AddonSubscriptionTypesManager() {
   )
 }
 
+function PortalAccessTypesManager() {
+  const { data, isLoading } = useGetPortalAccessTypesQuery()
+  const [addType, { isLoading: isAdding }] = useAddPortalAccessTypeMutation()
+  const [removeType] = useRemovePortalAccessTypeMutation()
+  const types = data?.data ?? []
+
+  const handleAdd = async (name: string) => {
+    try { await addType({ name }).unwrap() }
+    catch { toast.error('Failed to add portal access type') }
+  }
+
+  const handleRemove = async (name: string) => {
+    try { await removeType(name).unwrap() }
+    catch { toast.error('Failed to remove portal access type') }
+  }
+
+  return (
+    <TypesManager
+      title="Portal Access Types"
+      description="Active members whose own membership or add-on, or whose active company's membership, is listed here can log in to the portal. Changes apply to logins immediately, no sync needed."
+      placeholder="Add portal access type…"
+      badgeClass="bg-green-50 text-green-700 border-green-200"
+      types={types}
+      isLoading={isLoading}
+      isAdding={isAdding}
+      onAdd={handleAdd}
+      onRemove={handleRemove}
+    />
+  )
+}
 
 type ClearResult = { usersDeleted: number; companiesDeleted: number }
 type CompanyImport = { subscriptionNo: string; companyName: string; primaryMembership: string | null }
@@ -1367,6 +1397,7 @@ export function AdminSyncPage() {
             <MembershipTypesManager />
             <PrimarySubscriptionTypesManager />
             <AddonSubscriptionTypesManager />
+            <PortalAccessTypesManager />
           </div>
         )}
         {activeTab === 'CONTINUE' && (
