@@ -11,6 +11,7 @@ import {
   Webhook,
   BarChart2,
   History,
+  UserMinus,
   X
 } from 'lucide-react'
 
@@ -110,6 +111,22 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
                 : 'text-gray-500'
             }`} />
             Onboarding
+          </Link>
+          <Link
+            to="/admin/offboarding"
+            onClick={handleLinkClick}
+            className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+              location.pathname.startsWith('/admin/offboarding')
+                ? 'bg-brand text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <UserMinus className={`h-5 w-5 ${
+              location.pathname.startsWith('/admin/offboarding')
+                ? 'text-white'
+                : 'text-gray-500'
+            }`} />
+            Offboarding
           </Link>
           <Link
             to="/admin/companies"

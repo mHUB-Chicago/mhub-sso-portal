@@ -4,12 +4,13 @@ import { useState } from "react"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Eye, Pencil } from "lucide-react"
+import { Eye, Pencil, UserMinus } from "lucide-react"
 import { Link } from "react-router-dom"
 import type { User, Company } from "@/store/api/userApi"
 import type { ServiceProvider } from "@/store/api/serviceProviderApi"
 import { UserViewModal } from "@/components/UserViewModal"
 import { CompanyViewModal } from "@/components/CompanyViewModal"
+import { CompanyOffboardDialog } from "@/pages/admin/offboarding/CompanyOffboardDialog"
 import { LoginAccessBadge } from "@/components/LoginAccessBadge"
 import { hasCompanyPortalMembership, hasPortalMembership, loginAccess, type AccessCompany } from "../../../../common/access"
 
@@ -34,6 +35,7 @@ function UserActionsCell({ user }: { user: UserWithCompany }) {
 
 function CompanyActionsCell({ company }: { company: Company }) {
   const [open, setOpen] = useState(false)
+  const [offboardOpen, setOffboardOpen] = useState(false)
   return (
     <div className="flex items-center gap-3">
       <button onClick={() => setOpen(true)} className="text-muted-foreground hover:text-foreground">
@@ -42,7 +44,17 @@ function CompanyActionsCell({ company }: { company: Company }) {
       <Link to={`/admin/companies/${company.id}/edit`} className="text-muted-foreground hover:text-foreground">
         <Pencil className="h-4 w-4" />
       </Link>
+      <button
+        onClick={() => setOffboardOpen(true)}
+        disabled={!!company.offboardedAt}
+        title={company.offboardedAt ? "Company offboarded" : "Offboard company"}
+        aria-label={company.offboardedAt ? "Company offboarded" : "Offboard company"}
+        className="text-muted-foreground hover:text-red-600 disabled:opacity-40 disabled:hover:text-muted-foreground"
+      >
+        <UserMinus className="h-4 w-4" />
+      </button>
       <CompanyViewModal company={company} open={open} onClose={() => setOpen(false)} />
+      {offboardOpen && <CompanyOffboardDialog company={company} open={offboardOpen} onClose={() => setOffboardOpen(false)} />}
     </div>
   )
 }
@@ -268,7 +280,7 @@ export const companyColumns: ColumnDef<Company>[] = [
   {
     id: "actions",
     header: "Actions",
-    size: 80,
+    size: 100,
     cell: ({ row }) => <CompanyActionsCell company={row.original} />,
   },
   {
@@ -319,6 +331,9 @@ export const companyColumns: ColumnDef<Company>[] = [
     size: 100,
     cell: ({ row }) => {
       const active = row.getValue("active") as boolean
+      if (row.original.offboardedAt) {
+        return <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300">Offboarded</Badge>
+      }
       return <Badge variant={active ? "default" : "outline"}>{active ? "Active" : "Inactive"}</Badge>
     },
   },

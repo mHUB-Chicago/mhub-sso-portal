@@ -1,6 +1,7 @@
 import { Company, Prisma, PrismaClient } from "@/database/models";
 import { Context } from "hono";
 import { deactivateUsersByCompanyId } from "./userService";
+import { recordMembershipRemoved } from "./offboardingService";
 import { getAllServiceProviders } from "./serviceProviderService";
 import { createCompanyServiceProvider } from "./companyServiceProviderService";
 
@@ -237,6 +238,7 @@ export const deactivateCompany = async (c: Context, id: string) => {
     },
   });
   await deactivateUsersByCompanyId(c, deactivatedCompany.id);
+  if (existing?.accountStatus === 'active') await recordMembershipRemoved(c, 'company', id);
   return deactivatedCompany;
 }
 

@@ -3,6 +3,7 @@ import { Context } from "hono";
 import { getAllServiceProviders } from "./serviceProviderService";
 import { createUserServiceProvider } from "./userServiceProviderService";
 import { hashPassword } from "@/utils/jwt";
+import { recordMembershipRemoved } from "./offboardingService";
 
 export interface GetPaginatedUsersInput {
   role?: Role;
@@ -304,7 +305,7 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
     }
   }
 
-  return prisma.user.update({
+  const updatedUser = await prisma.user.update({
     where: { id },
     data: {
       name: name ? name.trim() : undefined,
@@ -336,6 +337,8 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       membershipAgreementPdf,
     },
   });
+  if (accountStatus === 'membership-removed') await recordMembershipRemoved(c, 'user', id);
+  return updatedUser;
 }
 
 export const deactivateUser = async (c: Context, id: string): Promise<void> => {
@@ -350,6 +353,7 @@ export const deactivateUser = async (c: Context, id: string): Promise<void> => {
       ...(existing?.accountStatus === 'active' ? { accountStatus: 'membership-removed' } : {}),
     },
   });
+  if (existing?.accountStatus === 'active') await recordMembershipRemoved(c, 'user', id);
 }
 
 export const deactivateUsersByCompanyId = async (c: Context, companyId: string) => {
