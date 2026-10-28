@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Check, XCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 interface GuideStepProps {
@@ -31,6 +31,17 @@ function GuideStep({ number, title, children, image, done }: GuideStepProps) {
   )
 }
 
+const PORTAL_LINKS = [
+  { label: 'Signing in', path: '/login', text: 'portal.mhub.org/login' },
+  { label: 'Forgot your password', path: '/forgot-password', text: 'portal.mhub.org/forgot-password' },
+]
+
+const BROKEN_PATHS = [
+  'Logging in at member.mhubchicago.com',
+  'The password reset on member.mhubchicago.com',
+  'Changing your password on the member site profile page (Account > Edit)',
+]
+
 export function LoginGuidePage() {
   return (
     <div className="min-h-screen bg-gray-50">
@@ -51,6 +62,39 @@ export function LoginGuidePage() {
             <b className="text-gray-900">member portal, the mHUB Shop, LearnWorlds, and DigiFabster</b>, no separate accounts or passwords.
           </p>
         </div>
+
+        <section className="mb-11">
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Use Only These Links</h3>
+          <p className="text-[15px] text-gray-600 leading-relaxed mb-4">
+            The old member site is being retired. Using its login or password pages will break your access, so bookmark these two links and use nothing else.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 mb-3">
+            {PORTAL_LINKS.map((link) => (
+              <Link
+                key={link.path}
+                to={link.path}
+                className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-4 hover:bg-green-100"
+              >
+                <Check className="h-6 w-6 flex-shrink-0 text-green-600" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-green-700">{link.label}</span>
+                  <span className="block text-[15px] font-bold text-gray-900 break-all">{link.text}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-4">
+            <p className="text-sm font-bold text-red-700 mb-3">These break your access. Do not use them.</p>
+            <ul className="space-y-2.5">
+              {BROKEN_PATHS.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-sm text-red-800">
+                  <XCircle className="h-5 w-5 flex-shrink-0 text-red-500" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
 
         <GuideStep
           number={1}
