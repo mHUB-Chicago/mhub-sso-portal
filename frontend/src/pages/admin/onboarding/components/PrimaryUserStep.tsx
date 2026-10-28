@@ -9,6 +9,7 @@ import { AddressFields } from "./AddressFields";
 import { OptionCombobox } from "./OptionCombobox";
 import { PHONE_CODE_OPTIONS, TITLE_OPTIONS } from "../locations";
 import { SectionHeading } from "./SectionHeading";
+import { isSameAsCompanyEmail } from "./companyEmail";
 import type { Address, OnboardingScenario, PrimaryUserDetails } from "../types";
 
 // Phone and address are required here (not just cosmetically marked) because they ride
@@ -19,7 +20,8 @@ import type { Address, OnboardingScenario, PrimaryUserDetails } from "../types";
 // NullReferenceException) to crash on some of its endpoints when these fields are
 // entirely absent from a create/update request rather than merely empty, so this isn't
 // optional the way Title/LinkedIn/Bio genuinely are.
-export const isPrimaryUserStepValid = (value: PrimaryUserDetails): boolean =>
+export const isPrimaryUserStepValid = (value: PrimaryUserDetails, companyEmail?: string): boolean =>
+  !isSameAsCompanyEmail(value.email, companyEmail) &&
   value.firstName.trim() !== "" &&
   value.lastName.trim() !== "" &&
   value.email.trim() !== "" &&
@@ -58,6 +60,7 @@ export const PrimaryUserStep = ({
     scenario === "new_company" && !companyEmail?.trim() && value.email.includes("@")
       ? value.email.replace("@", "+company@")
       : "";
+  const sameAsCompanyEmail = scenario === "new_company" && isSameAsCompanyEmail(value.email, companyEmail);
   const genderOptions = findAttributeOptionValues(attributeOptions, "Gender").map((label) => ({
     value: label,
     label,
@@ -89,6 +92,12 @@ export const PrimaryUserStep = ({
             onChange={(e) => onChange("email", e.target.value)}
             className="mt-1"
           />
+          {sameAsCompanyEmail && (
+            <p className="mt-1.5 text-xs text-red-600">
+              This is the same as the company email. The company email and the primary user's email must be
+              different. Go back and leave the company email blank to have one generated automatically.
+            </p>
+          )}
           {aliasPreview && (
             <p className="mt-1.5 text-xs text-emerald-700">
               The company profile will use {aliasPreview} automatically. Both addresses deliver to the same
