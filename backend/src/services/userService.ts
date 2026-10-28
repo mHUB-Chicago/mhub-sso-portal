@@ -305,6 +305,12 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
     }
   }
 
+  // The sync resends accountStatus on every change, so only an actual active →
+  // membership-removed transition counts as a new cancellation.
+  const wasActive = accountStatus === 'membership-removed'
+    ? (await prisma.user.findUnique({ where: { id }, select: { accountStatus: true } }))?.accountStatus === 'active'
+    : false;
+
   const updatedUser = await prisma.user.update({
     where: { id },
     data: {
@@ -337,7 +343,7 @@ export const updateUser = async (c: Context, updateUserInput: UpdateUserInput): 
       membershipAgreementPdf,
     },
   });
-  if (accountStatus === 'membership-removed') await recordMembershipRemoved(c, 'user', id);
+  if (wasActive) await recordMembershipRemoved(c, 'user', id);
   return updatedUser;
 }
 
