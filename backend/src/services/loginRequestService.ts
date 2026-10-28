@@ -8,6 +8,7 @@ const LOGIN_REQUEST_EXPIRE_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
 export interface CreateLoginRequestInput {
   email: string;
+  forceOtp?: boolean;
 }
 
 export interface VerifyLoginRequestInput {
@@ -68,12 +69,12 @@ export const getLoginRequestById = (c: Context, id: string): Promise<LoginReques
 
 export const createLoginRequest = async (c: Context, createLoginRequestInput: CreateLoginRequestInput): Promise<LoginRequest> => {
   const prisma: PrismaClient = c.get("db");
-  const { email } = createLoginRequestInput;
+  const { email, forceOtp } = createLoginRequestInput;
   const user = await getUserByEmail(c, email);
   if (!user) {
     throw new Error("User not found");
   }
-  const needsOtp = user.passwordHashed === null || !user.emailVerified || user.mustResetPassword;
+  const needsOtp = !!forceOtp || user.passwordHashed === null || !user.emailVerified || user.mustResetPassword;
 
   // Reuse active request only if OTP is not needed (password login path)
   if (!needsOtp) {

@@ -102,15 +102,15 @@ export const handleStartLogin = async (c: Context<AppType, string, JsonInput<typ
 };
 
 export const handleForgotPassword = async (c: Context<AppType, string, JsonInput<typeof ForgotPasswordRequestSchema>>) => {
-  // Very similar to handleStartLogin, but ensures mustResetPassword is true
+  // Only this request switches to an emailed code. The old password keeps working until a
+  // new one is saved, so an abandoned reset never locks the member out of password login.
   try {
     const { email } = c.req.valid("json");
     const user = await getUserByEmail(c, email);
     if (!user) {
       throw new Error("User not found");
     }
-    await updateUser(c, { id: user.id, mustResetPassword: true });
-    const loginRequest = await createLoginRequest(c, { email: user.email });
+    const loginRequest = await createLoginRequest(c, { email: user.email, forceOtp: true });
     const response = ForgotPasswordResponseSchema.parse({
       success: true,
       message: "Success",
