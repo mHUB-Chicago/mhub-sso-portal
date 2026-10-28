@@ -10,6 +10,7 @@ import {
 } from "@/store/api/publicOnboardingApi";
 import { CompanyDetailsStep } from "@/pages/admin/onboarding/components/CompanyDetailsStep";
 import { PrimaryUserStep, isPrimaryUserStepValid } from "@/pages/admin/onboarding/components/PrimaryUserStep";
+import { isSameAsCompanyEmail } from "@/pages/admin/onboarding/components/companyEmail";
 import { SkillsStep } from "@/pages/admin/onboarding/components/SkillsStep";
 import { OnboardingStepper } from "@/pages/admin/onboarding/components/OnboardingStepper";
 import { AgreementStep, isAgreementStepValid } from "@/pages/admin/onboarding/components/AgreementStep";
@@ -194,7 +195,11 @@ const PublicOnboardingPage = () => {
   // of nothing happening. See isCurrentStepValid for what "incomplete" checks per step.
   const handleContinueClick = () => {
     if (!isCurrentStepValid) {
-      toast.error("Please fill in all required fields before continuing.");
+      toast.error(
+        currentStep === 2 && formData?.scenario === "new_company" && isSameAsCompanyEmail(formData.user.email, formData.company.email)
+          ? "The company email and the primary user's email must be different."
+          : "Please fill in all required fields before continuing."
+      );
       return;
     }
     goNext();
@@ -231,6 +236,7 @@ const PublicOnboardingPage = () => {
             onEthnicityChange={updateUserEthnicity}
             attributeOptions={attributeOptions}
             scenario={formData.scenario}
+            companyEmail={formData.company.email}
           />
         );
       case 3:
@@ -306,7 +312,7 @@ const PublicOnboardingPage = () => {
   };
 
   const isCurrentStepValid =
-    (currentStep !== 2 || !!formData?.user && isPrimaryUserStepValid(formData.user)) &&
+    (currentStep !== 2 || !!formData?.user && isPrimaryUserStepValid(formData.user, formData.scenario === "new_company" ? formData.company.email : undefined)) &&
     (currentStep !== 5 || isAgreementStepValid(formData?.agreement));
 
   return (

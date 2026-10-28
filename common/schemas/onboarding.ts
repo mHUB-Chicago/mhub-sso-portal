@@ -131,8 +131,21 @@ const requireAgreementSuperRefine = (data: OnboardingFormData, ctx: z.Refinement
   }
 };
 
+// Request-time only, like requireAgreementSuperRefine, so already-stored rows that share
+// one email still read back fine.
+const requireDistinctCompanyEmailSuperRefine = (data: OnboardingFormData, ctx: z.RefinementCtx) => {
+  const companyEmail = data.company.email?.trim().toLowerCase();
+  if (data.scenario === "new_company" && companyEmail && companyEmail === data.user.email.trim().toLowerCase()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["company", "email"],
+      message: "The company email and the primary user's email must be different. Leave the company email blank to have one generated automatically.",
+    });
+  }
+};
+
 export const CreateOnboardingSubmissionRequestSchema = z.object({
-  formData: OnboardingFormDataSchema.superRefine(requireAgreementSuperRefine),
+  formData: OnboardingFormDataSchema.superRefine(requireAgreementSuperRefine).superRefine(requireDistinctCompanyEmailSuperRefine),
 });
 
 export const OnboardingSubmissionSchema = z.object({
@@ -177,7 +190,7 @@ export const ApproveOnboardingSubmissionResponseSchema = SuccessResponseSchema(
 );
 
 export const UpdateOnboardingSubmissionRequestSchema = z.object({
-  formData: OnboardingFormDataSchema,
+  formData: OnboardingFormDataSchema.superRefine(requireDistinctCompanyEmailSuperRefine),
 });
 
 export const UpdateOnboardingSubmissionResponseSchema = SuccessResponseSchema(
@@ -296,7 +309,7 @@ export const GetOnboardingLinkResponseSchema = SuccessResponseSchema(
 );
 
 export const SubmitOnboardingLinkRequestSchema = z.object({
-  formData: OnboardingFormDataSchema.superRefine(requireAgreementSuperRefine),
+  formData: OnboardingFormDataSchema.superRefine(requireAgreementSuperRefine).superRefine(requireDistinctCompanyEmailSuperRefine),
 });
 
 export const SubmitOnboardingLinkResponseSchema = SuccessResponseSchema(z.object({}));

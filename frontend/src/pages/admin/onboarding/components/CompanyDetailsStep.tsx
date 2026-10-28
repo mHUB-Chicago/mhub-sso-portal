@@ -79,8 +79,9 @@ export const CompanyDetailsStep = ({ value, onChange, attributeOptions }: Compan
               placeholder="e.g. hello@yourcompany.com"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Optional — used as the company's PeopleVine contact email. Leave blank to
-              auto-generate one from the primary user's email below.
+              <b className="text-gray-700">Must be different from the primary user's email.</b> If the company
+              doesn't have its own email, leave this blank and the system will create one automatically (e.g.
+              name+company@domain.com).
             </p>
           </div>
           <div className="col-span-2">

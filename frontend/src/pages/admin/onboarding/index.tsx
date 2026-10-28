@@ -16,6 +16,7 @@ import { LinkGeneratedStep } from "./components/LinkGeneratedStep";
 import { CompanyDetailsStep } from "./components/CompanyDetailsStep";
 import { SelectCompanyStep } from "./components/SelectCompanyStep";
 import { PrimaryUserStep, isPrimaryUserStepValid } from "./components/PrimaryUserStep";
+import { isSameAsCompanyEmail } from "./components/companyEmail";
 import { MembershipPackageStep } from "./components/MembershipPackageStep";
 import { AddonMembershipsStep } from "./components/AddonMembershipsStep";
 import { SkillsStep } from "./components/SkillsStep";
@@ -178,7 +179,11 @@ const OnboardingPage = () => {
   // of nothing happening. See isCurrentStepValid for what "incomplete" checks per step.
   const handleContinueClick = () => {
     if (!isCurrentStepValid) {
-      toast.error("Please fill in all required fields before continuing.");
+      toast.error(
+        currentStep === 2 && formData?.scenario === "new_company" && isSameAsCompanyEmail(formData.user.email, formData.company.email)
+          ? "The company email and the primary user's email must be different."
+          : "Please fill in all required fields before continuing."
+      );
       return;
     }
     goNext();
@@ -295,7 +300,7 @@ const OnboardingPage = () => {
   };
 
   const isCurrentStepValid =
-    (currentStep !== 2 || isPrimaryUserStepValid(formData.user)) &&
+    (currentStep !== 2 || isPrimaryUserStepValid(formData.user, formData.scenario === "new_company" ? formData.company.email : undefined)) &&
     (currentStep !== 5 || isAgreementStepValid(formData.agreement));
 
   return (
