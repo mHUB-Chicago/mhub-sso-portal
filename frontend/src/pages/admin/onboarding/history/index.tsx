@@ -22,13 +22,12 @@ import { DuplicateMatchModal } from "./DuplicateMatchModal";
 import { OnboardingProgressModal } from "./OnboardingProgressModal";
 import { SyncStatusGate } from "@/components/sync-status-overlay";
 
-type StepKey = "invite" | "account" | "payment" | "subscription" | "serviceProviders";
+type StepKey = "invite" | "account" | "payment" | "subscription";
 const IN_PROCESS_STEPS: { key: StepKey; label: string }[] = [
   { key: "invite", label: "Invitation Sent" },
   { key: "account", label: "Company Account Created in PV" },
   { key: "payment", label: "Payment & Agreement Completed" },
   { key: "subscription", label: "Subscription Applied" },
-  { key: "serviceProviders", label: "Service Provider Accounts" },
 ];
 
 const inProcessProgress = (record: OnboardingInProcessRecord) => {

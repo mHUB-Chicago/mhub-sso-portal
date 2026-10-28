@@ -112,16 +112,6 @@ export interface OnboardingProgressSteps {
   account: string | null
   payment: string | null
   subscription: string | null
-  serviceProviders: string | null
-}
-
-export type OnboardingServiceProviderKey = 'learnWorlds' | 'digiFabster'
-export type OnboardingServiceProviderStatus = 'created' | 'not_needed'
-
-export interface OnboardingServiceProviders {
-  learnWorlds: { status: OnboardingServiceProviderStatus | null; at: string | null }
-  digiFabster: { status: OnboardingServiceProviderStatus | null; at: string | null }
-  skipped: boolean
 }
 
 // Default (in-process) tab row — a live Company/User record still awaiting a
@@ -139,7 +129,6 @@ export interface OnboardingInProcessRecord {
   // True when the "payment" step was set via the admin Skip action instead of a real
   // PV-confirmed payment.
   paymentSkipped: boolean
-  serviceProviders: OnboardingServiceProviders
   // The originating OnboardingSubmission's id, when still traceable — lets the UI link
   // to the read-only submission summary (membership package + all other datapoints).
   submissionId: string | null
@@ -298,16 +287,6 @@ export const onboardingApi = createApi({
       invalidatesTags: ['OnboardingSubmissions'],
     }),
 
-    updateOnboardingServiceProvider: builder.mutation<ApplySubscriptionResponse, { type: 'company' | 'user'; id: string; provider: OnboardingServiceProviderKey; status: OnboardingServiceProviderStatus | null }>({
-      query: ({ type, id, provider, status }) => ({ url: `/onboarding/in-process/${type}/${id}/service-providers`, method: 'POST', body: { provider, status } }),
-      invalidatesTags: ['OnboardingSubmissions'],
-    }),
-
-    skipOnboardingServiceProviders: builder.mutation<ApplySubscriptionResponse, { type: 'company' | 'user'; id: string }>({
-      query: ({ type, id }) => ({ url: `/onboarding/in-process/${type}/${id}/skip-service-providers`, method: 'POST' }),
-      invalidatesTags: ['OnboardingSubmissions'],
-    }),
-
     getOnboardingMembershipPackages: builder.query<MembershipPackagesResponse, void>({
       query: () => '/onboarding/membership-packages',
       providesTags: ['OnboardingMembershipPackages'],
@@ -349,8 +328,6 @@ export const {
   useGetOnboardingInProcessQuery,
   useApplyOnboardingSubscriptionMutation,
   useSkipOnboardingPaymentMutation,
-  useUpdateOnboardingServiceProviderMutation,
-  useSkipOnboardingServiceProvidersMutation,
   useGetOnboardingMembershipPackagesQuery,
   useGetOnboardingAddonPackagesQuery,
   useGetOnboardingAttributeOptionsQuery,

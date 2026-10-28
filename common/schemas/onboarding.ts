@@ -223,21 +223,6 @@ export const OnboardingProgressStepsSchema = z.object({
   account: z.coerce.date().transform((d) => d.toISOString()).nullable(),
   payment: z.coerce.date().transform((d) => d.toISOString()).nullable(),
   subscription: z.coerce.date().transform((d) => d.toISOString()).nullable(),
-  serviceProviders: z.coerce.date().transform((d) => d.toISOString()).nullable(),
-});
-
-export const OnboardingServiceProviderKeySchema = z.enum(["learnWorlds", "digiFabster"]);
-export const OnboardingServiceProviderStatusSchema = z.enum(["created", "not_needed"]);
-
-const OnboardingServiceProviderItemSchema = z.object({
-  status: OnboardingServiceProviderStatusSchema.nullable(),
-  at: z.coerce.date().transform((d) => d.toISOString()).nullable(),
-});
-
-export const OnboardingServiceProvidersSchema = z.object({
-  learnWorlds: OnboardingServiceProviderItemSchema,
-  digiFabster: OnboardingServiceProviderItemSchema,
-  skipped: z.boolean(),
 });
 
 export const OnboardingInProcessRecordSchema = z.object({
@@ -253,7 +238,6 @@ export const OnboardingInProcessRecordSchema = z.object({
   // True when the "payment" step's timestamp was set by handleSkipOnboardingPayment
   // (admin override) rather than the real PV webhook — see the field's schema.prisma doc.
   paymentSkipped: z.boolean(),
-  serviceProviders: OnboardingServiceProvidersSchema,
   // The originating OnboardingSubmission's id, when one can still be traced (via
   // matchedCompanyId/matchedUserId) — lets the UI link to the read-only submission
   // summary (membership package + all other captured datapoints) for this record.
@@ -269,15 +253,6 @@ export const ApplyOnboardingSubscriptionResponseSchema = SuccessResponseSchema(
 );
 
 export const SkipOnboardingPaymentResponseSchema = SuccessResponseSchema(
-  z.object({ record: OnboardingInProcessRecordSchema })
-);
-
-export const UpdateOnboardingServiceProviderRequestSchema = z.object({
-  provider: OnboardingServiceProviderKeySchema,
-  status: OnboardingServiceProviderStatusSchema.nullable(),
-});
-
-export const UpdateOnboardingServiceProviderResponseSchema = SuccessResponseSchema(
   z.object({ record: OnboardingInProcessRecordSchema })
 );
 

@@ -28,17 +28,13 @@ import {
   TreatOnboardingSubmissionAsNewResponseSchema,
   UpdateOnboardingSubmissionRequestSchema,
   UpdateOnboardingSubmissionResponseSchema,
-  UpdateOnboardingServiceProviderRequestSchema,
-  UpdateOnboardingServiceProviderResponseSchema,
   type OnboardingFormData,
 } from "@common/schemas/onboarding";
 import { findOnboardingDuplicate } from "@/services/onboardingDuplicateService";
 import { createCompany, updateCompany } from "@/services/companyService";
 import { createUser, updateUser } from "@/services/userService";
 import { generateSignedMembershipAgreementPdf } from "@/services/membershipAgreementService";
-import { getAllServiceProviders, getServiceProviderByEntityId } from "@/services/serviceProviderService";
-import { allowUserServiceProvider } from "@/services/userServiceProviderService";
-import { allowCompanyServiceProvider } from "@/services/companyServiceProviderService";
+import { getServiceProviderByEntityId } from "@/services/serviceProviderService";
 import {
   assertPeopleVineWritesEnabled,
   fetchPvAttributeOptions,
@@ -455,35 +451,12 @@ const scenarioOf = (formData: string): string | null => {
   }
 };
 
-type ServiceProviderStatus = "created" | "not_needed";
-
-const toServiceProviderStatus = (value: string | null): ServiceProviderStatus | null =>
-  value === "created" || value === "not_needed" ? value : null;
-
-const serviceProvidersCompletedAt = (row: {
-  onboardingLearnWorldsStatus: string | null;
-  onboardingLearnWorldsAt: Date | null;
-  onboardingDigiFabsterStatus: string | null;
-  onboardingDigiFabsterAt: Date | null;
-  onboardingServiceProvidersSkippedAt: Date | null;
-}): Date | null => {
-  if (row.onboardingServiceProvidersSkippedAt) return row.onboardingServiceProvidersSkippedAt;
-  if (!toServiceProviderStatus(row.onboardingLearnWorldsStatus) || !toServiceProviderStatus(row.onboardingDigiFabsterStatus)) return null;
-  if (!row.onboardingLearnWorldsAt || !row.onboardingDigiFabsterAt) return null;
-  return row.onboardingLearnWorldsAt > row.onboardingDigiFabsterAt ? row.onboardingLearnWorldsAt : row.onboardingDigiFabsterAt;
-};
-
 const buildOnboardingProgress = (
   row: {
     createdAt: Date;
     onboardingPaymentAgreementAt: Date | null;
     onboardingPaymentAgreementSkippedBy: string | null;
     onboardingSubscriptionAppliedAt: Date | null;
-    onboardingLearnWorldsStatus: string | null;
-    onboardingLearnWorldsAt: Date | null;
-    onboardingDigiFabsterStatus: string | null;
-    onboardingDigiFabsterAt: Date | null;
-    onboardingServiceProvidersSkippedAt: Date | null;
   },
   submission: { mode: string; createdAt: Date; scenario: string | null } | undefined
 ) => ({
@@ -496,28 +469,11 @@ const buildOnboardingProgress = (
     account: row.createdAt,
     payment: row.onboardingPaymentAgreementAt,
     subscription: row.onboardingSubscriptionAppliedAt,
-    serviceProviders: serviceProvidersCompletedAt(row),
   },
   paymentSkipped: !!row.onboardingPaymentAgreementSkippedBy,
-  serviceProviders: {
-    learnWorlds: { status: toServiceProviderStatus(row.onboardingLearnWorldsStatus), at: row.onboardingLearnWorldsAt },
-    digiFabster: { status: toServiceProviderStatus(row.onboardingDigiFabsterStatus), at: row.onboardingDigiFabsterAt },
-    skipped: !!row.onboardingServiceProvidersSkippedAt,
-  },
 });
 
-// Records stay on the in-process tab after the subscription is applied until mHub has
-// handled the LearnWorlds and DigiFabster accounts (or skipped that step).
-const IN_PROCESS_WHERE = {
-  OR: [
-    { accountStatus: "pending_membership" },
-    {
-      onboardingSubscriptionAppliedAt: { not: null },
-      onboardingServiceProvidersSkippedAt: null,
-      OR: [{ onboardingLearnWorldsStatus: null }, { onboardingDigiFabsterStatus: null }],
-    },
-  ],
-};
+const IN_PROCESS_WHERE = { accountStatus: "pending_membership" };
 
 // "Default (in-process)" onboarding tab: live Company/User rows still awaiting a
 // membership (accountStatus "pending_membership"), not OnboardingSubmission rows —
@@ -699,120 +655,6 @@ export const handleSkipOnboardingPayment = async (c: Context<AppType>) => {
     },
   });
   return c.json(response);
-};
-
-const findInProcessRow = async (prisma: PrismaClient, type: string | undefined, id: string | undefined) => {
-  if ((type !== "company" && type !== "user") || !id) {
-    throw new HTTPException(400, { message: "Invalid record type" });
-  }
-  const row = type === "company"
-    ? await prisma.company.findUnique({ where: { id } })
-    : await prisma.user.findUnique({ where: { id } });
-  if (!row) {
-    throw new HTTPException(404, { message: "Onboarding record not found" });
-  }
-  if (!row.onboardingSubscriptionAppliedAt) {
-    throw new HTTPException(400, { message: "Subscription must be applied before handling service provider accounts" });
-  }
-  if (row.onboardingServiceProvidersSkippedAt) {
-    throw new HTTPException(400, { message: "Service provider accounts step has already been skipped" });
-  }
-  return { row, type: type as "company" | "user", id };
-};
-
-const respondWithInProcessRecord = async (
-  c: Context<AppType>,
-  prisma: PrismaClient,
-  type: "company" | "user",
-  id: string,
-  data: Record<string, unknown>,
-  message: string
-) => {
-  const updated =
-    type === "company"
-      ? await prisma.company.update({ where: { id }, data })
-      : await prisma.user.update({ where: { id }, data });
-  const submission =
-    type === "company"
-      ? await prisma.onboardingSubmission.findFirst({ where: { matchedCompanyId: id }, orderBy: { createdAt: "desc" } })
-      : await prisma.onboardingSubmission.findFirst({ where: { matchedUserId: id }, orderBy: { createdAt: "desc" } });
-  const response = UpdateOnboardingServiceProviderResponseSchema.parse({
-    success: true,
-    message,
-    data: {
-      record: {
-        id: updated.id,
-        type,
-        name: updated.name,
-        email: updated.email,
-        peopleVineId: updated.peopleVineId,
-        createdAt: updated.createdAt,
-        submissionId: submission?.id ?? null,
-        ...buildOnboardingProgress(updated, submission ? { ...submission, scenario: scenarioOf(submission.formData) } : undefined),
-      },
-    },
-  });
-  return c.json(response);
-};
-
-export const handleUpdateOnboardingServiceProvider = async (
-  c: Context<AppType, string, JsonInput<typeof UpdateOnboardingServiceProviderRequestSchema>>
-) => {
-  const prisma: PrismaClient = c.get("db");
-  const { provider, status } = c.req.valid("json");
-  const { type, id } = await findInProcessRow(prisma, c.req.param("type"), c.req.param("id"));
-
-  let message = "Service provider account updated";
-  if (status === "created") {
-    message = await grantServiceProviderAccess(c, prisma, type, id, SERVICE_PROVIDER_NAMES[provider]);
-  }
-
-  const data = provider === "learnWorlds"
-    ? { onboardingLearnWorldsStatus: status, onboardingLearnWorldsAt: status ? new Date() : null }
-    : { onboardingDigiFabsterStatus: status, onboardingDigiFabsterAt: status ? new Date() : null };
-  return respondWithInProcessRecord(c, prisma, type, id, data, message);
-};
-
-const SERVICE_PROVIDER_NAMES = { learnWorlds: "LearnWorlds", digiFabster: "DigiFabster" } as const;
-
-// Marking an account as created also turns on that app in the portal, so the member is
-// not blocked at SSO by the default "Member Portal only" access for new accounts.
-const grantServiceProviderAccess = async (
-  c: Context<AppType>,
-  prisma: PrismaClient,
-  type: "company" | "user",
-  id: string,
-  serviceProviderName: string
-): Promise<string> => {
-  const serviceProvider = (await getAllServiceProviders(c)).find(
-    (sp) => sp.name.trim().toLowerCase() === serviceProviderName.toLowerCase()
-  );
-  if (!serviceProvider) {
-    return `Marked as created, but no "${serviceProviderName}" service provider was found, so portal access was not enabled.`;
-  }
-
-  if (type === "company") {
-    await allowCompanyServiceProvider(c, { companyId: id, serviceProviderId: serviceProvider.id });
-  }
-  const userIds = type === "company"
-    ? (await prisma.user.findMany({ where: { companyId: id }, select: { id: true } })).map((u) => u.id)
-    : [id];
-  for (const userId of userIds) {
-    await allowUserServiceProvider(c, { userId, serviceProviderId: serviceProvider.id });
-  }
-  return `${serviceProviderName} access enabled for ${userIds.length} user${userIds.length === 1 ? "" : "s"}.`;
-};
-
-export const handleSkipOnboardingServiceProviders = async (c: Context<AppType>) => {
-  const prisma: PrismaClient = c.get("db");
-  const user = c.get("user");
-  const { row, type, id } = await findInProcessRow(prisma, c.req.param("type"), c.req.param("id"));
-  if (serviceProvidersCompletedAt(row)) {
-    throw new HTTPException(400, { message: "Service provider accounts step is already complete" });
-  }
-
-  const data = { onboardingServiceProvidersSkippedAt: new Date(), onboardingServiceProvidersSkippedBy: user?.id ?? null };
-  return respondWithInProcessRecord(c, prisma, type, id, data, "Service provider accounts step skipped");
 };
 
 export const handleGetOnboardingSubmissionById = async (c: Context<AppType>) => {

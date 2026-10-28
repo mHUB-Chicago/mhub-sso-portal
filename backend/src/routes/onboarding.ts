@@ -27,8 +27,6 @@ import {
   TreatOnboardingSubmissionAsNewResponseSchema,
   UpdateOnboardingSubmissionRequestSchema,
   UpdateOnboardingSubmissionResponseSchema,
-  UpdateOnboardingServiceProviderRequestSchema,
-  UpdateOnboardingServiceProviderResponseSchema,
 } from "@common/schemas/onboarding";
 import { validate } from "@/middleware/validate";
 import { roleMiddleware } from "@/middleware/role";
@@ -50,8 +48,6 @@ import {
   handleReactivateOnboardingSubmission,
   handleSendOnboardingLinkEmail,
   handleSkipOnboardingPayment,
-  handleSkipOnboardingServiceProviders,
-  handleUpdateOnboardingServiceProvider,
   handleTreatOnboardingSubmissionAsNew,
   handleUpdateOnboardingSubmission,
 } from "@/controllers/onboardingController";
@@ -180,37 +176,6 @@ app.post(
     ],
   }),
   handleSkipOnboardingPayment
-);
-
-app.post(
-  "/in-process/:type/:id/service-providers",
-  roleMiddleware([Role.ADMIN]),
-  describeRoute({
-    summary: "Mark a LearnWorlds or DigiFabster account as created or not needed (null undoes it) for an in-process Company/User record",
-    successMessage: "Service provider account updated",
-    responseSchema: UpdateOnboardingServiceProviderResponseSchema,
-    parameters: [
-      { name: "type", in: "path", required: true, schema: { type: "string", enum: ["company", "user"] } },
-      { name: "id", in: "path", required: true, schema: { type: "string" } },
-    ],
-  }),
-  validate(UpdateOnboardingServiceProviderRequestSchema),
-  handleUpdateOnboardingServiceProvider
-);
-
-app.post(
-  "/in-process/:type/:id/skip-service-providers",
-  roleMiddleware([Role.ADMIN]),
-  describeRoute({
-    summary: "Mark the 'Service Provider Accounts' onboarding step as not required for an in-process Company/User record",
-    successMessage: "Service provider accounts step skipped",
-    responseSchema: UpdateOnboardingServiceProviderResponseSchema,
-    parameters: [
-      { name: "type", in: "path", required: true, schema: { type: "string", enum: ["company", "user"] } },
-      { name: "id", in: "path", required: true, schema: { type: "string" } },
-    ],
-  }),
-  handleSkipOnboardingServiceProviders
 );
 
 app.get(
