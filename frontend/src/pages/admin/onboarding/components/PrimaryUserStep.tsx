@@ -52,13 +52,13 @@ export const PrimaryUserStep = ({
   scenario,
   companyEmail,
 }: PrimaryUserStepProps) => {
-  // The "+company" alias is only ever generated for a brand-new company's own PV
+  // The "+co" alias is only ever generated for a brand-new company's own PV
   // customer (see buildCompanyPlaceholderEmail) — an existing_company submission never
   // creates one, so this preview would be misleading there. It's also redundant once the
   // user already entered their own company email on the previous step.
   const aliasPreview =
     scenario === "new_company" && !companyEmail?.trim() && value.email.includes("@")
-      ? value.email.replace("@", "+company@")
+      ? value.email.replace("@", "+co@")
       : "";
   const sameAsCompanyEmail = scenario === "new_company" && isSameAsCompanyEmail(value.email, companyEmail);
   const genderOptions = findAttributeOptionValues(attributeOptions, "Gender").map((label) => ({

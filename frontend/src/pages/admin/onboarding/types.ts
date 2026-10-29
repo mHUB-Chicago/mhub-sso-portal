@@ -8,7 +8,7 @@ export interface Address {
 
 export interface CompanyDetails {
   name?: string;
-  // Optional — if left blank, PV falls back to a "+company" alias on the primary
+  // Optional — if left blank, PV falls back to a "+co" alias on the primary
   // user's own email (see buildCompanyPlaceholderEmail, peopleVinePortalService.ts).
   email?: string;
   // Optional — when the company (not the primary user) is who should pay, this address

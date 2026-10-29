@@ -208,7 +208,7 @@ const finalizeSubmissionPushToPeopleVine = async (
       peopleVineId: result.companyPvCustomerId,
       active: false,
       // The exact email PV's own company customer record was just given — the form's
-      // business email if provided, else the same "+company" alias fallback.
+      // business email if provided, else the same "+co" alias fallback.
       email: (result.companyEmail ?? formData.user.email).toLowerCase(),
       accountStatus: "pending_membership",
     });

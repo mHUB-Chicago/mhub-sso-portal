@@ -415,7 +415,7 @@ const buildCompanyAttributes = (formData: OnboardingFormData): PvAttributeInput[
 
 // PV requires a unique, non-empty email per customer, but our onboarding form only ever
 // collects one email (the person's). The company-type customer still needs its own,
-// distinct address — "+company" sub-addressing on the real user's own domain gives it
+// distinct address — "+co" sub-addressing on the real user's own domain gives it
 // one without inventing a fake/undeliverable domain, and any mail providers that support
 // it (Gmail, Google Workspace, Outlook, etc.) will still deliver it to the same real
 // inbox rather than bouncing. Kept short and constant rather than including the company
@@ -423,7 +423,7 @@ const buildCompanyAttributes = (formData: OnboardingFormData): PvAttributeInput[
 // company's placeholder in PV (accepted trade-off — this is the rare case, not the norm).
 const buildCompanyPlaceholderEmail = (userEmail: string): string => {
   const [localPart, domain] = userEmail.split("@");
-  return `${localPart}+company@${domain}`;
+  return `${localPart}+co@${domain}`;
 };
 
 export interface OnboardingPvPushResult {
@@ -437,7 +437,7 @@ export interface OnboardingPvPushResult {
   // link was used instead (new company, or an existing company with no active card).
   linkedViaMembershipCard: boolean;
   // Set only for the new_company scenario — the email actually used for the PV company
-  // customer above (the form's business email if provided, else the "+company" alias),
+  // customer above (the form's business email if provided, else the "+co" alias),
   // so the caller's local mirror row can use the exact same value instead of guessing.
   companyEmail: string | null;
 }
@@ -512,7 +512,7 @@ export const pushOnboardingSubmissionToPeopleVine = async (
   // available here; the link back to the company is best-effort via customer_reference.
   const companyName = formData.company.name ?? "";
   // A business email entered on the form is used as-is; otherwise falls back to the
-  // existing "+company" alias on the primary user's own email.
+  // existing "+co" alias on the primary user's own email.
   const resolvedCompanyEmail = formData.company.email?.trim() || buildCompanyPlaceholderEmail(formData.user.email);
   let companyId: number;
   if (resumeCompanyPvCustomerId) {
