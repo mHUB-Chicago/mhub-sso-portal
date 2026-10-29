@@ -19,7 +19,7 @@ import { User } from "@/database/models";
 // Where PV should land after this login's SSO, or null if the login won't end in PV.
 // Mirrors handleVerifyLogin's redirect choice: the onboarding payment form while it's
 // pending, otherwise PV only if the SAML transaction (tx) came from PV, or — with no tx —
-// if PV is the user's auto-redirect SP.
+// if PV is the user's auto-redirect SP. Admins with no tx always land on the speedbump.
 const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendingMembership: boolean, tx?: string): Promise<string | null> => {
   if (isPendingMembership) return getOnboardingPaymentFormUrl(c);
   let entityId: string | undefined;
@@ -28,6 +28,7 @@ const getPeopleVineLandingUrl = async (c: Context<AppType>, user: User, isPendin
     if (!samlAuthRequest) return null;
     entityId = (await getServiceProviderById(c, samlAuthRequest.serviceProviderId))?.entityId;
   } else {
+    if (user.role === 'ADMIN') return null;
     const availableServiceProviders = await getAllowedServiceProvidersForUser(c, user.id);
     entityId = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]?.entityId;
   }
@@ -173,7 +174,7 @@ export const handleVerifyLogin = async (c: Context<AppType, string, JsonInput<ty
     const pendingOnboardingRedirectUrl = user.role !== 'ADMIN' && user.accountStatus === 'pending_membership' && !user.onboardingPaymentAgreementAt
       ? await getOnboardingPaymentSsoUrl(c)
       : null;
-    const availableServiceProviders = await getAllowedServiceProvidersForUser(c, loginRequest.userId);
+    const availableServiceProviders = user.role === 'ADMIN' ? [] : await getAllowedServiceProvidersForUser(c, loginRequest.userId);
     const autoRedirectableSp = availableServiceProviders.filter(sp => sp.autoRedirect).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0] ?? null;
     const response = VerifyLoginResponseSchema.parse({
       success: true,
