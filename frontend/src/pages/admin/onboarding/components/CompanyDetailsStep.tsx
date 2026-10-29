@@ -78,10 +78,9 @@ export const CompanyDetailsStep = ({ value, onChange, attributeOptions }: Compan
               className="mt-1"
               placeholder="e.g. hello@yourcompany.com"
             />
-            <p className="mt-1 text-xs text-gray-500">
-              <b className="text-gray-700">Must be different from the primary user's email.</b> If the company
-              doesn't have its own email, leave this blank and the system will create one automatically (e.g.
-              name+co@domain.com).
+            <p className="mt-1 text-sm font-semibold text-red-600">
+              Must be different from the primary user's email. If the company doesn't have its own email, leave
+              this blank and the system will create one automatically (e.g. name+co@domain.com).
             </p>
           </div>
           <div className="col-span-2">
