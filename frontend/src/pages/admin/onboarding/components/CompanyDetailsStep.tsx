@@ -81,7 +81,7 @@ export const CompanyDetailsStep = ({ value, onChange, attributeOptions }: Compan
             <p className="mt-1 text-xs text-gray-500">
               <b className="text-gray-700">Must be different from the primary user's email.</b> If the company
               doesn't have its own email, leave this blank and the system will create one automatically (e.g.
-              name+company@domain.com).
+              name+co@domain.com).
             </p>
           </div>
           <div className="col-span-2">

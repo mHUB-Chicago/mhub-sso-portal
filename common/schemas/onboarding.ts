@@ -11,7 +11,7 @@ export const OnboardingAddressSchema = z.object({
 
 export const OnboardingCompanySchema = z.object({
   name: z.string().optional(),
-  // Optional — if left blank, PV falls back to a "+company" alias on the primary
+  // Optional — if left blank, PV falls back to a "+co" alias on the primary
   // user's own email (see buildCompanyPlaceholderEmail, peopleVinePortalService.ts).
   email: z.string().optional(),
   // Optional — for new_company, the company (not the primary user) usually holds the
