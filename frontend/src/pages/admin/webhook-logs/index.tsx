@@ -1,6 +1,6 @@
-import { useState } from "react"
-import { Link } from "react-router-dom"
-import { Loader2, RefreshCw, Eye } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
+import { Loader2, RefreshCw, Eye, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -233,37 +233,76 @@ const EVENT_TYPES = [
   'subscription_cancel',
 ]
 
+const STATUSES = [
+  'queued',
+  'processed',
+  'processed_invalid_membership',
+  'invalid_membership',
+  'invalid',
+  'skipped',
+  'failed',
+]
+
+type FilterKey = 'search' | 'eventType' | 'status' | 'changedOnly' | 'dateFrom' | 'dateTo'
+
 export function AdminWebhookLogsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(50)
   const [selected, setSelected] = useState<WebhookLog | null>(null)
-  const [eventType, setEventType] = useState<string | undefined>(undefined)
-  const [dateFrom, setDateFrom] = useState<string | undefined>(undefined)
-  const [dateTo, setDateTo] = useState<string | undefined>(undefined)
+
+  const search = searchParams.get('search') ?? ''
+  const eventType = searchParams.get('eventType') || undefined
+  const status = searchParams.get('status') || undefined
+  const changedOnly = searchParams.get('changedOnly') === 'true'
+  const dateFrom = searchParams.get('dateFrom') || undefined
+  const dateTo = searchParams.get('dateTo') || undefined
+
+  const [searchInput, setSearchInput] = useState(search)
 
   const { data, isLoading, isFetching, error, refetch } = useGetWebhookLogsQuery({
     limit: pageSize,
     offset: page * pageSize,
     eventType,
+    status,
+    search: search || undefined,
+    changedOnly,
     dateFrom: dateFrom ? `${dateFrom}T00:00:00.000Z` : undefined,
     dateTo: dateTo ? `${dateTo}T23:59:59.999Z` : undefined,
   })
 
-  const handleFilterChange = (key: 'eventType' | 'dateFrom' | 'dateTo', value: string | undefined) => {
+  const handleFilterChange = (key: FilterKey, value: string | undefined) => {
     setPage(0)
-    if (key === 'eventType') setEventType(value)
-    if (key === 'dateFrom') setDateFrom(value)
-    if (key === 'dateTo') setDateTo(value)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value)
+      else next.delete(key)
+      return next
+    }, { replace: true })
   }
+
+  useEffect(() => {
+    const value = searchInput.trim()
+    if (value === search) return
+    const timer = setTimeout(() => {
+      setPage(0)
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (value) next.set('search', value)
+        else next.delete('search')
+        return next
+      }, { replace: true })
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchInput, search, setSearchParams])
 
   const clearFilters = () => {
     setPage(0)
-    setEventType(undefined)
-    setDateFrom(undefined)
-    setDateTo(undefined)
+    setSearchInput('')
+    setSearchParams({}, { replace: true })
   }
 
-  const hasFilters = !!(eventType || dateFrom || dateTo)
+  const hasFilters = !!(search || eventType || status || changedOnly || dateFrom || dateTo)
 
   const logs = data?.data?.logs ?? []
   const total = data?.data?.total ?? 0
@@ -311,6 +350,17 @@ export function AdminWebhookLogsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="search"
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Search name, email, company or PV ID"
+            className="h-9 w-full pl-9 pr-3 text-sm border rounded-md bg-background"
+          />
+        </div>
+
         <Select value={eventType ?? "all"} onValueChange={v => handleFilterChange('eventType', v === 'all' ? undefined : v)}>
           <SelectTrigger className="w-48 h-9 text-sm">
             <SelectValue placeholder="Event Type" />
@@ -322,6 +372,27 @@ export function AdminWebhookLogsPage() {
             ))}
           </SelectContent>
         </Select>
+
+        <Select value={status ?? "all"} onValueChange={v => handleFilterChange('status', v === 'all' ? undefined : v)}>
+          <SelectTrigger className="w-56 h-9 text-sm">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {STATUSES.map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <label className="flex items-center gap-2 h-9 px-3 text-sm border rounded-md bg-background cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={changedOnly}
+            onChange={e => handleFilterChange('changedOnly', e.target.checked ? 'true' : undefined)}
+          />
+          Only logs with changes
+        </label>
 
         <input
           type="date"
@@ -359,7 +430,7 @@ export function AdminWebhookLogsPage() {
           <tbody className="divide-y">
             {logs.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">No webhook logs yet</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">{hasFilters ? "No webhook logs match these filters" : "No webhook logs yet"}</td>
               </tr>
             ) : (
               logs.map((log) => {
