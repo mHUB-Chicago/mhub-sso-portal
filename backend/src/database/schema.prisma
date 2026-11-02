@@ -348,23 +348,25 @@ model OnboardingLink {
 }
 
 model Offboarding {
-  id              String    @id @default(uuid())
-  type            String
-  companyId       String?
-  userId          String?
-  name            String
-  email           String
-  peopleVineId    String?
-  via             String
-  members         String    @default("[]")
-  createdBy       String?
-  accessRemovedAt DateTime?
-  accessRemovedBy String?
-  pvRemovedAt     DateTime?
-  completedAt     DateTime?
-  completedBy     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  type              String
+  companyId         String?
+  userId            String?
+  name              String
+  email             String
+  peopleVineId      String?
+  via               String
+  members           String    @default("[]")
+  createdBy         String?
+  accessRemovedAt   DateTime?
+  accessRemovedBy   String?
+  pvRemovedAt       DateTime?
+  externalRemovedAt DateTime?
+  externalRemovedBy String?
+  completedAt       DateTime?
+  completedBy       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([completedAt])
   @@index([userId])

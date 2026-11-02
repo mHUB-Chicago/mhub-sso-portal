@@ -22,6 +22,8 @@ export const OffboardingRecordSchema = z.object({
   members: z.array(OffboardingMemberSchema),
   accessRemovedAt: isoDate,
   pvRemovedAt: isoDate,
+  externalRemovedAt: isoDate,
+  externalRemovedByName: z.string().nullable(),
   completedAt: isoDate,
   completedByName: z.string().nullable(),
   createdAt: z.coerce.date().transform((d) => d.toISOString()),

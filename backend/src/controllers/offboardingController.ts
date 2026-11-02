@@ -29,13 +29,15 @@ const toRecordDTO = (row: Offboarding, names: Map<string, string>) => ({
   members: parseOffboardingMembers(row.members),
   accessRemovedAt: row.accessRemovedAt,
   pvRemovedAt: row.pvRemovedAt,
+  externalRemovedAt: row.externalRemovedAt,
+  externalRemovedByName: row.externalRemovedBy ? names.get(row.externalRemovedBy) ?? null : null,
   completedAt: row.completedAt,
   completedByName: row.completedBy ? names.get(row.completedBy) ?? null : null,
   createdAt: row.createdAt,
 });
 
 const adminNames = async (prisma: PrismaClient, rows: Offboarding[]): Promise<Map<string, string>> => {
-  const ids = [...new Set(rows.map((r) => r.completedBy).filter((id): id is string => !!id))];
+  const ids = [...new Set(rows.flatMap((r) => [r.completedBy, r.externalRemovedBy]).filter((id): id is string => !!id))];
   if (ids.length === 0) return new Map();
   const admins = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
   return new Map(admins.map((a) => [a.id, a.name]));
@@ -74,7 +76,7 @@ export const handleGetOffboardings = async (c: Context<AppType>) => {
     prisma.offboarding.findMany({ where: { completedAt: { not: null } }, orderBy: { completedAt: "desc" }, take: 500 }),
   ]);
   await detectPeopleVineRemovals(prisma, inProcess);
-  const names = await adminNames(prisma, completed);
+  const names = await adminNames(prisma, [...inProcess, ...completed]);
 
   const response = GetOffboardingsResponseSchema.parse({
     success: true,
@@ -238,12 +240,29 @@ export const handleRemoveOffboardingAccess = async (c: Context<AppType>) => {
   return respondWithRecord(c, prisma, updated, `SSO access removed for ${row.name}.`);
 };
 
+export const handleMarkExternalAccountsRemoved = async (c: Context<AppType>) => {
+  const prisma: PrismaClient = c.get("db");
+  const admin = c.get("user");
+  const row = await findOpenRecord(prisma, c.req.param("id"));
+  if (row.externalRemovedAt) {
+    throw new HTTPException(400, { message: "The external accounts are already marked as removed" });
+  }
+
+  const updated = await prisma.offboarding.update({
+    where: { id: row.id },
+    data: { externalRemovedAt: new Date(), externalRemovedBy: admin?.id ?? null },
+  });
+  return respondWithRecord(c, prisma, updated, `External accounts marked as removed for ${row.name}.`);
+};
+
 export const handleCompleteOffboarding = async (c: Context<AppType>) => {
   const prisma: PrismaClient = c.get("db");
   const admin = c.get("user");
   const row = await findOpenRecord(prisma, c.req.param("id"));
-  if (!row.accessRemovedAt || !row.pvRemovedAt) {
-    throw new HTTPException(400, { message: "SSO access and the PeopleVine membership must both be removed first" });
+  if (!row.accessRemovedAt || !row.pvRemovedAt || !row.externalRemovedAt) {
+    throw new HTTPException(400, {
+      message: "SSO access, the PeopleVine membership and the LearnWorlds, Shop site and DigiFabster accounts must all be removed first",
+    });
   }
 
   const updated = await prisma.offboarding.update({

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   useCompleteOffboardingMutation,
+  useMarkExternalAccountsRemovedMutation,
   useRemoveOffboardingAccessMutation,
   type OffboardingRecord,
 } from "@/store/api/offboardingApi";
@@ -28,6 +29,7 @@ interface OffboardingProgressModalProps {
 export function OffboardingProgressModal({ record: initialRecord, open, onClose }: OffboardingProgressModalProps) {
   const [record, setRecord] = useState(initialRecord);
   const [removeAccess, { isLoading: isRemoving }] = useRemoveOffboardingAccessMutation();
+  const [markExternalRemoved, { isLoading: isMarkingExternal }] = useMarkExternalAccountsRemovedMutation();
   const [complete, { isLoading: isCompleting }] = useCompleteOffboardingMutation();
   const [confirmingRemove, setConfirmingRemove] = useState(false);
 
@@ -43,6 +45,16 @@ export function OffboardingProgressModal({ record: initialRecord, open, onClose 
       toast.success(result.message);
     } catch (err) {
       toast.error(errorMessage(err) || "Failed to remove SSO access.");
+    }
+  };
+
+  const handleMarkExternalRemoved = async () => {
+    try {
+      const result = await markExternalRemoved(record.id).unwrap();
+      setRecord(result.data.record);
+      toast.success(result.message);
+    } catch (err) {
+      toast.error(errorMessage(err) || "Failed to mark the external accounts as removed.");
     }
   };
 
@@ -156,7 +168,13 @@ export function OffboardingProgressModal({ record: initialRecord, open, onClose 
                     <div className="text-sm font-semibold">{s.label}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {date
-                        ? `Completed ${formatDate(date)}${s.key === "confirm" && record.completedByName ? ` by ${record.completedByName}` : ""}`
+                        ? `Completed ${formatDate(date)}${
+                            s.key === "confirm" && record.completedByName
+                              ? ` by ${record.completedByName}`
+                              : s.key === "external" && record.externalRemovedByName
+                                ? ` by ${record.externalRemovedByName}`
+                                : ""
+                          }`
                         : s.waiting}
                     </div>
                   </div>
@@ -217,6 +235,17 @@ export function OffboardingProgressModal({ record: initialRecord, open, onClose 
           </div>
         )}
 
+        {!isCompleted && !record.externalRemovedAt && (
+          <div className="flex gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-relaxed text-amber-800">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-px" />
+            <div>
+              <b>Manual step:</b> remove {record.type === "company" ? "each member's" : "the member's"} account in
+              LearnWorlds, the Shop site and DigiFabster. The portal does not update these sites, so mark this step done
+              once all three are removed.
+            </div>
+          </div>
+        )}
+
         <div className="flex justify-end items-center gap-2 pt-1 flex-wrap">
           {!isCompleted && !record.accessRemovedAt && !confirmingRemove && (
             <Button variant="destructive" size="sm" onClick={() => setConfirmingRemove(true)}>
@@ -241,11 +270,16 @@ export function OffboardingProgressModal({ record: initialRecord, open, onClose 
           <Button variant="outline" size="sm" onClick={onClose}>
             Close
           </Button>
+          {!isCompleted && !record.externalRemovedAt && (
+            <Button variant="outline" size="sm" onClick={handleMarkExternalRemoved} disabled={isMarkingExternal}>
+              {isMarkingExternal ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark External Accounts Removed"}
+            </Button>
+          )}
           {!isCompleted && (
             <Button
               size="sm"
               onClick={handleComplete}
-              disabled={!record.accessRemovedAt || !record.pvRemovedAt || isCompleting}
+              disabled={!record.accessRemovedAt || !record.pvRemovedAt || !record.externalRemovedAt || isCompleting}
             >
               {isCompleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Offboarding Complete"}
             </Button>

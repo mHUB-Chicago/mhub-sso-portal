@@ -14,6 +14,7 @@ import {
   handleCompleteOffboarding,
   handleGetCompanyOffboardingMembers,
   handleGetOffboardings,
+  handleMarkExternalAccountsRemoved,
   handleOffboardCompany,
   handleOffboardUser,
   handleRemoveOffboardingAccess,
@@ -81,6 +82,18 @@ app.post(
     parameters: [idParam],
   }),
   handleRemoveOffboardingAccess
+);
+
+app.post(
+  "/:id/external-removed",
+  roleMiddleware([Role.ADMIN]),
+  describeRoute({
+    summary: "Mark the member's LearnWorlds, Shop site and DigiFabster accounts as removed",
+    successMessage: "External accounts marked as removed",
+    responseSchema: OffboardingRecordResponseSchema,
+    parameters: [idParam],
+  }),
+  handleMarkExternalAccountsRemoved
 );
 
 app.post(

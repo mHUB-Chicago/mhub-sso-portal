@@ -19,6 +19,8 @@ export interface OffboardingRecord {
   members: OffboardingMember[]
   accessRemovedAt: string | null
   pvRemovedAt: string | null
+  externalRemovedAt: string | null
+  externalRemovedByName: string | null
   completedAt: string | null
   completedByName: string | null
   createdAt: string
@@ -80,6 +82,10 @@ export const offboardingApi = createApi({
       query: (id) => ({ url: `/offboarding/${id}/remove-access`, method: 'POST' }),
       invalidatesTags: ['Offboardings', 'CompanyOffboardingMembers'],
     }),
+    markExternalAccountsRemoved: builder.mutation<OffboardingRecordResponse, string>({
+      query: (id) => ({ url: `/offboarding/${id}/external-removed`, method: 'POST' }),
+      invalidatesTags: ['Offboardings'],
+    }),
     completeOffboarding: builder.mutation<OffboardingRecordResponse, string>({
       query: (id) => ({ url: `/offboarding/${id}/complete`, method: 'POST' }),
       invalidatesTags: ['Offboardings'],
@@ -93,5 +99,6 @@ export const {
   useOffboardUserMutation,
   useOffboardCompanyMutation,
   useRemoveOffboardingAccessMutation,
+  useMarkExternalAccountsRemovedMutation,
   useCompleteOffboardingMutation,
 } = offboardingApi
