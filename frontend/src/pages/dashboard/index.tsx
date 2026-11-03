@@ -39,26 +39,8 @@ const openPeopleVine = async (e: MouseEvent<HTMLAnchorElement>, url: string) => 
   }
 }
 
-const DIGIFABSTER_UPLOAD_URL = 'https://app.digifabster.com/mHUB/widget/upload'
-const DIGIFABSTER_LOGIN_WAIT_MS = 8000
-
-const isDigiFabster = (app: App) => app.name.trim().toLowerCase() === 'digifabster'
-
-const openDigiFabster = (e: MouseEvent<HTMLAnchorElement>, url: string) => {
-  e.preventDefault()
-  const tab = window.open(url, '_blank')
-  if (!tab) {
-    window.open(url, '_blank', 'noopener,noreferrer')
-    return
-  }
-  setTimeout(() => {
-    if (!tab.closed) tab.location.href = DIGIFABSTER_UPLOAD_URL
-  }, DIGIFABSTER_LOGIN_WAIT_MS)
-}
-
 const getAppClickHandler = (app: App) => {
   if (app.url.startsWith(PEOPLEVINE_ORIGIN)) return (e: MouseEvent<HTMLAnchorElement>) => openPeopleVine(e, app.url)
-  if (isDigiFabster(app)) return (e: MouseEvent<HTMLAnchorElement>) => openDigiFabster(e, app.url)
   return undefined
 }
 
