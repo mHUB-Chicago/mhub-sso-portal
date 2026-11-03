@@ -26,19 +26,21 @@ export const hasCompanyPortalMembership = (
 ): boolean =>
   !!company && company.active && company.membershipTypes.some(name => portalAccessTypes.has(name.trim()));
 
-type AccessUser = { role: string; accountStatus: string; active: boolean };
+type AccessUser = { role: string; accountStatus: string; active: boolean; offboardedAt?: Date | string | null };
 
-// Admins always get in. Onboarding (pending_membership) users get in to reach the payment
-// form. Everyone else needs the synced `active` flag AND a portal-access membership.
+// Admins always get in. Offboarded users never do, even while PeopleVine still shows them
+// active. Onboarding (pending_membership) users get in to reach the payment form. Everyone
+// else needs the synced `active` flag AND a portal-access membership.
 export const canLogIn = (user: AccessUser, portalMembership: boolean): boolean =>
-  user.role === 'ADMIN' || user.accountStatus === 'pending_membership' || (user.active && portalMembership);
+  user.role === 'ADMIN' || (!user.offboardedAt && (user.accountStatus === 'pending_membership' || (user.active && portalMembership)));
 
 // What the admin screens show. Deliberately no "why" for blocked users: the portal doesn't
 // record the reason the sync marked someone inactive, so the screens show the facts instead
 // of guessing one.
-export type LoginAccess = 'admin' | 'onboarding' | 'allowed' | 'blocked';
+export type LoginAccess = 'admin' | 'onboarding' | 'allowed' | 'blocked' | 'offboarded';
 export const loginAccess = (user: AccessUser, portalMembership: boolean): LoginAccess => {
   if (user.role === 'ADMIN') return 'admin';
+  if (user.offboardedAt) return 'offboarded';
   if (user.accountStatus === 'pending_membership') return 'onboarding';
   return canLogIn(user, portalMembership) ? 'allowed' : 'blocked';
 };

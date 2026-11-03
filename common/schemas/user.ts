@@ -37,6 +37,7 @@ export const UserSchema = z.object({
   // isn't fetched/serialized for every row in a paginated admin user list.
   membershipAgreementSignedAt: z.coerce.date().nullable().transform(d => d ? d.toISOString() : null),
   membershipAgreementSignedName: z.string().nullable(),
+  offboardedAt: z.coerce.date().nullish().transform(d => d ? d.toISOString() : null),
   createdAt: z.coerce.date().transform(d => d.toISOString()),
   updatedAt: z.coerce.date().transform(d => d.toISOString()),
 });

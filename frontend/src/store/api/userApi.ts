@@ -31,6 +31,7 @@ export interface User {
   // GetUserResponse below, it's only present on the single-user detail fetch.
   membershipAgreementSignedAt: string | null
   membershipAgreementSignedName: string | null
+  offboardedAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -44,6 +45,7 @@ export interface Company {
   membershipTypes: string[]
   isPersonal: boolean
   subscriptionStatus: string | null
+  offboardedAt?: string | null
   createdAt: string
   updatedAt: string
 }

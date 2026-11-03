@@ -19,7 +19,8 @@ export const getActiveSessionById = async (c: Context, sessionId: string): Promi
 
   // pending_membership users are inactive by definition until they complete onboarding,
   // but still need an authenticated session to reach change-password/the payment form.
-  const userAllowed = session?.user.active || session?.user.role === 'ADMIN' || session?.user.accountStatus === 'pending_membership';
+  const userAllowed = session?.user.role === 'ADMIN'
+    || (!session?.user.offboardedAt && (session?.user.active || session?.user.accountStatus === 'pending_membership'));
   if (!session || session.revokedAt || session.expiresAt < new Date() || !userAllowed) {
     return null;
   }

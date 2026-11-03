@@ -55,6 +55,13 @@ model Company {
   onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
+  onboardingLearnWorldsStatus     String?
+  onboardingLearnWorldsAt         DateTime?
+  onboardingDigiFabsterStatus     String?
+  onboardingDigiFabsterAt         DateTime?
+  onboardingServiceProvidersSkippedAt DateTime?
+  onboardingServiceProvidersSkippedBy String?
+  offboardedAt            DateTime?
   users                   User[]
   companyServiceProviders CompanyServiceProvider[]
   subscriptions           Subscription[]
@@ -101,6 +108,15 @@ model User {
   onboardingPaymentAgreementSkippedBy String?
   onboardingSubscriptionAppliedAt DateTime?
   onboardingSubscriptionAppliedBy String?
+  onboardingLearnWorldsStatus     String?
+  onboardingLearnWorldsAt         DateTime?
+  onboardingDigiFabsterStatus     String?
+  onboardingDigiFabsterAt         DateTime?
+  onboardingServiceProvidersSkippedAt DateTime?
+  onboardingServiceProvidersSkippedBy String?
+  // Set when an admin offboards the user. Blocks login and app access even while
+  // PeopleVine still shows the membership as active.
+  offboardedAt         DateTime?
   // Membership Agreement e-signature — set-once, same convention as the onboarding
   // markers above. Purely additive to the existing PV-driven payment/agreement
   // tracking; does not affect onboardingPaymentAgreementAt or the webhook cascade.
@@ -329,4 +345,30 @@ model OnboardingLink {
   submissionId String?
   createdAt    DateTime  @default(now())
   expiresAt    DateTime?
+}
+
+model Offboarding {
+  id                String    @id @default(uuid())
+  type              String
+  companyId         String?
+  userId            String?
+  name              String
+  email             String
+  peopleVineId      String?
+  via               String
+  members           String    @default("[]")
+  createdBy         String?
+  accessRemovedAt   DateTime?
+  accessRemovedBy   String?
+  pvRemovedAt       DateTime?
+  externalRemovedAt DateTime?
+  externalRemovedBy String?
+  completedAt       DateTime?
+  completedBy       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([completedAt])
+  @@index([userId])
+  @@index([companyId])
 }

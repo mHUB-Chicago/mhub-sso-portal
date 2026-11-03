@@ -18,6 +18,11 @@ const STEPS: { key: StepKey; label: string; waiting: string }[] = [
   { key: "subscription", label: "Subscription Applied", waiting: "Waiting for the PeopleVine sync to confirm the membership subscription is active." },
 ];
 
+const errorMessage = (err: unknown) =>
+  err && typeof err === "object" && "data" in err
+    ? (err as { data?: { message?: string } }).data?.message
+    : undefined;
+
 const stepsFor = (record: OnboardingInProcessRecord) =>
   record.via === "admin" ? STEPS.filter((s) => s.key !== "invite") : STEPS;
 
@@ -30,7 +35,8 @@ interface OnboardingProgressModalProps {
   onClose: () => void;
 }
 
-export function OnboardingProgressModal({ record, open, onClose }: OnboardingProgressModalProps) {
+export function OnboardingProgressModal({ record: initialRecord, open, onClose }: OnboardingProgressModalProps) {
+  const [record, setRecord] = useState(initialRecord);
   const [skipPayment, { isLoading: isSkipping }] = useSkipOnboardingPaymentMutation();
   const [confirmingSkip, setConfirmingSkip] = useState(false);
 
@@ -41,19 +47,16 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
     else break;
   }
   const current = doneCount < steps.length ? steps[doneCount] : null;
-  const canSkipPayment = current?.key === "payment";
+  const canSkip = current?.key === "payment";
 
-  const handleSkipPayment = async () => {
+  const handleSkip = async () => {
     try {
-      await skipPayment({ type: record.type, id: record.id }).unwrap();
+      const result = await skipPayment({ type: record.type, id: record.id }).unwrap();
+      setRecord(result.data.record);
       toast.success("Payment & Agreement step skipped.");
       setConfirmingSkip(false);
     } catch (err) {
-      const message =
-        err && typeof err === "object" && "data" in err
-          ? (err as { data?: { message?: string } }).data?.message
-          : undefined;
-      toast.error(message || "Failed to skip the payment step.");
+      toast.error(errorMessage(err) || "Failed to skip this step.");
     }
   };
 
@@ -155,7 +158,8 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
                 ? `${skipped ? "Skipped by admin" : "Completed"} ${formatDate(record.steps[s.key]!)}`
                 : state === "cur" ? s.waiting : "Not started";
               return (
-                <div key={s.key} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                <div key={s.key} className="px-5 py-3.5">
+                <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold">{s.label}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">{ts}</div>
@@ -174,6 +178,7 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
                     {pillText}
                   </span>
                 </div>
+                </div>
               );
             })}
           </div>
@@ -188,7 +193,7 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
               </Link>
             </Button>
           )}
-          {canSkipPayment && !confirmingSkip && (
+          {canSkip && !confirmingSkip && (
             <Button variant="outline" size="sm" onClick={() => setConfirmingSkip(true)}>
               Skip This Step
             </Button>
@@ -196,12 +201,12 @@ export function OnboardingProgressModal({ record, open, onClose }: OnboardingPro
           {confirmingSkip && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">
-                Skip Payment &amp; Agreement? This is only for cases handled outside the PV form (e.g. invoiced directly).
+                Skip Payment & Agreement? This is only for cases handled outside the PV form (e.g. invoiced directly).
               </span>
               <Button variant="outline" size="sm" onClick={() => setConfirmingSkip(false)} disabled={isSkipping}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={handleSkipPayment} disabled={isSkipping}>
+              <Button size="sm" onClick={handleSkip} disabled={isSkipping}>
                 {isSkipping ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
               </Button>
             </div>

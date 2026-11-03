@@ -6,6 +6,7 @@ const STYLES: Record<LoginAccess, { label: string; className: string }> = {
   blocked: { label: "Blocked", className: "bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-50" },
   onboarding: { label: "Onboarding", className: "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-50" },
   admin: { label: "Admin", className: "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100" },
+  offboarded: { label: "Offboarded", className: "bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-50" },
 }
 
 export function LoginAccessBadge({ access }: { access: LoginAccess }) {

@@ -473,6 +473,8 @@ const buildOnboardingProgress = (
   paymentSkipped: !!row.onboardingPaymentAgreementSkippedBy,
 });
 
+const IN_PROCESS_WHERE = { accountStatus: "pending_membership" };
+
 // "Default (in-process)" onboarding tab: live Company/User rows still awaiting a
 // membership (accountStatus "pending_membership"), not OnboardingSubmission rows —
 // see GetOnboardingInProcessResponseSchema. Read-only, local DB only.
@@ -480,8 +482,8 @@ export const handleGetOnboardingInProcess = async (c: Context<AppType>) => {
   const prisma: PrismaClient = c.get("db");
 
   const [companies, users] = await Promise.all([
-    prisma.company.findMany({ where: { accountStatus: "pending_membership" }, orderBy: { createdAt: "desc" } }),
-    prisma.user.findMany({ where: { accountStatus: "pending_membership" }, orderBy: { createdAt: "desc" } }),
+    prisma.company.findMany({ where: IN_PROCESS_WHERE, orderBy: { createdAt: "desc" } }),
+    prisma.user.findMany({ where: IN_PROCESS_WHERE, orderBy: { createdAt: "desc" } }),
   ]);
 
   const companyIds = companies.map((co) => co.id);

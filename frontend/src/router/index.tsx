@@ -19,6 +19,7 @@ import AdminAddUserPage from '@/pages/admin/users/add'
 import OnboardingPage from '@/pages/admin/onboarding'
 import { AdminOnboardingHistoryPage } from '@/pages/admin/onboarding/history'
 import { AdminOnboardingHistoryDetailPage } from '@/pages/admin/onboarding/history/detail'
+import { AdminOffboardingPage } from '@/pages/admin/offboarding'
 import { AdminCompaniesPage } from '@/pages/admin/companies'
 import { AdminEditCompanyPage } from '@/pages/admin/companies/edit'
 import { AdminManagementPage } from '@/pages/admin/admins'
@@ -141,6 +142,10 @@ export const router = createBrowserRouter([
       {
         path: 'onboarding/:id',
         element: <AdminOnboardingHistoryDetailPage />
+      },
+      {
+        path: 'offboarding',
+        element: <AdminOffboardingPage />
       },
       {
         path: 'companies',

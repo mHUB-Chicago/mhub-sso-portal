@@ -9,6 +9,7 @@ import { syncApi } from './api/syncApi'
 import { webhookApi } from './api/webhookApi'
 import { reportsApi } from './api/reportsApi'
 import { onboardingApi } from './api/onboardingApi'
+import { offboardingApi } from './api/offboardingApi'
 import { publicOnboardingApi } from './api/publicOnboardingApi'
 
 const appReducer = combineReducers({
@@ -21,6 +22,7 @@ const appReducer = combineReducers({
   [webhookApi.reducerPath]: webhookApi.reducer,
   [reportsApi.reducerPath]: reportsApi.reducer,
   [onboardingApi.reducerPath]: onboardingApi.reducer,
+  [offboardingApi.reducerPath]: offboardingApi.reducer,
   [publicOnboardingApi.reducerPath]: publicOnboardingApi.reducer,
 })
 
@@ -40,7 +42,7 @@ const rootReducer = (state: AppReducerState | undefined, action: AppReducerActio
 export const store = configureStore({
   reducer: rootReducer,
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(authApi.middleware, userApi.middleware, companyApi.middleware, serviceProviderApi.middleware, syncApi.middleware, webhookApi.middleware, reportsApi.middleware, onboardingApi.middleware, publicOnboardingApi.middleware),
+    getDefaultMiddleware().concat(authApi.middleware, userApi.middleware, companyApi.middleware, serviceProviderApi.middleware, syncApi.middleware, webhookApi.middleware, reportsApi.middleware, onboardingApi.middleware, offboardingApi.middleware, publicOnboardingApi.middleware),
 })
 
 export type RootState = ReturnType<typeof store.getState>

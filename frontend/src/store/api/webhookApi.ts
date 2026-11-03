@@ -15,6 +15,9 @@ interface GetWebhookLogsRequest {
   limit?: number
   offset?: number
   eventType?: string
+  status?: string
+  search?: string
+  changedOnly?: boolean
   dateFrom?: string
   dateTo?: string
 }
@@ -46,9 +49,12 @@ export const webhookApi = createApi({
   tagTypes: ['WebhookLogs'],
   endpoints: (builder) => ({
     getWebhookLogs: builder.query<GetWebhookLogsResponse, GetWebhookLogsRequest>({
-      query: ({ limit = 50, offset = 0, eventType, dateFrom, dateTo } = {}) => {
+      query: ({ limit = 50, offset = 0, eventType, status, search, changedOnly, dateFrom, dateTo } = {}) => {
         const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
         if (eventType) params.set('eventType', eventType)
+        if (status) params.set('status', status)
+        if (search) params.set('search', search)
+        if (changedOnly) params.set('changedOnly', 'true')
         if (dateFrom) params.set('dateFrom', dateFrom)
         if (dateTo) params.set('dateTo', dateTo)
         return `/webhook/logs?${params.toString()}`

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z, ZodType } from "zod";
-import { PrismaClient, User } from "@prisma/client";
+import { Prisma, PrismaClient, User } from "@prisma/client";
 import { authMiddleware } from "@/middleware/auth";
 import { corsMiddleware } from "@/middleware/cors";
 import { databaseMiddleware } from "@/middleware/database";
@@ -9,6 +9,7 @@ import loginRoutes from "@/routes/login";
 import userRoutes from "@/routes/user";
 import companyRoutes from "@/routes/company";
 import onboardingRoutes from "@/routes/onboarding";
+import offboardingRoutes from "@/routes/offboarding";
 import publicOnboardingRoutes from "@/routes/publicOnboarding";
 import membershipAgreementRoutes from "@/routes/membershipAgreement";
 import serviceProviderRoutes from "@/routes/serviceProvider";
@@ -80,6 +81,7 @@ app.route("/api/login", loginRoutes);
 app.route("/api/user", userRoutes);
 app.route("/api/company", companyRoutes);
 app.route("/api/onboarding", onboardingRoutes);
+app.route("/api/offboarding", offboardingRoutes);
 app.route("/api/public-onboarding", publicOnboardingRoutes);
 app.route("/api/membership-agreement", membershipAgreementRoutes);
 app.route("/api/provider", serviceProviderRoutes);
@@ -161,16 +163,48 @@ app.get("/api/webhook/logs", async (c) => {
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
   const offset = Number(c.req.query('offset') ?? 0);
   const eventType = c.req.query('eventType') || undefined;
+  const status = c.req.query('status') || undefined;
+  const changedOnly = c.req.query('changedOnly') === 'true';
+  const search = (c.req.query('search') ?? '').trim().slice(0, 100);
   const dateFrom = c.req.query('dateFrom') ? new Date(c.req.query('dateFrom')!) : undefined;
   const dateTo = c.req.query('dateTo') ? new Date(c.req.query('dateTo')!) : undefined;
-  const where = {
+  let searchFilter: Prisma.WebhookLogWhereInput | undefined;
+  if (search) {
+    const [matchedUsers, matchedCompanies] = await Promise.all([
+      prisma.user.findMany({
+        where: { peopleVineId: { not: null }, OR: [{ name: { contains: search } }, { email: { contains: search } }] },
+        select: { peopleVineId: true },
+        take: 200,
+      }),
+      prisma.company.findMany({
+        where: { peopleVineId: { not: null }, OR: [{ name: { contains: search } }, { email: { contains: search } }] },
+        select: { peopleVineId: true },
+        take: 200,
+      }),
+    ]);
+    const customerNos = [...matchedUsers, ...matchedCompanies]
+      .map((r) => Number(r.peopleVineId))
+      .filter((n) => Number.isInteger(n));
+    if (/^\d+$/.test(search)) customerNos.push(Number(search));
+    searchFilter = {
+      OR: [
+        ...(customerNos.length > 0 ? [{ customerNo: { in: [...new Set(customerNos)] } }] : []),
+        { payload: { contains: search } },
+        { diff: { contains: search } },
+      ],
+    };
+  }
+  const where: Prisma.WebhookLogWhereInput = {
     ...(eventType && { eventType }),
+    ...(status && { status }),
+    ...(changedOnly && { diff: { not: null } }),
     ...((dateFrom || dateTo) && {
       receivedAt: {
         ...(dateFrom && { gte: dateFrom }),
         ...(dateTo && { lte: dateTo }),
       },
     }),
+    ...(searchFilter && { AND: [searchFilter] }),
   };
   const [logs, total] = await Promise.all([
     prisma.webhookLog.findMany({ where, orderBy: { receivedAt: 'desc' }, take: limit, skip: offset }),

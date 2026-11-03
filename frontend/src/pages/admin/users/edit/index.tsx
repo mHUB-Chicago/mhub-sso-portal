@@ -13,8 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { toast } from 'sonner'
-import { Loader2, ExternalLink, FileText, Download, AlertTriangle } from 'lucide-react'
-import { useGetUserByIdQuery, useUpdateUserMutation } from '@/store/api/userApi'
+import { Loader2, ExternalLink, FileText, Download, AlertTriangle, UserMinus } from 'lucide-react'
+import { useGetUserByIdQuery, useUpdateUserMutation, userApi } from '@/store/api/userApi'
+import { useOffboardUserMutation } from '@/store/api/offboardingApi'
+import { useAppDispatch } from '@/store'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useGetPortalAccessTypesQuery } from '@/store/api/syncApi'
 import { LoginAccessBadge } from '@/components/LoginAccessBadge'
 import { hasCompanyPortalMembership, hasPortalMembership, loginAccess } from '../../../../../../common/access'
@@ -26,6 +29,9 @@ export function AdminEditUserPage() {
   const { data: userData, isLoading, error } = useGetUserByIdQuery(id!, { skip: !id, refetchOnMountOrArgChange: true })
   const { data: portalAccessTypesData } = useGetPortalAccessTypesQuery()
   const [updateUser, { isLoading: isUpdating }] = useUpdateUserMutation()
+  const [offboardUser, { isLoading: isOffboarding }] = useOffboardUserMutation()
+  const [confirmingOffboard, setConfirmingOffboard] = useState(false)
+  const dispatch = useAppDispatch()
 
   // Track user changes separately from server data
   const [localChanges, setLocalChanges] = useState<{
@@ -71,6 +77,21 @@ export function AdminEditUserPage() {
     }
   }
 
+  const handleOffboard = async () => {
+    if (!id) return
+    try {
+      const result = await offboardUser(id).unwrap()
+      dispatch(userApi.util.invalidateTags([{ type: 'User', id }, 'Users']))
+      toast.success(result.message)
+      navigate('/admin/offboarding')
+    } catch (err) {
+      const message = err && typeof err === 'object' && 'data' in err
+        ? (err as { data?: { message?: string } }).data?.message
+        : undefined
+      toast.error(message || 'Failed to offboard this member.')
+    }
+  }
+
   const handleCancel = () => {
     navigate('/admin/users')
   }
@@ -108,6 +129,7 @@ export function AdminEditUserPage() {
       )
     : null
   const isInherited = user.memberSource === 'membership'
+  const isOffboarded = !!user.offboardedAt
 
   return (
     <div className="space-y-6">
@@ -121,7 +143,20 @@ export function AdminEditUserPage() {
       </nav>
 
       {/* Header */}
-      <h1 className="text-xl font-semibold">Edit User</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Edit User</h1>
+        {user.role === 'USER' && (
+          <Button
+            variant="outline"
+            className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+            disabled={isOffboarded}
+            onClick={() => setConfirmingOffboard(true)}
+          >
+            <UserMinus className="h-4 w-4 mr-2" />
+            {isOffboarded ? 'Offboarded' : 'Offboard Member'}
+          </Button>
+        )}
+      </div>
 
       <div className="bg-white rounded-lg border p-6 space-y-8">
         {/* Profile Section */}
@@ -140,6 +175,11 @@ export function AdminEditUserPage() {
               </Badge>
               {user.mustResetPassword && (
                 <Badge variant="destructive">Must Reset Password</Badge>
+              )}
+              {isOffboarded && (
+                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-300">
+                  Offboarded {new Date(user.offboardedAt!).toLocaleDateString()}
+                </Badge>
               )}
             </div>
           </div>
@@ -286,6 +326,15 @@ export function AdminEditUserPage() {
             </p>
           </div>
 
+          {isOffboarded && (
+            <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-300 rounded-md">
+              <AlertTriangle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-rose-800">
+                This member has been <span className="font-semibold">offboarded</span>. All SSO access was removed and they can no longer sign in.
+              </p>
+            </div>
+          )}
+
           {access === 'blocked' && (
             <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-300 rounded-md">
               <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -301,9 +350,10 @@ export function AdminEditUserPage() {
           ) : (
             <div className="grid grid-cols-2 gap-4">
               {allowedServiceProviders.map((sp) => (
-                <div key={sp.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                <div key={sp.id} className={`flex items-center space-x-3 p-3 border rounded-lg ${isOffboarded ? 'opacity-55' : ''}`}>
                   <Checkbox
                     id={sp.id}
+                    disabled={isOffboarded}
                     checked={enabledServiceProviderIds.includes(sp.id)}
                     onCheckedChange={(checked) => handleServiceProviderToggle(sp.id, checked as boolean)}
                   />
@@ -350,6 +400,35 @@ export function AdminEditUserPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={confirmingOffboard} onOpenChange={(open) => !open && !isOffboarding && setConfirmingOffboard(false)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Offboard this member?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-gray-700">
+            <p>
+              You are about to offboard <b>{user.name}</b> ({user.email}). This will:
+            </p>
+            <ol className="list-decimal pl-5 space-y-1.5">
+              <li>Remove all SSO access immediately. Every service provider checkbox is cleared and the user can no longer sign in.</li>
+              <li>Add them to the Offboarding tracker so the manual PeopleVine step is not forgotten.</li>
+            </ol>
+            <p className="text-xs text-gray-500">
+              Their PeopleVine membership and subscription are not changed by this action. An admin must remove those in
+              PeopleVine; the tracker will record it via webhook.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setConfirmingOffboard(false)} disabled={isOffboarding}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleOffboard} disabled={isOffboarding}>
+              {isOffboarding ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Offboard & Remove Access'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
