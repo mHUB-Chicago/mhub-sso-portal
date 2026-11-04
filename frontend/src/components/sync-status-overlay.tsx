@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useGetSyncStatusQuery } from '@/store/api/syncApi'
 
@@ -27,9 +28,20 @@ const isBulkSyncActive = (session?: { status: string; type: string } | null): bo
   (session.type === 'ALL' || session.type === 'CONTINUE' || session.type === 'FILTERED')
 
 // Self-polling version for pages that don't already fetch sync status themselves.
+const ACTIVE_POLL_MS = 3000
+const IDLE_POLL_MS = 60000
+
 export function SyncStatusGate() {
-  const { data } = useGetSyncStatusQuery(undefined, { pollingInterval: 3000 })
+  const [pollingInterval, setPollingInterval] = useState(IDLE_POLL_MS)
+  const { data, error } = useGetSyncStatusQuery(undefined, { pollingInterval, skipPollingIfUnfocused: true })
   const session = data?.data
-  if (!isBulkSyncActive(session)) return null
+  const active = isBulkSyncActive(session)
+  const unauthorized = !!error && 'status' in error && error.status === 401
+
+  useEffect(() => {
+    setPollingInterval(unauthorized ? 0 : active ? ACTIVE_POLL_MS : IDLE_POLL_MS)
+  }, [active, unauthorized])
+
+  if (!active) return null
   return <SyncProcessingOverlay step={session?.step} progress={session?.progress} />
 }
